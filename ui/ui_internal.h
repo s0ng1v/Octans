@@ -20,9 +20,6 @@
 #include <windows.h>
 #include <dwmapi.h>
 #include <shellapi.h>
-#include <d3d11.h>
-#include <dxgi1_3.h>
-#include <dcomp.h>
 #include <d2d1_1.h>
 #include <dwrite.h>
 
@@ -46,9 +43,9 @@ static constexpr UINT WM_APP_HIDE_PANEL       = WM_APP + 13;
 static constexpr UINT WM_APP_THEME_CHANGED    = WM_APP + 14;
 
 enum TrayStyle : uint8_t {
-    TRAY_STYLE_OCTANS = 0, /* Scheme 1 (Default): Circular battery ring + sleek outline icons */
-    TRAY_STYLE_NEBULA = 1, /* Scheme 2: Liquid silhouette fill (panel + full-bleed tray) */
-    TRAY_STYLE_PULSAR = 2  /* Scheme 3: 12-segment precision dial (panel) + sleek icon with bottom digits (tray) */
+    TRAY_STYLE_OCTANS = 0, /* Scheme 1 (Default): Liquid silhouette fill with 3-stop gradient (+ flowing wave in panel) */
+    TRAY_STYLE_NEBULA = 1, /* Scheme 2: Classic circular battery ring + sleek outline icons */
+    TRAY_STYLE_PULSAR = 2  /* Scheme 3: 12-segment precision dial (panel) + bold icon with bottom digits (tray) */
 };
 
 enum MenuMode : uint8_t {
@@ -225,6 +222,28 @@ static inline int GetSystemMetricsDpiSafe(int index, UINT dpi) {
         }
     }
     return MulDiv(GetSystemMetrics(index), static_cast<int>(dpi), 96);
+}
+
+/* Detach IME from non-text windows so third-party IMEs (e.g. Sogou ~35MB) never inject into tray/panel. */
+static inline void DisableWindowIme(HWND hwnd) {
+    if (!hwnd) return;
+    typedef HANDLE (WINAPI *ImmAssociateContextFn)(HWND, HANDLE);
+    HMODULE imm32 = GetModuleHandleW(L"imm32.dll");
+    if (!imm32) imm32 = LoadLibraryW(L"imm32.dll");
+    if (imm32) {
+        auto fn = reinterpret_cast<ImmAssociateContextFn>(GetProcAddress(imm32, "ImmAssociateContext"));
+        if (fn) fn(hwnd, nullptr);
+    }
+}
+
+/* Ask Windows memory manager to trim cold working-set pages while Octans rests silently in the tray. */
+static inline void TrimIdleWorkingSet() {
+    SetProcessWorkingSetSizeEx(
+        GetCurrentProcess(),
+        static_cast<SIZE_T>(-1),
+        static_cast<SIZE_T>(-1),
+        0
+    );
 }
 
 /* Optional internal hook for standalone demo_main.cpp (never exposed in octans_ui_api.h). */

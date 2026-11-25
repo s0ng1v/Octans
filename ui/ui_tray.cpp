@@ -177,7 +177,7 @@ static HICON RenderTrayIcon(
     HGDIOBJ old_bmp = SelectObject(mem_dc, color_bmp);
 
     D2D1_RENDER_TARGET_PROPERTIES rt_props = {};
-    rt_props.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+    rt_props.type = D2D1_RENDER_TARGET_TYPE_SOFTWARE;
     rt_props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
     rt_props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
     rt_props.dpiX = 96.0f;
@@ -214,17 +214,15 @@ static HICON RenderTrayIcon(
                     1.0f,
                     1.0f
                 );
-            } else if (style == TRAY_STYLE_NEBULA) {
+            } else if (style == TRAY_STYLE_OCTANS) {
                 /* =====================================================================
-                 * SCHEME 2 (Nebula): Full-bleed Liquid Silhouette Fill (no outer ring!)
-                 * Calibrated so 50% default renders ~1.5x bolder (cropping 48x48 internal
-                 * margin so the actual silhouette fills ~90% of the taskbar icon canvas).
+                 * SCHEME 1 (Octans, Default): Full-bleed Liquid Silhouette Fill
+                 * Static smooth 3-stop translucent gradient matching octans_liquid_battery_kit.
                  * ===================================================================== */
                 float pct = (dev->battery_percent >= 0)
                     ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
                     : 0.0f;
-                D2D1_COLOR_F fill_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_NEBULA);
-                D2D1_COLOR_F soft_col = GetDeviceSoftAccentColor(*dev, pal);
+                LiquidGradientColors lc = GetDeviceLiquidColors(*dev, pal);
                 D2D1_COLOR_F trk_col  = tb_dark
                     ? MakeColor(1.0f, 1.0f, 1.0f, 0.28f)
                     : MakeColor(0.08f, 0.12f, 0.18f, 0.24f);
@@ -248,10 +246,11 @@ static HICON RenderTrayIcon(
                     cx, cy,
                     sil_sz,
                     pct,
-                    fill_col,
-                    soft_col,
+                    lc.top, lc.mid, lc.bot, lc.wave_back,
                     trk_col,
-                    det_col
+                    det_col,
+                    -1.0f,
+                    1.0f
                 );
 
                 if (dev->power_state == OCTANS_PWR_CHARGING) {
@@ -263,22 +262,21 @@ static HICON RenderTrayIcon(
                         tb_dark ? HexColor(0x18181A, 0.98f) : HexColor(0xFFFFFF, 0.98f),
                         bg_b.Put()
                     );
-                    rt->CreateSolidColorBrush(fill_col, bolt_b.Put());
+                    rt->CreateSolidColorBrush(lc.mid, bolt_b.Put());
                     if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
                     if (bolt_b) DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), bolt_b.Get(), bx, by, br * 0.88f);
                 }
             } else if (style == TRAY_STYLE_PULSAR && g_tray.dwrite_factory) {
                 /* =====================================================================
-                 * SCHEME 3 (Pulsar): Crisp outline device icon + bottom colored digits
-                 * Calibrated optically: slightly larger & shifted down for balanced
-                 * top/bottom presence while keeping a clean non-overlapping gap above digits!
+                 * SCHEME 3 (Pulsar): High-impact full-bleed device icon + large colored digits
+                 * Calibrated for real 16-24px Windows taskbar readability with genuine
+                 * dynamic scaling across 0% -> 50% (bold default) -> 100% (edge-to-edge max)!
                  * ===================================================================== */
                 D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
                     ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
-                    : (tb_dark ? HexColor(0xFFFFFF, 0.98f) : HexColor(0x141416, 0.96f));
+                    : (tb_dark ? HexColor(0xFFFFFF, 0.99f) : HexColor(0x141416, 0.98f));
                 D2D1_COLOR_F num_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_PULSAR);
                 if (!tb_dark && !IsDeviceMuted(*dev) && dev->battery_percent >= 0) {
-                    /* Slightly deepen text ink on bright light taskbars for crisp legibility */
                     if (dev->power_state == OCTANS_PWR_CHARGING || dev->power_state == OCTANS_PWR_FULL || dev->battery_percent > 40) {
                         num_col = HexColor(0x149B38, 1.0f);
                     } else if (dev->is_low_battery || dev->battery_percent <= 20) {
@@ -300,47 +298,55 @@ static HICON RenderTrayIcon(
                 float g_half;
                 float visual_half_h;
                 if (is_tall) {
-                    /* Tall vertical glyphs (Mouse etc.): enlarged slightly and lowered optically */
+                    /* Tall vertical glyphs (Mouse etc.): clear progression 0% -> 50% -> 100%, zero overlap */
                     g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.220f, 0.258f, s * 2.0f))
-                        : (sz * LerpF(0.258f, 0.272f, (s - 0.50f) * 2.0f));
-                    visual_half_h = g_half * 1.04f;
+                        ? (sz * LerpF(0.220f, 0.268f, s * 2.0f))
+                        : (sz * LerpF(0.268f, 0.285f, (s - 0.50f) * 2.0f));
+                    visual_half_h = g_half * 1.03f;
                 } else if (is_headset) {
-                    /* Headset earcups extend lower than wide icons (~0.92 * g_half) */
                     g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.245f, 0.292f, s * 2.0f))
-                        : (sz * LerpF(0.292f, 0.308f, (s - 0.50f) * 2.0f));
-                    visual_half_h = g_half * 0.92f;
+                        ? (sz * LerpF(0.255f, 0.308f, s * 2.0f))
+                        : (sz * LerpF(0.308f, 0.326f, (s - 0.50f) * 2.0f));
+                    visual_half_h = g_half * 0.90f;
                 } else {
-                    /* Wide horizontal glyphs (Keyboard, Gamepad) */
+                    /* Wide horizontal glyphs (Keyboard, Gamepad): fill full taskbar width at 50-100% */
                     g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.285f, 0.345f, s * 2.0f))
-                        : (sz * LerpF(0.345f, 0.368f, (s - 0.50f) * 2.0f));
+                        ? (sz * LerpF(0.305f, 0.376f, s * 2.0f))
+                        : (sz * LerpF(0.376f, 0.394f, (s - 0.50f) * 2.0f));
                     visual_half_h = g_half * 0.72f;
                 }
 
+                /* At 0%: balanced inset; at 50%: bold standard; at 100%: edge-to-edge full bleed */
                 float top_pad = is_tall
-                    ? (sz * LerpF(0.068f, 0.048f, s))
-                    : (is_headset ? (sz * LerpF(0.068f, 0.048f, s))
-                                  : (sz * LerpF(0.115f, 0.095f, s)));
+                    ? (sz * LerpF(0.070f, 0.004f, s))
+                    : (is_headset ? (sz * LerpF(0.070f, 0.006f, s))
+                                  : (sz * LerpF(0.095f, 0.020f, s)));
                 float g_cy = visual_half_h + top_pad;
                 float icon_bottom = g_cy + visual_half_h;
 
                 if (ink_brush) {
+                    D2D1_MATRIX_3X2_F prev_xf = {};
+                    rt->GetTransform(&prev_xf);
+                    if (dev->kind == OCTANS_DEV_MOUSE) {
+                        /* Mouse silhouette is inherently narrow (11/24 aspect); widen gently so it reads boldly at 16-24px! */
+                        float sx_mouse = LerpF(1.14f, 1.32f, s);
+                        rt->SetTransform(MatrixScaleTranslate(sx_mouse, 1.0f, cx, g_cy, 0.0f, 0.0f));
+                    }
                     DrawDeviceGlyph(g_tray.d2d_factory.Get(), rt.Get(), ink_brush.Get(), dev->kind, cx, g_cy, g_half, true);
+                    rt->SetTransform(prev_xf);
                 }
 
                 if (dev->power_state == OCTANS_PWR_CHARGING && num_brush) {
-                    float br = sz * 0.155f;
-                    float bx = sz - br - 0.35f;
-                    float by = g_cy + visual_half_h * 0.28f;
+                    float br = sz * LerpF(0.145f, 0.175f, s);
+                    float bx = sz - br - 0.25f;
+                    float by = g_cy + visual_half_h * 0.25f;
                     ComPtr<ID2D1SolidColorBrush> bg_b;
                     rt->CreateSolidColorBrush(
                         tb_dark ? HexColor(0x18181A, 0.96f) : HexColor(0xFFFFFF, 0.96f),
                         bg_b.Put()
                     );
                     if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
-                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.88f);
+                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.90f);
                 }
 
                 wchar_t num_buf[8] = {};
@@ -350,20 +356,20 @@ static HICON RenderTrayIcon(
                     _snwprintf(num_buf, 7, L"%d", static_cast<int>(dev->battery_percent));
                 }
 
+                /* Bold high-contrast Anthropic Serif digits: large & crisp with zero clipping or overlap */
                 float base_ratio = (s <= 0.50f)
-                    ? LerpF(0.365f, 0.415f, s * 2.0f)
-                    : LerpF(0.415f, 0.440f, (s - 0.50f) * 2.0f);
-                float font_ratio = (dev->battery_percent >= 100) ? (base_ratio * 0.82f) : base_ratio;
+                    ? LerpF(0.415f, 0.495f, s * 2.0f)
+                    : LerpF(0.495f, 0.525f, (s - 0.50f) * 2.0f);
+                float font_ratio = (dev->battery_percent >= 100) ? (base_ratio * 0.78f) : base_ratio;
                 float font_sz = sz * font_ratio;
-                if (font_sz < 9.0f) font_sz = 9.0f;
+                if (font_sz < 10.0f) font_sz = 10.0f;
 
                 ComPtr<IDWriteTextFormat> fmt;
                 if (num_brush && CreateOctansDigitFormat(g_tray.dwrite_factory.Get(), DWRITE_FONT_WEIGHT_EXTRA_BOLD, font_sz, fmt)) {
-                    float gap_px = sz * LerpF(0.060f, 0.045f, s);
+                    /* Always strictly below icon_bottom with crisp hairline breathing room and zero bottom clip */
+                    float gap_px = sz * LerpF(0.052f, 0.030f, s);
                     float top_num_y = icon_bottom + gap_px;
-                    if (top_num_y < sz * 0.59f) top_num_y = sz * 0.59f;
-                    if (top_num_y > sz * 0.67f) top_num_y = sz * 0.67f;
-                    D2D1_RECT_F tr = MakeRect(-2.0f, top_num_y, sz + 2.0f, sz + 0.5f);
+                    D2D1_RECT_F tr = MakeRect(-2.5f, top_num_y, sz + 2.5f, sz);
                     rt->DrawText(
                         num_buf,
                         static_cast<UINT32>(wcslen(num_buf)),
@@ -375,7 +381,7 @@ static HICON RenderTrayIcon(
                 }
             } else {
                 /* =====================================================================
-                 * SCHEME 1 (Octans, Default): Circular Battery Ring + Sleek Outline Icon
+                 * SCHEME 2 (Nebula): Classic Circular Battery Ring + Sleek Outline Icon
                  * Outer ring pushed cleanly outward + inner glyph ratio tuned so there
                  * is a crisp hairline clearance with ZERO ring-to-icon overlap!
                  * ===================================================================== */
@@ -847,6 +853,12 @@ int TrayFindDeviceIndexForUid(UINT tray_uid) {
         }
     }
     return -1;
+}
+
+void TrayReleaseRenderCache() {
+    g_tray.round_stroke.Reset();
+    g_tray.dwrite_factory.Reset();
+    g_tray.d2d_factory.Reset();
 }
 
 } /* namespace octans_ui */

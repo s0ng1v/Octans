@@ -106,37 +106,77 @@ bool IsDeviceMuted(const octans_device_view_t &dev) {
 }
 
 D2D1_COLOR_F GetDeviceAccentColor(const octans_device_view_t &dev, const ThemePalette &pal, TrayStyle style) {
-    (void)style;
     /* Unified semantic thresholds across ALL 3 styles (Octans / Nebula / Pulsar):
-     *   Charging / Full : Green (#34C759 / #30D158)
-     *   <= 20%          : Red   (#FF3B30 / #FF453A)
-     *   21% .. 40%      : Orange(#FF9500 / #FF9F0A)
-     *   > 40%           : Green (#34C759 / #30D158) */
+     *   <= 20%     : Red    (#FF3B30 / #FF453A, liquid #FF5C6C)
+     *   21% .. 40% : Orange (#FF9500 / #FF9F0A, liquid #FFC233)
+     *   > 40%      : Green  (#34C759 / #30D158, liquid #34DE89)
+     *   Charging   : Sky Blue (#38BDF8) in Octans liquid kit, Green in Nebula / Pulsar
+     *   Full       : Green */
     if (IsDeviceMuted(dev) || dev.battery_percent < 0) {
         return pal.ring_muted;
     }
-    if (dev.power_state == OCTANS_PWR_CHARGING || dev.power_state == OCTANS_PWR_FULL) {
-        return pal.ring_charging;
+    if (dev.power_state == OCTANS_PWR_CHARGING) {
+        return (style == TRAY_STYLE_OCTANS) ? HexColor(0x38BDF8, 1.0f) : pal.ring_charging;
+    }
+    if (dev.power_state == OCTANS_PWR_FULL) {
+        return (style == TRAY_STYLE_OCTANS) ? HexColor(0x34DE89, 1.0f) : pal.ring_normal;
     }
     if (dev.is_low_battery || dev.battery_percent <= 20) {
-        return pal.ring_low;
+        return (style == TRAY_STYLE_OCTANS) ? HexColor(0xFF5C6C, 1.0f) : pal.ring_low;
     }
     if (dev.battery_percent <= 40) {
-        return pal.ring_mid;
+        return (style == TRAY_STYLE_OCTANS) ? HexColor(0xFF9824, 1.0f) : pal.ring_mid;
     }
-    return pal.ring_normal;
+    return (style == TRAY_STYLE_OCTANS) ? HexColor(0x34DE89, 1.0f) : pal.ring_normal;
 }
 
-D2D1_COLOR_F GetDeviceSoftAccentColor(const octans_device_view_t &dev, const ThemePalette &pal) {
+LiquidGradientColors GetDeviceLiquidColors(const octans_device_view_t &dev, const ThemePalette &pal) {
+    (void)pal;
+    LiquidGradientColors c = {};
     if (IsDeviceMuted(dev) || dev.battery_percent < 0) {
-        return pal.ring_muted;
+        c.top       = HexColor(0xB4B4BC, 0.72f);
+        c.mid       = HexColor(0x8E8E93, 0.72f);
+        c.bot       = HexColor(0x6E6E73, 0.72f);
+        c.wave_back = HexColor(0xD4D4D8, 0.50f);
+        return c;
     }
-    if (dev.power_state == OCTANS_PWR_CHARGING || dev.power_state == OCTANS_PWR_FULL) {
-        return HexColor(0x86EFAC, 0.92f);
+    if (dev.power_state == OCTANS_PWR_CHARGING) {
+        /* Kit charging palette: #9BE7FF -> #38BDF8 -> #0EA5E9 (back #CBEFFF) */
+        c.top       = HexColor(0x9BE7FF, 1.0f);
+        c.mid       = HexColor(0x38BDF8, 1.0f);
+        c.bot       = HexColor(0x0EA5E9, 1.0f);
+        c.wave_back = HexColor(0xCBEFFF, 1.0f);
+        return c;
     }
-    if (dev.is_low_battery || dev.battery_percent <= 20) return HexColor(0xFCA5A5, 0.92f);
-    if (dev.battery_percent <= 40) return HexColor(0xFCD34D, 0.92f);
-    return HexColor(0x86EFAC, 0.92f);
+    if (dev.power_state == OCTANS_PWR_FULL) {
+        c.top       = HexColor(0x82F7C6, 1.0f);
+        c.mid       = HexColor(0x34DE89, 1.0f);
+        c.bot       = HexColor(0x1EC673, 1.0f);
+        c.wave_back = HexColor(0xB8FBE0, 1.0f);
+        return c;
+    }
+    if (dev.is_low_battery || dev.battery_percent <= 20) {
+        /* Kit low palette (<=20%): #FFA3B0 -> #FF5C6C -> #F03E4D (back #FFD0D7) */
+        c.top       = HexColor(0xFFA3B0, 1.0f);
+        c.mid       = HexColor(0xFF5C6C, 1.0f);
+        c.bot       = HexColor(0xF03E4D, 1.0f);
+        c.wave_back = HexColor(0xFFD0D7, 1.0f);
+        return c;
+    }
+    if (dev.battery_percent <= 40) {
+        /* Kit mid palette (21%-40%, unified threshold): #FFE875 -> #FFC233 -> #FF9824 (back #FFF3B0) */
+        c.top       = HexColor(0xFFE875, 1.0f);
+        c.mid       = HexColor(0xFFC233, 1.0f);
+        c.bot       = HexColor(0xFF9824, 1.0f);
+        c.wave_back = HexColor(0xFFF3B0, 1.0f);
+        return c;
+    }
+    /* Kit high palette (>40%): #82F7C6 -> #34DE89 -> #1EC673 (back #B8FBE0) */
+    c.top       = HexColor(0x82F7C6, 1.0f);
+    c.mid       = HexColor(0x34DE89, 1.0f);
+    c.bot       = HexColor(0x1EC673, 1.0f);
+    c.wave_back = HexColor(0xB8FBE0, 1.0f);
+    return c;
 }
 
 bool ApplyWin11Backdrop(HWND hwnd, bool is_dark) {

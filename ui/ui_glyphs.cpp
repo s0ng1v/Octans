@@ -500,6 +500,51 @@ static bool BuildSolidSilhouette48(
     }
 }
 
+static void GetLiquidSilhouetteBounds48(octans_device_kind_t kind, float *out_top, float *out_bot) {
+    switch (kind) {
+        case OCTANS_DEV_MOUSE:    *out_top = 5.0f;  *out_bot = 43.0f; break;
+        case OCTANS_DEV_KEYBOARD: *out_top = 12.0f; *out_bot = 36.0f; break;
+        case OCTANS_DEV_HEADSET:  *out_top = 8.0f;  *out_bot = 40.0f; break;
+        case OCTANS_DEV_GAMEPAD:  *out_top = 10.5f; *out_bot = 37.8f; break;
+        default:                  *out_top = 6.0f;  *out_bot = 43.0f; break;
+    }
+}
+
+static bool BuildLiquidWaveGeometry(
+    ID2D1Factory *factory,
+    float ox, float oy, float u,
+    float y_fill_48,
+    float amp_48,
+    float shift_x_48,
+    bool invert_phase,
+    ComPtr<ID2D1PathGeometry> &out_geo
+) {
+    if (!factory || FAILED(factory->CreatePathGeometry(out_geo.Put()))) return false;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(out_geo->Open(sink.Put()))) return false;
+
+    /* Periodic 48-unit wave spanning [-48 .. +96] so any shift in [-48 .. 0] covers [0 .. 48] seamlessly.
+     * Matches octans-liquid-battery.js: Q 12 (y - amp) 24 y T 48 y ... */
+    auto pt = [&](float x48, float y48) {
+        return MakePt(ox + (x48 + shift_x_48) * u, oy + y48 * u);
+    };
+    float a = invert_phase ? (-amp_48) : amp_48;
+
+    sink->BeginFigure(pt(0.0f, y_fill_48), D2D1_FIGURE_BEGIN_FILLED);
+    for (int cyc = 0; cyc < 2; ++cyc) {
+        float x0 = static_cast<float>(cyc) * 48.0f;
+        D2D1_QUADRATIC_BEZIER_SEGMENT q1 = { pt(x0 + 12.0f, y_fill_48 - a), pt(x0 + 24.0f, y_fill_48) };
+        D2D1_QUADRATIC_BEZIER_SEGMENT q2 = { pt(x0 + 36.0f, y_fill_48 + a), pt(x0 + 48.0f, y_fill_48) };
+        sink->AddQuadraticBezier(q1);
+        sink->AddQuadraticBezier(q2);
+    }
+    sink->AddLine(pt(96.0f, 52.0f));
+    sink->AddLine(pt(0.0f, 52.0f));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+    return true;
+}
+
 void DrawLiquidSilhouetteGlyph(
     ID2D1Factory *factory,
     ID2D1RenderTarget *rt,
@@ -508,12 +553,16 @@ void DrawLiquidSilhouetteGlyph(
     float cx, float cy,
     float size,
     float fraction,
-    const D2D1_COLOR_F &fill_col,
-    const D2D1_COLOR_F &soft_col,
+    const D2D1_COLOR_F &liq_top,
+    const D2D1_COLOR_F &liq_mid,
+    const D2D1_COLOR_F &liq_bot,
+    const D2D1_COLOR_F &wave_back,
     const D2D1_COLOR_F &track_col,
-    const D2D1_COLOR_F &detail_col
+    const D2D1_COLOR_F &detail_col,
+    float wave_time_sec,
+    float alpha
 ) {
-    if (!factory || !rt || size <= 2.0f) return;
+    if (!factory || !rt || size <= 2.0f || alpha <= 0.004f) return;
     float u = size / 48.0f;
     float ox = cx - size * 0.5f;
     float oy = cy - size * 0.5f;
@@ -524,8 +573,13 @@ void DrawLiquidSilhouetteGlyph(
     ComPtr<ID2D1Layer> layer;
     if (FAILED(rt->CreateLayer(layer.Put()))) return;
 
+    auto mul_a = [&](D2D1_COLOR_F c, float extra = 1.0f) {
+        c.a *= (alpha * extra);
+        return c;
+    };
+
     ComPtr<ID2D1SolidColorBrush> br;
-    if (FAILED(rt->CreateSolidColorBrush(track_col, br.Put()))) return;
+    if (FAILED(rt->CreateSolidColorBrush(mul_a(track_col), br.Put()))) return;
 
     D2D1_LAYER_PARAMETERS lp = {};
     lp.contentBounds = MakeRect(ox - 2.0f, oy - 2.0f, ox + size + 2.0f, oy + size + 2.0f);
@@ -539,49 +593,85 @@ void DrawLiquidSilhouetteGlyph(
     rt->PushLayer(lp, layer.Get());
 
     /* 1. Empty silhouette track */
-    br->SetColor(track_col);
+    br->SetColor(mul_a(track_col));
     rt->FillRectangle(MakeRect(ox, oy, ox + size, oy + size), br.Get());
 
-    /* 2. Bottom-up liquid level fill + crisp meniscus surface highlight */
+    /* 2. Bottom-up translucent 3-stop vertical gradient (+ gentle dual-layer water wave in panel) */
     float f = ClampF(fraction, 0.0f, 1.0f);
     if (f > 0.005f) {
-        float y_fill_48 = 44.0f - f * 38.0f;
-        if (f >= 0.995f) y_fill_48 = 0.0f;
-        float y_px = oy + y_fill_48 * u;
+        float b_top = 5.0f, b_bot = 43.0f;
+        GetLiquidSilhouetteBounds48(kind, &b_top, &b_bot);
+        float y_fill_48 = b_bot - f * (b_bot - b_top);
+        bool animated = (wave_time_sec >= 0.0f);
 
-        br->SetColor(fill_col);
-        rt->FillRectangle(MakeRect(ox, y_px, ox + size, oy + size), br.Get());
+        float grad_y0_48 = animated ? ((y_fill_48 > 2.0f) ? (y_fill_48 - 2.0f) : 0.0f) : y_fill_48;
+        D2D1_GRADIENT_STOP stops[3] = {
+            { 0.00f, mul_a(liq_top) },
+            { animated ? 0.38f : 0.45f, mul_a(liq_mid) },
+            { 1.00f, mul_a(liq_bot) }
+        };
+        ComPtr<ID2D1GradientStopCollection> stop_coll;
+        ComPtr<ID2D1LinearGradientBrush> grad_br;
+        if (SUCCEEDED(rt->CreateGradientStopCollection(stops, 3, D2D1_GAMMA_2_2, D2D1_EXTEND_MODE_CLAMP, stop_coll.Put()))) {
+            D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES lgp = {};
+            lgp.startPoint = MakePt(ox, oy + grad_y0_48 * u);
+            lgp.endPoint   = MakePt(ox, oy + b_bot * u);
+            rt->CreateLinearGradientBrush(lgp, stop_coll.Get(), grad_br.Put());
+        }
+        ID2D1Brush *fill_brush = grad_br ? static_cast<ID2D1Brush *>(grad_br.Get()) : static_cast<ID2D1Brush *>(br.Get());
+        if (!grad_br) br->SetColor(mul_a(liq_mid));
 
-        if (f < 0.985f) {
-            float men_h = 2.4f * u;
-            if (men_h < 1.2f) men_h = 1.2f;
-            br->SetColor(soft_col);
-            rt->FillRectangle(MakeRect(ox, y_px, ox + size, y_px + men_h), br.Get());
+        if (animated && f < 0.995f) {
+            float amp = (f >= 0.98f || f <= 0.03f) ? 0.6f : 2.1f;
+
+            /* Back wave: drifts gently right over 5.6s */
+            float pb = fmodf(wave_time_sec / 5.6f, 1.0f);
+            if (pb < 0.0f) pb += 1.0f;
+            float shift_b = -48.0f + pb * 48.0f;
+            ComPtr<ID2D1PathGeometry> wb_geo;
+            if (BuildLiquidWaveGeometry(factory, ox, oy, u, y_fill_48 - 0.8f, amp * 0.9f, shift_b, true, wb_geo)) {
+                br->SetColor(mul_a(wave_back, 0.48f));
+                rt->FillGeometry(wb_geo.Get(), br.Get());
+            }
+
+            /* Front wave: drifts smoothly left over 3.8s with 3-stop gradient */
+            float pf = fmodf(wave_time_sec / 3.8f, 1.0f);
+            if (pf < 0.0f) pf += 1.0f;
+            float shift_f = -pf * 48.0f;
+            ComPtr<ID2D1PathGeometry> wf_geo;
+            if (BuildLiquidWaveGeometry(factory, ox, oy, u, y_fill_48, amp, shift_f, false, wf_geo)) {
+                rt->FillGeometry(wf_geo.Get(), fill_brush);
+            }
+        } else {
+            float fill_top = (f >= 0.995f) ? oy : (oy + y_fill_48 * u);
+            rt->FillRectangle(MakeRect(ox, fill_top, ox + size, oy + size), fill_brush);
         }
     }
 
     rt->PopLayer();
 
     /* 3. Surface-colored inner detail overlay (scroll wheel, keys, D-pad/buttons) */
-    br->SetColor(detail_col);
     float ds = 2.6f * u;
     if (ds < 1.3f) ds = 1.3f;
 
     if (kind == OCTANS_DEV_MOUSE) {
-        rt->DrawLine(MakePt(ox + 24.0f * u, oy + 12.0f * u), MakePt(ox + 24.0f * u, oy + 19.5f * u), br.Get(), ds, round_cap_style);
+        br->SetColor(mul_a(detail_col, 0.85f));
+        rt->DrawLine(MakePt(ox + 24.0f * u, oy + 12.0f * u), MakePt(ox + 24.0f * u, oy + 19.0f * u), br.Get(), ds, round_cap_style);
     } else if (kind == OCTANS_DEV_KEYBOARD) {
         static const float kx[5][2] = {
-            { 11.0f, 14.0f }, { 17.5f, 20.5f }, { 24.0f, 27.0f }, { 30.5f, 33.5f }, { 36.2f, 38.2f }
+            { 11.0f, 14.0f }, { 17.5f, 20.5f }, { 24.0f, 27.0f }, { 30.5f, 33.5f }, { 36.8f, 37.2f }
         };
         float ks = 2.4f * u;
         if (ks < 1.2f) ks = 1.2f;
+        br->SetColor(mul_a(detail_col, 0.82f));
         for (int i = 0; i < 5; ++i) {
             rt->DrawLine(MakePt(ox + kx[i][0] * u, oy + 20.0f * u), MakePt(ox + kx[i][1] * u, oy + 20.0f * u), br.Get(), ks, round_cap_style);
         }
         rt->DrawLine(MakePt(ox + 14.0f * u, oy + 28.0f * u), MakePt(ox + 34.0f * u, oy + 28.0f * u), br.Get(), ks, round_cap_style);
     } else if (kind == OCTANS_DEV_GAMEPAD) {
-        float gs = 2.4f * u;
+        float gs = 2.6f * u;
         if (gs < 1.2f) gs = 1.2f;
+        br->SetColor(mul_a(detail_col, 0.88f));
         rt->DrawLine(MakePt(ox + 12.5f * u, oy + 20.5f * u), MakePt(ox + 19.1f * u, oy + 20.5f * u), br.Get(), gs, round_cap_style);
         rt->DrawLine(MakePt(ox + 15.8f * u, oy + 17.2f * u), MakePt(ox + 15.8f * u, oy + 23.8f * u), br.Get(), gs, round_cap_style);
         float dr = 1.9f * u;
@@ -589,6 +679,7 @@ void DrawLiquidSilhouetteGlyph(
         rt->FillEllipse(MakeEllipse(ox + 30.6f * u, oy + 18.8f * u, dr, dr), br.Get());
         rt->FillEllipse(MakeEllipse(ox + 34.6f * u, oy + 22.2f * u, dr, dr), br.Get());
     } else if (kind == OCTANS_DEV_SPEAKER) {
+        br->SetColor(mul_a(detail_col, 0.85f));
         rt->FillEllipse(MakeEllipse(ox + 24.0f * u, oy + 15.0f * u, 3.0f * u, 3.0f * u), br.Get());
         rt->DrawEllipse(MakeEllipse(ox + 24.0f * u, oy + 30.0f * u, 6.2f * u, 6.2f * u), br.Get(), ds * 0.85f);
     }

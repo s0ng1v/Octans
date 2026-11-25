@@ -317,7 +317,7 @@ static bool EnsureMenuResources(MenuState &m) {
     }
     if (!m.rt) {
         D2D1_RENDER_TARGET_PROPERTIES rtp = {};
-        rtp.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+        rtp.type = D2D1_RENDER_TARGET_TYPE_SOFTWARE;
         rtp.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
         rtp.pixelFormat.alphaMode = D2D1_ALPHA_MODE_IGNORE;
         rtp.dpiX = static_cast<float>(m.dpi);
@@ -1005,6 +1005,7 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     );
     if (!hwnd) return;
     m.hwnd = hwnd;
+    DisableWindowIme(hwnd);
 
     BOOL dark_val = GetState().is_dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20, &dark_val, sizeof(dark_val));

@@ -56,10 +56,17 @@ bool DetectSystemDarkMode();
 /* Retrieve Apple-inspired light or dark palette. */
 ThemePalette GetThemePalette(bool is_dark);
 
+struct LiquidGradientColors {
+    D2D1_COLOR_F top;
+    D2D1_COLOR_F mid;
+    D2D1_COLOR_F bot;
+    D2D1_COLOR_F wave_back;
+};
+
 /* Semantic accent color for a given device view and display style. */
 D2D1_COLOR_F GetDeviceAccentColor(const octans_device_view_t &dev, const ThemePalette &pal, TrayStyle style = TRAY_STYLE_OCTANS);
-/* Lighter highlight tint for liquid meniscus glow in Nebula style. */
-D2D1_COLOR_F GetDeviceSoftAccentColor(const octans_device_view_t &dev, const ThemePalette &pal);
+/* Translucent 3-stop liquid gradient + back-wave palette for Octans (default liquid) style. */
+LiquidGradientColors GetDeviceLiquidColors(const octans_device_view_t &dev, const ThemePalette &pal);
 
 /* True if device is sleeping or offline. */
 bool IsDeviceMuted(const octans_device_view_t &dev);

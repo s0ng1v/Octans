@@ -906,6 +906,131 @@ static void test_proto_obf_and_table_match(void) {
     ASSERT_EQ_INT(0, matched_bogus);
 }
 
+static void test_protocol_all_v1_suite(void) {
+    octans_proto_reading_t r;
+
+    /* 1. AJAZZ ajazz.mkbms (55 AA 80, charging + full + normal) */
+    uint8_t mk_chg[48] = {0};
+    mk_chg[0] = 0x55; mk_chg[1] = 0x00; mk_chg[2] = 0x80; mk_chg[3] = 0x20;
+    mk_chg[4] = 0x80; /* plugged, charging */
+    mk_chg[5] = 63;   /* 63% */
+    mk_chg[6] = 2;    /* 2.4G */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_ajazz_mkbms(mk_chg, sizeof(mk_chg), &r));
+    ASSERT_EQ_INT(63, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t mk_full[48] = {0};
+    mk_full[0] = 0x55; mk_full[2] = 0x80; mk_full[3] = 0x20;
+    mk_full[4] = 0xC0; /* plugged + full -> force 100% */
+    mk_full[5] = 95;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_ajazz_mkbms(mk_full, sizeof(mk_full), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* 2. ATK MouseInfo + HFD Keyboard */
+    uint8_t mi[24] = {0};
+    mi[0] = 0x0B; mi[1] = 0x13; mi[3] = 0x00; mi[17] = 1; mi[18] = 84; mi[19] = 0;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_atk_mouseinfo(mi, sizeof(mi), &r));
+    ASSERT_EQ_INT(84, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t hfd[8] = {0x00, 0x02, 0x96, 0x24, 72, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_keyboard(hfd, sizeof(hfd), VAR_KB_ATK_HFD, 0u, &r));
+    ASSERT_EQ_INT(72, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* 3. AULA: GEN-64, KBD-AA, 24G-RX */
+    uint8_t ag[8] = {0x0D, 0x01, 0x02, 0x01, 58};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(ag, sizeof(ag), VAR_INDEP_AULA_GEN64, &r));
+    ASSERT_EQ_INT(58, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t aa[32] = {0};
+    aa[0] = 0x55; aa[1] = 0x10; aa[8 + 17] = 91; aa[8 + 18] = 0;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(aa, sizeof(aa), VAR_INDEP_AULA_KBD_AA, &r));
+    ASSERT_EQ_INT(91, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    uint8_t a24[24] = {0};
+    a24[0] = 0x81; a24[3 + 13] = 1; a24[3 + 14] = 44;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(a24, sizeof(a24), VAR_INDEP_AULA_24G_RX, &r));
+    ASSERT_EQ_INT(44, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 4. Corsair Legacy NXP (9-level enum) */
+    uint8_t nxp[12] = {0x0E, 0x50, 0, 0, 0, 4, 2}; /* status=4(Medium->60%), charge=2(charging) */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_corsair_legacy_nxp(nxp, sizeof(nxp), &r));
+    ASSERT_EQ_INT(60, r.battery_percent);
+    ASSERT_EQ_INT(1, r.is_estimated);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 5. DAREU TG Feature Report */
+    uint8_t dtg[65] = {0};
+    dtg[0] = 0x00; dtg[1] = 0x02; dtg[1 + 7] = 77;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_dareu_tg(dtg, sizeof(dtg), &r));
+    ASSERT_EQ_INT(77, r.battery_percent);
+
+    /* 6. DURGOD FEA-3123 */
+    uint8_t dur[8] = {0x82, 85, 1, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_keyboard(dur, sizeof(dur), VAR_KB_DURGOD_3123, 0u, &r));
+    ASSERT_EQ_INT(85, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 7. HyperX Airoha (Mouse + TWS Headset) */
+    uint8_t hx_m[12] = {0x05, 0x5B, 0x04, 0x00, 0xCF, 0x30, 0x00, 0x01, 66};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hyperx(hx_m, sizeof(hx_m), VAR_HX_AIROHA, &r));
+    ASSERT_EQ_INT(66, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t hx_t[12] = {0x05, 0x5D, 0x04, 0x00, 0xD6, 0x0C, 0x00, 0x00, 88};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hyperx(hx_t, sizeof(hx_t), VAR_HX_AIROHA, &r));
+    ASSERT_EQ_INT(88, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* 8. IQUNIX texthex */
+    const char *iq_chg = "55 65 4B 03 00"; /* 0x4B = 75%, 03 = charging */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_iqunix_texthex((const uint8_t *)iq_chg, strlen(iq_chg), &r));
+    ASSERT_EQ_INT(75, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const char *iq_off = "65 FE 00";
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_iqunix_texthex((const uint8_t *)iq_off, strlen(iq_off), &r));
+    ASSERT_EQ_INT(1, r.offline);
+
+    /* 9. RAPOO Vision AP (checksum build + parse) & CH315 */
+    uint8_t rv_req[64];
+    octans_proto_build_rapoo_vision(rv_req);
+    ASSERT_EQ_INT(0x04, rv_req[0]);
+    ASSERT_EQ_INT(0xB3, rv_req[1]);
+    ASSERT_EQ_INT(0x00, rv_req[2]);
+    ASSERT_EQ_INT(0xAD, rv_req[3]);
+
+    uint8_t rv_rep[16] = {0x04, 0, 0, 0xAD, 0x06, 0, 0, 0x00, 82, 1};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(rv_rep, sizeof(rv_rep), VAR_RAPOO_VISION_AP, &r));
+    ASSERT_EQ_INT(82, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t rch[8] = {0x00, 0xAA, 0x01, 0x01, 69};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(rch, sizeof(rch), VAR_RAPOO_CH315, &r));
+    ASSERT_EQ_INT(69, r.battery_percent);
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -918,6 +1043,7 @@ int main(void) {
     test_user_rules_and_broad();
     test_mchose_v2_suite();
     test_proto_obf_and_table_match();
+    test_protocol_all_v1_suite();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

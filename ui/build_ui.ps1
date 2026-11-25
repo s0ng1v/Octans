@@ -130,9 +130,6 @@ if (-not $DebugBuild) {
 $SysLibs = @(
     "-ld2d1",
     "-ldwrite",
-    "-ld3d11",
-    "-ldxgi",
-    "-ldcomp",
     "-ldwmapi",
     "-lshell32",
     "-luser32",

@@ -1,7 +1,7 @@
 {
   "version": "0.5.0",
-  "notes": "修复重命名保存；统一三套样式电量颜色阈值；Pulsar 托盘回归电量数字；新增关于页与内置 SHA256 自动升级。",
-  "sha256": "55C68404E35F1C63D8EBD6ACC80D73CF8379CB743D85B6DAD93B65AF8473DF55",
+  "notes": "全新 Octans 液态渐变水波默认样式；Pulsar 托盘图标大幅放大；彻底消除常驻显卡/输入法内存膨胀；新增狼蛛/雷柏/达尔优/黑爵/ATK/海盗船/杜伽/HyperX/IQUNIX 协议；修复重命名并内置 SHA256 自动升级。",
+  "sha256": "CB9AD7BFEAEBCBCF76A857D9BE40B9E4ED531C3E1DDB4D4E94979BA8950D64E1",
   "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
   "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
   "page_cn": "https://atomgit.com/s0ng1v/Octans/releases",

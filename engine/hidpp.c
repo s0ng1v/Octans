@@ -538,8 +538,9 @@ static int hidpp_read_identity(hidpp_channel_t *ch,
 
 static int hidpp_read_v10_slot(hidpp_channel_t *ch, uint8_t slot, octans_proto_reading_t *r) {
     if (!ch->has_short) return 0;
-    static const uint8_t regs[3] = {0x0Du, 0x07u, 0x0Fu};
-    for (int i = 0; i < 3; ++i) {
+    /* Note: HID++ 1.0 register 0x0F is confirmed nonexistent and excluded to avoid wasted probe timeouts. */
+    static const uint8_t regs[2] = {0x0Du, 0x07u};
+    for (int i = 0; i < 2; ++i) {
         uint8_t req[7];
         octans_hidpp_build_short(slot, 0x81u, regs[i], req);
         octans_hid_drain(&ch->short_dev, 8);
@@ -557,10 +558,6 @@ static int hidpp_read_v10_slot(hidpp_channel_t *ch, uint8_t slot, octans_proto_r
                 }
                 if (regs[i] == 0x07u && octans_hidpp_parse_v10_reg07(resp + 4, (size_t)(n - 4), r)) {
                     snprintf(r->source_tag, sizeof(r->source_tag), "hidpp10_reg07");
-                    return 1;
-                }
-                if (regs[i] == 0x0Fu && octans_hidpp_parse_v10_reg0f(resp + 4, (size_t)(n - 4), r)) {
-                    snprintf(r->source_tag, sizeof(r->source_tag), "hidpp10_reg0f");
                     return 1;
                 }
             }

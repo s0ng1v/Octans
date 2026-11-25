@@ -3,13 +3,15 @@
 #include "ui_glyphs.h"
 #include "ui_brand.h"
 #include "ui_fonts.h"
+#include "ui_tray.h"
 #include <mmsystem.h>
 #include <stdio.h>
 
 namespace octans_ui {
 
-static constexpr UINT_PTR TIMER_ANIM  = 1;
-static constexpr UINT_PTR TIMER_HOVER = 2;
+static constexpr UINT_PTR TIMER_ANIM      = 1;
+static constexpr UINT_PTR TIMER_HOVER     = 2;
+static constexpr UINT_PTR TIMER_IDLE_TRIM = 3;
 
 /* Layout constants (DIPs) */
 static constexpr float kPanelPadX      = 16.0f;
@@ -54,14 +56,15 @@ struct PanelContext {
     bool has_anchor = false;
     bool anchor_from_top = false;
 
-    /* SwapChain pixel size */
-    UINT swap_w = 0;
-    UINT swap_h = 0;
+    /* Offscreen 32-bit premultiplied DIB size */
+    UINT buf_w = 0;
+    UINT buf_h = 0;
 
     /* Visibility & high-precision QPC animation state */
     bool want_visible = false;
-    bool exiting_dcomp = false;
+    bool exiting_layered = false;
     bool animating = false;
+    bool anim_fast_mode = false;
     bool timer_period_active = false;
     float panel_t = 0.0f; /* 0..1: 0=hidden, 1=open */
     float exit_u = 0.0f;  /* 0..1: monotonic shrink-to-tray progress */
@@ -71,6 +74,7 @@ struct PanelContext {
     float refresh_spin_deg = 0.0f;
     bool refresh_spinning = false;
     float brand_anim_t = 1.0f;
+    float liquid_wave_sec = 0.0f;
     float scan_elapsed_sec = 0.0f;
     float scan_done_sec = 0.0f;
     float scan_overlay_t = 0.0f;
@@ -100,18 +104,13 @@ struct PanelContext {
     /* Per-device smooth ring & hover animations */
     CardAnim anims[MAX_DEVICES] = {};
 
-    /* D3D11 / DXGI / DirectComposition / Direct2D / DirectWrite resources */
-    ComPtr<ID3D11Device> d3d_device;
-    ComPtr<IDXGIDevice> dxgi_device;
-    ComPtr<IDXGISwapChain1> swap_chain;
-    ComPtr<IDCompositionDevice> dcomp_device;
-    ComPtr<IDCompositionTarget> dcomp_target;
-    ComPtr<IDCompositionVisual> dcomp_visual;
-
-    ComPtr<ID2D1Factory1> d2d_factory;
-    ComPtr<ID2D1Device> d2d_device;
-    ComPtr<ID2D1DeviceContext> d2d_ctx;
-    ComPtr<ID2D1Bitmap1> d2d_target_bmp;
+    /* Ultra-lightweight CPU Direct2D + GDI DIB resources (ZERO D3D11/DXGI/GPU driver bloat!) */
+    HDC mem_dc = nullptr;
+    HBITMAP mem_bmp = nullptr;
+    HGDIOBJ old_bmp = nullptr;
+    void *mem_bits = nullptr;
+    ComPtr<ID2D1Factory> d2d_factory;
+    ComPtr<ID2D1DCRenderTarget> rt;
     ComPtr<ID2D1StrokeStyle> round_stroke;
 
     ComPtr<IDWriteFactory> dwrite_factory;
@@ -154,19 +153,30 @@ static UINT GetFrameIntervalMs() {
     return 15; /* ~60Hz */
 }
 
-static void StartAnimTimer() {
+static void StartAnimTimer(bool fast = true) {
     if (!g_panel.hwnd) return;
     if (!g_panel.animating) {
         g_panel.animating = true;
+        g_panel.anim_fast_mode = fast;
         if (g_panel.qpc_freq.QuadPart == 0) {
             QueryPerformanceFrequency(&g_panel.qpc_freq);
         }
         QueryPerformanceCounter(&g_panel.last_qpc);
-        if (!g_panel.timer_period_active) {
+        if (fast && !g_panel.timer_period_active) {
             timeBeginPeriod(1);
             g_panel.timer_period_active = true;
         }
-        SetTimer(g_panel.hwnd, TIMER_ANIM, GetFrameIntervalMs(), nullptr);
+        SetTimer(g_panel.hwnd, TIMER_ANIM, fast ? GetFrameIntervalMs() : 32u, nullptr);
+    } else if (fast != g_panel.anim_fast_mode) {
+        g_panel.anim_fast_mode = fast;
+        if (fast && !g_panel.timer_period_active) {
+            timeBeginPeriod(1);
+            g_panel.timer_period_active = true;
+        } else if (!fast && g_panel.timer_period_active) {
+            timeEndPeriod(1);
+            g_panel.timer_period_active = false;
+        }
+        SetTimer(g_panel.hwnd, TIMER_ANIM, fast ? GetFrameIntervalMs() : 32u, nullptr);
     }
 }
 
@@ -174,6 +184,7 @@ static void StopAnimTimer() {
     if (g_panel.hwnd && g_panel.animating) {
         KillTimer(g_panel.hwnd, TIMER_ANIM);
         g_panel.animating = false;
+        g_panel.anim_fast_mode = false;
     }
     if (g_panel.timer_period_active) {
         timeEndPeriod(1);
@@ -181,26 +192,42 @@ static void StopAnimTimer() {
     }
 }
 
-static void ReleaseTargetBitmap() {
-    if (g_panel.d2d_ctx) {
-        g_panel.d2d_ctx->SetTarget(nullptr);
+static void ReleaseBackbuffer() {
+    if (g_panel.mem_dc) {
+        if (g_panel.old_bmp) {
+            SelectObject(g_panel.mem_dc, g_panel.old_bmp);
+            g_panel.old_bmp = nullptr;
+        }
+        DeleteDC(g_panel.mem_dc);
+        g_panel.mem_dc = nullptr;
     }
-    g_panel.d2d_target_bmp.Reset();
+    if (g_panel.mem_bmp) {
+        DeleteObject(g_panel.mem_bmp);
+        g_panel.mem_bmp = nullptr;
+    }
+    g_panel.mem_bits = nullptr;
+    g_panel.buf_w = 0;
+    g_panel.buf_h = 0;
 }
 
 static void ReleaseGraphicsResources() {
-    ReleaseTargetBitmap();
+    ReleaseBackbuffer();
+    g_panel.rt.Reset();
     g_panel.round_stroke.Reset();
-    g_panel.d2d_ctx.Reset();
-    g_panel.d2d_device.Reset();
-    g_panel.dcomp_visual.Reset();
-    g_panel.dcomp_target.Reset();
-    g_panel.dcomp_device.Reset();
-    g_panel.swap_chain.Reset();
-    g_panel.dxgi_device.Reset();
-    g_panel.d3d_device.Reset();
-    g_panel.swap_w = 0;
-    g_panel.swap_h = 0;
+}
+
+static void ReleaseAllIdleResources() {
+    ReleaseGraphicsResources();
+    g_panel.fmt_empty.Reset();
+    g_panel.fmt_tooltip.Reset();
+    g_panel.fmt_sublabel.Reset();
+    g_panel.fmt_name.Reset();
+    g_panel.fmt_percent.Reset();
+    g_panel.fmt_subtitle.Reset();
+    g_panel.fmt_title.Reset();
+    g_panel.tabular_typo.Reset();
+    g_panel.dwrite_factory.Reset();
+    g_panel.d2d_factory.Reset();
 }
 
 static bool EnsureDirectWriteResources() {
@@ -248,32 +275,6 @@ static bool EnsureDirectWriteResources() {
     return true;
 }
 
-static bool BindSwapChainToD2D() {
-    if (!g_panel.swap_chain || !g_panel.d2d_ctx) return false;
-    ReleaseTargetBitmap();
-
-    ComPtr<IDXGISurface> surface;
-    if (FAILED(g_panel.swap_chain->GetBuffer(0, __uuidof(IDXGISurface), surface.PutVoid()))) {
-        return false;
-    }
-
-    float dpi_f = static_cast<float>(g_panel.dpi);
-    D2D1_BITMAP_PROPERTIES1 props = {};
-    props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
-    props.dpiX = dpi_f;
-    props.dpiY = dpi_f;
-    props.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
-
-    if (FAILED(g_panel.d2d_ctx->CreateBitmapFromDxgiSurface(
-            surface.Get(), &props, g_panel.d2d_target_bmp.Put()))) {
-        return false;
-    }
-    g_panel.d2d_ctx->SetTarget(g_panel.d2d_target_bmp.Get());
-    g_panel.d2d_ctx->SetDpi(dpi_f, dpi_f);
-    return true;
-}
-
 static bool EnsureGraphicsResources(UINT px_w, UINT px_h) {
     if (!g_panel.hwnd) return false;
     if (px_w < 2) px_w = 2;
@@ -285,65 +286,14 @@ static bool EnsureGraphicsResources(UINT px_w, UINT px_h) {
         D2D1_FACTORY_OPTIONS fopts = {};
         if (FAILED(D2D1CreateFactory(
                 D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                __uuidof(ID2D1Factory1),
+                __uuidof(ID2D1Factory),
                 &fopts,
                 g_panel.d2d_factory.PutVoid()))) {
             return false;
         }
     }
 
-    if (!g_panel.d3d_device) {
-        UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-        D3D_FEATURE_LEVEL levels[] = {
-            D3D_FEATURE_LEVEL_11_1,
-            D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_10_0
-        };
-        HRESULT hr = D3D11CreateDevice(
-            nullptr,
-            D3D_DRIVER_TYPE_HARDWARE,
-            nullptr,
-            flags,
-            levels,
-            4,
-            D3D11_SDK_VERSION,
-            g_panel.d3d_device.Put(),
-            nullptr,
-            nullptr
-        );
-        if (FAILED(hr)) {
-            hr = D3D11CreateDevice(
-                nullptr,
-                D3D_DRIVER_TYPE_WARP,
-                nullptr,
-                flags,
-                levels,
-                4,
-                D3D11_SDK_VERSION,
-                g_panel.d3d_device.Put(),
-                nullptr,
-                nullptr
-            );
-            if (FAILED(hr)) return false;
-        }
-
-        if (FAILED(g_panel.d3d_device->QueryInterface(__uuidof(IDXGIDevice), g_panel.dxgi_device.PutVoid()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        if (FAILED(g_panel.d2d_factory->CreateDevice(g_panel.dxgi_device.Get(), g_panel.d2d_device.Put()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        if (FAILED(g_panel.d2d_device->CreateDeviceContext(
-                D2D1_DEVICE_CONTEXT_OPTIONS_NONE, g_panel.d2d_ctx.Put()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
+    if (!g_panel.round_stroke) {
         D2D1_STROKE_STYLE_PROPERTIES sp = {};
         sp.startCap = D2D1_CAP_STYLE_ROUND;
         sp.endCap = D2D1_CAP_STYLE_ROUND;
@@ -352,70 +302,54 @@ static bool EnsureGraphicsResources(UINT px_w, UINT px_h) {
         sp.miterLimit = 10.0f;
         sp.dashStyle = D2D1_DASH_STYLE_SOLID;
         g_panel.d2d_factory->CreateStrokeStyle(sp, nullptr, 0, g_panel.round_stroke.Put());
-
-        ComPtr<IDXGIAdapter> adapter;
-        ComPtr<IDXGIFactory2> dxgi_factory;
-        if (FAILED(g_panel.dxgi_device->GetAdapter(adapter.Put())) ||
-            FAILED(adapter->GetParent(__uuidof(IDXGIFactory2), dxgi_factory.PutVoid()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        DXGI_SWAP_CHAIN_DESC1 sc_desc = {};
-        sc_desc.Width = px_w;
-        sc_desc.Height = px_h;
-        sc_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-        sc_desc.SampleDesc.Count = 1;
-        sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        sc_desc.BufferCount = 2;
-        sc_desc.Scaling = DXGI_SCALING_STRETCH;
-        sc_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-        sc_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
-
-        if (FAILED(dxgi_factory->CreateSwapChainForComposition(
-                g_panel.dxgi_device.Get(), &sc_desc, nullptr, g_panel.swap_chain.Put()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        if (FAILED(DCompositionCreateDevice(
-                g_panel.dxgi_device.Get(),
-                __uuidof(IDCompositionDevice),
-                g_panel.dcomp_device.PutVoid()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        if (FAILED(g_panel.dcomp_device->CreateTargetForHwnd(g_panel.hwnd, TRUE, g_panel.dcomp_target.Put())) ||
-            FAILED(g_panel.dcomp_device->CreateVisual(g_panel.dcomp_visual.Put()))) {
-            ReleaseGraphicsResources();
-            return false;
-        }
-
-        g_panel.dcomp_visual->SetContent(g_panel.swap_chain.Get());
-        g_panel.dcomp_target->SetRoot(g_panel.dcomp_visual.Get());
-        g_panel.dcomp_device->Commit();
-
-        g_panel.swap_w = px_w;
-        g_panel.swap_h = px_h;
-        return BindSwapChainToD2D();
     }
 
-    if (g_panel.swap_w != px_w || g_panel.swap_h != px_h) {
-        ReleaseTargetBitmap();
-        HRESULT hr = g_panel.swap_chain->ResizeBuffers(
-            0, px_w, px_h, DXGI_FORMAT_UNKNOWN, 0
-        );
-        if (FAILED(hr)) {
-            ReleaseGraphicsResources();
-            return EnsureGraphicsResources(px_w, px_h);
+    if (!g_panel.rt) {
+        D2D1_RENDER_TARGET_PROPERTIES rtp = {};
+        /* Pure CPU software render target: renders 350x240 flyout in <0.7ms with ZERO D3D11/GPU driver DLL bloat! */
+        rtp.type = D2D1_RENDER_TARGET_TYPE_SOFTWARE;
+        rtp.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        rtp.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+        rtp.dpiX = static_cast<float>(g_panel.dpi);
+        rtp.dpiY = static_cast<float>(g_panel.dpi);
+        rtp.usage = D2D1_RENDER_TARGET_USAGE_NONE;
+        rtp.minLevel = D2D1_FEATURE_LEVEL_DEFAULT;
+        if (FAILED(g_panel.d2d_factory->CreateDCRenderTarget(&rtp, g_panel.rt.Put()))) {
+            return false;
         }
-        g_panel.swap_w = px_w;
-        g_panel.swap_h = px_h;
-        return BindSwapChainToD2D();
+    } else {
+        float cur_dx = 96.0f, cur_dy = 96.0f;
+        g_panel.rt->GetDpi(&cur_dx, &cur_dy);
+        float want_dpi = static_cast<float>(g_panel.dpi);
+        if (fabsf(cur_dx - want_dpi) > 0.5f) {
+            g_panel.rt->SetDpi(want_dpi, want_dpi);
+        }
     }
 
-    return g_panel.d2d_target_bmp.Get() != nullptr;
+    if (!g_panel.mem_dc || !g_panel.mem_bmp || g_panel.buf_w != px_w || g_panel.buf_h != px_h) {
+        ReleaseBackbuffer();
+        BITMAPINFO bmi = {};
+        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bmi.bmiHeader.biWidth = static_cast<LONG>(px_w);
+        bmi.bmiHeader.biHeight = -static_cast<LONG>(px_h);
+        bmi.bmiHeader.biPlanes = 1;
+        bmi.bmiHeader.biBitCount = 32;
+        bmi.bmiHeader.biCompression = BI_RGB;
+
+        HDC scr = GetDC(nullptr);
+        g_panel.mem_dc = CreateCompatibleDC(scr);
+        g_panel.mem_bmp = CreateDIBSection(scr, &bmi, DIB_RGB_COLORS, &g_panel.mem_bits, nullptr, 0);
+        if (scr) ReleaseDC(nullptr, scr);
+        if (!g_panel.mem_dc || !g_panel.mem_bmp || !g_panel.mem_bits) {
+            ReleaseBackbuffer();
+            return false;
+        }
+        g_panel.old_bmp = SelectObject(g_panel.mem_dc, g_panel.mem_bmp);
+        g_panel.buf_w = px_w;
+        g_panel.buf_h = px_h;
+    }
+
+    return g_panel.rt.Get() != nullptr && g_panel.mem_dc != nullptr;
 }
 
 static void ComputeLayoutMetrics() {
@@ -691,7 +625,7 @@ static void FormatTooltipDetail(const octans_device_view_t &d, wchar_t *buf, siz
 }
 
 static void DrawTabularText(
-    ID2D1DeviceContext *ctx,
+    ID2D1RenderTarget *ctx,
     const wchar_t *text,
     IDWriteTextFormat *fmt,
     const D2D1_RECT_F &rect,
@@ -718,7 +652,7 @@ static void DrawTabularText(
 
 /* Smooth left-to-right progressive text reveal (clipped precisely to centered layout bounds). */
 static void DrawProgressiveRevealText(
-    ID2D1DeviceContext *ctx,
+    ID2D1RenderTarget *ctx,
     const wchar_t *text,
     IDWriteTextFormat *fmt,
     const D2D1_RECT_F &rect,
@@ -753,7 +687,7 @@ static void DrawProgressiveRevealText(
     }
 }
 
-static void RenderPanel() {
+static void RenderPanel(HDC paint_dc = nullptr) {
     if (!g_panel.hwnd) return;
     const UiState &st = GetState();
     ComputeLayoutMetrics();
@@ -763,13 +697,18 @@ static void RenderPanel() {
     UINT px_h = static_cast<UINT>(ceilf(g_panel.logical_h * scale));
     if (!EnsureGraphicsResources(px_w, px_h)) return;
 
+    RECT bind_rc = { 0, 0, static_cast<LONG>(px_w), static_cast<LONG>(px_h) };
+    if (FAILED(g_panel.rt->BindDC(g_panel.mem_dc, &bind_rc))) {
+        ReleaseGraphicsResources();
+        return;
+    }
+
     ThemePalette pal = GetThemePalette(st.is_dark);
-    ID2D1DeviceContext *ctx = g_panel.d2d_ctx.Get();
+    ID2D1RenderTarget *ctx = g_panel.rt.Get();
 
     /* Open mode: panel surface strictly 1:1 with Win11 DWM Acrylic HWND (zero double layer).
-     * Exit mode: DWM Acrylic is disabled -> pure per-pixel transparent DirectComposition card
-     *            accelerating smoothly into the tray icon (shrink + glide + fade to 0.00)! */
-    bool is_exiting = (!g_panel.want_visible && g_panel.exiting_dcomp);
+     * Exit mode: DWM Acrylic disabled + WS_EX_LAYERED UpdateLayeredWindow shrinks & fades cleanly into tray! */
+    bool is_exiting = (!g_panel.want_visible && g_panel.exiting_layered);
     float vis_ease = EaseOutQuint(g_panel.panel_t);
     float exit_p = ClampF(g_panel.exit_u, 0.0f, 1.0f);
     float exit_accel = exit_p * exit_p; /* True ease-in acceleration into tray: zero stall! */
@@ -1060,14 +999,11 @@ static void RenderPanel() {
                 ctx->DrawEllipse(MakeEllipse(cx, ring_cy, halo_r, halo_r), brush.Get(), 2.2f * pulse);
             }
 
-            if (st.tray_style == TRAY_STYLE_NEBULA) {
-                /* Scheme 2 (Nebula): Liquid Silhouette Fill (no outer ring) */
-                D2D1_COLOR_F fc = accent;
-                D2D1_COLOR_F sc = GetDeviceSoftAccentColor(d, pal);
-                D2D1_COLOR_F tc = pal.kit_track;
-                D2D1_COLOR_F dc = pal.kit_detail_ink;
+            if (st.tray_style == TRAY_STYLE_OCTANS) {
+                /* Scheme 1 (Octans, Default): Translucent 3-stop gradient liquid silhouette + gentle dual-layer wave */
+                LiquidGradientColors lc = GetDeviceLiquidColors(d, pal);
                 float ca = content_alpha * card_alpha;
-                fc.a *= ca; sc.a *= ca; tc.a *= ca; dc.a *= ca;
+                float wave_t = IsDeviceMuted(d) ? -1.0f : (g_panel.liquid_wave_sec + static_cast<float>(i) * 0.85f);
 
                 DrawLiquidSilhouetteGlyph(
                     g_panel.d2d_factory.Get(),
@@ -1077,7 +1013,10 @@ static void RenderPanel() {
                     cx, ring_cy,
                     54.0f,
                     frac,
-                    fc, sc, tc, dc
+                    lc.top, lc.mid, lc.bot, lc.wave_back,
+                    pal.kit_track, pal.kit_detail_ink,
+                    wave_t,
+                    ca
                 );
 
                 if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
@@ -1133,7 +1072,7 @@ static void RenderPanel() {
                     DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.2f);
                 }
             } else {
-                /* Scheme 1 (Octans, Default): Classic Circular Battery Ring + new sleek outline icon */
+                /* Scheme 2 (Nebula): Classic Circular Battery Ring + sleek outline icon */
                 set_card_col(pal.ring_track);
                 ctx->DrawEllipse(MakeEllipse(cx, ring_cy, ring_r, ring_r), brush.Get(), ring_stroke);
 
@@ -1201,7 +1140,9 @@ static void RenderPanel() {
             if (sem_kind == 1) {
                 set_card_col(pal.ring_low, 0.94f);
             } else if (sem_kind == 2) {
-                set_card_col(pal.ring_charging, 0.94f);
+                set_card_col((st.tray_style == TRAY_STYLE_OCTANS && d.power_state == OCTANS_PWR_CHARGING)
+                    ? (st.is_dark ? HexColor(0x38BDF8, 1.0f) : HexColor(0x0284C7, 1.0f))
+                    : pal.ring_charging, 0.94f);
             } else if (sem_kind == 3) {
                 set_card_col(pal.text_muted);
             } else {
@@ -1359,13 +1300,27 @@ static void RenderPanel() {
         return;
     }
 
-    hr = g_panel.swap_chain->Present(0, 0);
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-        ReleaseGraphicsResources();
-        return;
-    }
-    if (g_panel.dcomp_device) {
-        g_panel.dcomp_device->Commit();
+    if (is_exiting) {
+        LONG_PTR ex = GetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE);
+        if ((ex & WS_EX_LAYERED) == 0) {
+            SetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE, ex | WS_EX_LAYERED);
+        }
+        RECT wr = {};
+        GetWindowRect(g_panel.hwnd, &wr);
+        POINT pt_dst = { wr.left, wr.top };
+        SIZE sz_win = { static_cast<LONG>(px_w), static_cast<LONG>(px_h) };
+        POINT pt_src = { 0, 0 };
+        BLENDFUNCTION bf = {};
+        bf.BlendOp = AC_SRC_OVER;
+        bf.SourceConstantAlpha = 255;
+        bf.AlphaFormat = AC_SRC_ALPHA;
+        UpdateLayeredWindow(g_panel.hwnd, nullptr, &pt_dst, &sz_win, g_panel.mem_dc, &pt_src, 0, &bf, ULW_ALPHA);
+    } else {
+        HDC dst_dc = paint_dc ? paint_dc : GetDC(g_panel.hwnd);
+        if (dst_dc) {
+            BitBlt(dst_dc, 0, 0, static_cast<int>(px_w), static_cast<int>(px_h), g_panel.mem_dc, 0, 0, SRCCOPY);
+            if (!paint_dc) ReleaseDC(g_panel.hwnd, dst_dc);
+        }
     }
 }
 
@@ -1384,21 +1339,21 @@ static void StepAnimations() {
 
     bool any_active = false;
 
-    /* 1. Panel open (240ms Apple spring-quint) vs. pure-GPU shrink-to-tray exit (155ms ease-in) */
+    /* 1. Panel open (240ms Apple spring-quint) vs. smooth layered shrink-to-tray exit (155ms ease-in) */
     if (!g_panel.want_visible) {
         g_panel.exit_u += dt * (1.0f / 0.155f);
         if (g_panel.exit_u >= 1.0f) {
             g_panel.exit_u = 1.0f;
             g_panel.panel_t = 0.0f;
-            g_panel.exiting_dcomp = false;
+            g_panel.exiting_layered = false;
             ShowWindow(g_panel.hwnd, SW_HIDE);
-            StopAnimTimer();
-            if (g_panel.dxgi_device) {
-                ComPtr<IDXGIDevice3> dxgi3;
-                if (SUCCEEDED(g_panel.dxgi_device->QueryInterface(__uuidof(IDXGIDevice3), dxgi3.PutVoid()))) {
-                    dxgi3->Trim();
-                }
+            LONG_PTR ex = GetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE);
+            if ((ex & WS_EX_LAYERED) != 0) {
+                SetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
             }
+            StopAnimTimer();
+            ReleaseGraphicsResources();
+            SetTimer(g_panel.hwnd, TIMER_IDLE_TRIM, 1200u, nullptr);
             return;
         }
         RenderPanel();
@@ -1539,10 +1494,32 @@ static void StepAnimations() {
         }
     }
 
+    /* 6. Gentle flowing dual-layer water wave for Octans (default liquid) style while panel is open */
+    bool liquid_wave_active = false;
+    if (st.tray_style == TRAY_STYLE_OCTANS && st.device_count > 0 && st.scan_phase == SCAN_IDLE) {
+        for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+            if (!IsDeviceMuted(st.devices[i]) && st.devices[i].battery_percent > 0 && st.devices[i].battery_percent < 100) {
+                liquid_wave_active = true;
+                break;
+            }
+        }
+    }
+    if (liquid_wave_active) {
+        g_panel.liquid_wave_sec = fmodf(g_panel.liquid_wave_sec + dt, 212.8f);
+    }
+
     RenderPanel();
 
-    /* Demand-driven idle stop: release high-res timer & drop to ~0% CPU when settled! */
-    if (!any_active) {
+    /* Demand-driven idle stop & gentle 30fps pacing for liquid wave (0% CPU as soon as panel hides!) */
+    if (any_active) {
+        if (!g_panel.anim_fast_mode) {
+            StartAnimTimer(true);
+        }
+    } else if (liquid_wave_active) {
+        if (g_panel.anim_fast_mode) {
+            StartAnimTimer(false);
+        }
+    } else {
         StopAnimTimer();
     }
 }
@@ -1598,6 +1575,15 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
                 if (g_panel.hover_card >= 0) {
                     g_panel.tooltip_card = g_panel.hover_card;
                     StartAnimTimer();
+                }
+                return 0;
+            }
+            if (wp == TIMER_IDLE_TRIM) {
+                KillTimer(hwnd, TIMER_IDLE_TRIM);
+                if (!g_panel.want_visible && !IsWindowVisible(hwnd)) {
+                    ReleaseAllIdleResources();
+                    TrayReleaseRenderCache();
+                    TrimIdleWorkingSet();
                 }
                 return 0;
             }
@@ -1747,13 +1733,16 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 
         case WM_PAINT: {
             PAINTSTRUCT ps = {};
-            BeginPaint(hwnd, &ps);
-            EndPaint(hwnd, &ps);
-            if (g_panel.panel_t > 0.01f) {
-                RenderPanel();
+            HDC hdc = BeginPaint(hwnd, &ps);
+            if (g_panel.panel_t > 0.01f && !g_panel.exiting_layered) {
+                RenderPanel(hdc);
             }
+            EndPaint(hwnd, &ps);
             return 0;
         }
+
+        case WM_ERASEBKGND:
+            return 1;
 
         default:
             break;
@@ -1777,7 +1766,7 @@ bool PanelInit() {
     RegisterClassExW(&wc);
 
     g_panel.hwnd = CreateWindowExW(
-        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST,
         kPanelClass,
         L"Octans",
         WS_POPUP,
@@ -1789,6 +1778,7 @@ bool PanelInit() {
     );
     if (!g_panel.hwnd) return false;
 
+    DisableWindowIme(g_panel.hwnd);
     g_panel.dpi = GetWindowDpiSafe(g_panel.hwnd);
     g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, GetState().is_dark);
     ComputeLayoutMetrics();
@@ -1799,18 +1789,9 @@ void PanelShutdown() {
     StopAnimTimer();
     if (g_panel.hwnd) {
         KillTimer(g_panel.hwnd, TIMER_HOVER);
+        KillTimer(g_panel.hwnd, TIMER_IDLE_TRIM);
     }
-    ReleaseGraphicsResources();
-    g_panel.fmt_empty.Reset();
-    g_panel.fmt_tooltip.Reset();
-    g_panel.fmt_sublabel.Reset();
-    g_panel.fmt_name.Reset();
-    g_panel.fmt_percent.Reset();
-    g_panel.fmt_subtitle.Reset();
-    g_panel.fmt_title.Reset();
-    g_panel.tabular_typo.Reset();
-    g_panel.dwrite_factory.Reset();
-    g_panel.d2d_factory.Reset();
+    ReleaseAllIdleResources();
 
     if (g_panel.hwnd) {
         DestroyWindow(g_panel.hwnd);
@@ -1825,13 +1806,19 @@ void PanelShow(int anchor_x, int anchor_y, bool toggle_if_visible) {
         return;
     }
 
+    KillTimer(g_panel.hwnd, TIMER_IDLE_TRIM);
+    LONG_PTR ex = GetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE);
+    if ((ex & WS_EX_LAYERED) != 0) {
+        SetWindowLongPtrW(g_panel.hwnd, GWL_EXSTYLE, ex & ~WS_EX_LAYERED);
+    }
+
     ComputeLayoutMetrics();
     ComputeTargetPosition(anchor_x, anchor_y);
     g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, GetState().is_dark);
 
     bool opening_fresh = !IsWindowVisible(g_panel.hwnd) || !g_panel.want_visible;
     g_panel.want_visible = true;
-    g_panel.exiting_dcomp = false;
+    g_panel.exiting_layered = false;
     g_panel.exit_u = 0.0f;
     g_panel.last_show_ms = GetTickCount64();
 
@@ -1850,30 +1837,30 @@ void PanelShow(int anchor_x, int anchor_y, bool toggle_if_visible) {
             g_panel.anims[i].pulse_t = 0.0f;
         }
         ApplyWindowBoundsForAnim();
-        RenderPanel();
         ShowWindow(g_panel.hwnd, SW_SHOW);
+        RenderPanel();
     } else {
         ApplyWindowBoundsForAnim();
     }
     SetForegroundWindow(g_panel.hwnd);
-    StartAnimTimer();
+    StartAnimTimer(true);
 }
 
 void PanelHide() {
     if (!g_panel.hwnd) return;
     if (!g_panel.want_visible && !IsWindowVisible(g_panel.hwnd)) return;
     g_panel.want_visible = false;
-    g_panel.exiting_dcomp = true;
+    g_panel.exiting_layered = true;
     g_panel.exit_u = 0.0f;
     g_panel.hover_card = -1;
     g_panel.hover_header_btn = 0;
     g_panel.tooltip_card = -1;
     KillTimer(g_panel.hwnd, TIMER_HOVER);
 
-    /* Release DWM fixed-rect Acrylic right before GPU shrink-to-tray so card shrinks with zero double box! */
+    /* Release DWM fixed-rect Acrylic right before layered shrink-to-tray so card shrinks with zero double box! */
     ClearWin11BackdropForExit(g_panel.hwnd);
     RenderPanel();
-    StartAnimTimer();
+    StartAnimTimer(true);
 }
 
 bool PanelIsVisible() {
@@ -1955,6 +1942,9 @@ void PanelOnPinnedChanged() {
 void PanelOnStyleChanged() {
     if (PanelIsVisible()) {
         RenderPanel();
+        if (GetState().tray_style == TRAY_STYLE_OCTANS) {
+            StartAnimTimer(false);
+        }
     }
 }
 

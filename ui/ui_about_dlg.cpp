@@ -87,7 +87,7 @@ static bool EnsureAboutResources(AboutState &st) {
     }
     if (!st.rt) {
         D2D1_RENDER_TARGET_PROPERTIES rtp = {};
-        rtp.type = D2D1_RENDER_TARGET_TYPE_DEFAULT;
+        rtp.type = D2D1_RENDER_TARGET_TYPE_SOFTWARE;
         rtp.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
         rtp.pixelFormat.alphaMode = D2D1_ALPHA_MODE_IGNORE;
         rtp.dpiX = static_cast<float>(st.dpi);
@@ -595,6 +595,7 @@ bool ShowAboutDialog(HWND owner, bool is_dark) {
     );
     if (!hwnd) return false;
     st.hwnd = hwnd;
+    DisableWindowIme(hwnd);
 
     BOOL dark_val = is_dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20, &dark_val, sizeof(dark_val));

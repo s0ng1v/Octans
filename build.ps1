@@ -66,7 +66,7 @@ $uiSources = @(
 )
 
 $backendLibs = @("-lhid", "-lsetupapi", "-lcfgmgr32", "-ladvapi32", "-lole32", "-luuid")
-$uiLibs      = @("-ld2d1", "-ldwrite", "-ld3d11", "-ldxgi", "-ldcomp", "-ldwmapi", "-lshell32", "-luser32", "-lgdi32", "-lole32", "-ladvapi32", "-lwinmm", "-luuid")
+$uiLibs      = @("-ld2d1", "-ldwrite", "-ldwmapi", "-lshell32", "-luser32", "-lgdi32", "-lole32", "-ladvapi32", "-lwinmm", "-luuid")
 
 Write-Host "`n[1/7] Checking include/octans_ui_api.h C++ compatibility..."
 & clang++ -std=c++17 -fsyntax-only -Wall -Wextra -Werror -x c++ -Iinclude include\octans_ui_api.h

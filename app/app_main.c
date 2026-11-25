@@ -70,6 +70,17 @@ static void enable_per_monitor_dpi_v2(void) {
     }
 }
 
+static void disable_window_ime_c(HWND hwnd) {
+    if (!hwnd) return;
+    typedef HANDLE(WINAPI *imm_assoc_fn)(HWND, HANDLE);
+    HMODULE imm32 = GetModuleHandleW(L"imm32.dll");
+    if (!imm32) imm32 = LoadLibraryW(L"imm32.dll");
+    if (imm32) {
+        imm_assoc_fn fn = (imm_assoc_fn)GetProcAddress(imm32, "ImmAssociateContext");
+        if (fn) fn(hwnd, NULL);
+    }
+}
+
 static int has_arg_flag(const wchar_t *cmdline, const wchar_t *flag) {
     if (!cmdline || !flag) return 0;
     const wchar_t *p = wcsstr(cmdline, flag);
@@ -404,6 +415,7 @@ int WINAPI wWinMain(HINSTANCE hinst, HINSTANCE prev, PWSTR cmdline, int show) {
     );
 
     if (g_app.ctrl_hwnd) {
+        disable_window_ime_c(g_app.ctrl_hwnd);
         GUID hid_guid;
         HidD_GetHidGuid(&hid_guid);
         DEV_BROADCAST_DEVICEINTERFACE_W dbi;

@@ -35,6 +35,7 @@ void octans_proto_build_atk_54l15(uint8_t out64[64]);
 int octans_proto_parse_atk_54l15(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 void octans_proto_build_atk_52840(uint8_t out17[17]);
 int octans_proto_parse_atk_52840(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_atk_mouseinfo(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 void octans_proto_build_rog_1207(uint8_t report_id, uint8_t out_buf[65], size_t *out_len);
 int octans_proto_parse_rog(const uint8_t *buf, size_t len, octans_proto_variant_t var, octans_proto_reading_t *out);
@@ -42,6 +43,7 @@ int octans_proto_parse_rog(const uint8_t *buf, size_t len, octans_proto_variant_
 void octans_proto_build_corsair_bragi(uint8_t target, uint8_t prop, uint8_t out64[64]);
 int octans_proto_parse_corsair_bragi(const uint8_t *buf, size_t len, uint16_t *out_raw);
 int octans_proto_parse_corsair_void_elite(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_corsair_legacy_nxp(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 int octans_proto_parse_steelseries(const uint8_t *buf,
                                    size_t len,
@@ -53,6 +55,7 @@ int octans_proto_parse_hyperx(const uint8_t *buf,
                               octans_proto_variant_t var,
                               octans_proto_reading_t *out);
 
+void octans_proto_build_rapoo_vision(uint8_t out64[64]);
 int octans_proto_parse_rapoo(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,
@@ -62,6 +65,7 @@ void octans_proto_build_eweadn(uint8_t cmd, uint8_t out33[33]);
 int octans_proto_parse_eweadn(const uint8_t *buf, size_t len, octans_proto_reading_t *out, char out_dev_id[8]);
 int octans_proto_parse_ajazz_0x10(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_ajazz_0x05(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_ajazz_mkbms(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 void octans_proto_build_jieli_query(uint8_t seq, uint8_t target, uint8_t tlv_type, uint8_t out65[65]);
 int octans_proto_parse_jieli_tlv(const uint8_t *buf, size_t len, uint8_t expected_seq, uint8_t *out_pct);
@@ -84,6 +88,8 @@ void octans_proto_build_mchose_g7max(uint8_t report_id, uint8_t out64[64]);
 int octans_proto_parse_mchose_g7max(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_mchose_by(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out);
 int octans_proto_parse_mchose_audio_mc(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_dareu_tg(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_iqunix_texthex(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,

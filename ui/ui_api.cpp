@@ -14,6 +14,7 @@ static UiState g_state;
 static UINT g_msg_taskbar_created = 0;
 static constexpr UINT_PTR TIMER_SCAN_SETTLE    = 2;
 static constexpr UINT_PTR TIMER_SCAN_DONE_FADE = 3;
+static constexpr UINT_PTR TIMER_STARTUP_TRIM   = 4;
 static octans_device_view_t g_deferred_devices[MAX_DEVICES] = {};
 static size_t g_deferred_count = 0;
 static bool g_has_deferred = false;
@@ -233,6 +234,9 @@ static void CompleteScanTransition() {
     } else {
         g_state.scan_phase = SCAN_IDLE;
         PanelOnScanStateChanged();
+        if (g_state.host_hwnd) {
+            SetTimer(g_state.host_hwnd, TIMER_STARTUP_TRIM, 1500u, nullptr);
+        }
     }
 }
 
@@ -572,6 +576,14 @@ static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 return 0;
             }
+            if (wp == TIMER_STARTUP_TRIM) {
+                KillTimer(hwnd, TIMER_STARTUP_TRIM);
+                if (!PanelIsVisible() && !g_state.modal_open) {
+                    TrayReleaseRenderCache();
+                    TrimIdleWorkingSet();
+                }
+                return 0;
+            }
             break;
 
         case WM_APP_TRAY_CALLBACK: {
@@ -731,6 +743,7 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
         }
         return -1;
     }
+    DisableWindowIme(st.host_hwnd);
 
     FontsInit();
 

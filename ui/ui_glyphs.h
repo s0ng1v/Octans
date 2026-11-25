@@ -74,7 +74,9 @@ void DrawPrecisionDialArc(
     float fraction
 );
 
-/* Draw Scheme 2 (Nebula) liquid-filled solid device silhouette (48x48 viewBox scaled to `size` diameter). */
+/* Draw Scheme 1 (Octans, Default) translucent 3-stop gradient liquid-filled device silhouette
+ * (48x48 viewBox scaled to `size`). When wave_time_sec >= 0, renders gentle dual-layer flowing waves
+ * (panel mode); when wave_time_sec < 0, renders a clean static vertical gradient (tray mode). */
 void DrawLiquidSilhouetteGlyph(
     ID2D1Factory *factory,
     ID2D1RenderTarget *rt,
@@ -83,10 +85,14 @@ void DrawLiquidSilhouetteGlyph(
     float cx, float cy,
     float size,
     float fraction,
-    const D2D1_COLOR_F &fill_col,
-    const D2D1_COLOR_F &soft_col,
+    const D2D1_COLOR_F &liq_top,
+    const D2D1_COLOR_F &liq_mid,
+    const D2D1_COLOR_F &liq_bot,
+    const D2D1_COLOR_F &wave_back,
     const D2D1_COLOR_F &track_col,
-    const D2D1_COLOR_F &detail_col
+    const D2D1_COLOR_F &detail_col,
+    float wave_time_sec = -1.0f,
+    float alpha = 1.0f
 );
 
 /* Draw minimalist radar/signal scan icon (used for "扫描设备"). */

@@ -27,6 +27,9 @@ POINT TrayGetAnchorPoint(UINT tray_uid = 0);
 /* Resolve which device index in UiState::devices corresponds to a clicked tray icon uID (-1 if fallback/none). */
 int TrayFindDeviceIndexForUid(UINT tray_uid);
 
+/* Drop cached Direct2D/DirectWrite factories when resident idle in tray (recreated lazily on next icon change). */
+void TrayReleaseRenderCache();
+
 } /* namespace octans_ui */
 
 #endif /* OCTANS_UI_TRAY_H */

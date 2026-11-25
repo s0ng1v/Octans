@@ -8,6 +8,7 @@
 #include "../core/hid_dev.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 
@@ -208,6 +209,22 @@ int octans_proto_parse_atk_52840(const uint8_t *buf, size_t len, octans_proto_re
     return 1;
 }
 
+int octans_proto_parse_atk_mouseinfo(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || len < 20u || !out) return 0;
+    const uint8_t *r = buf;
+    size_t n = len;
+    if (buf[0] != 0x13u && len >= 21u && buf[1] == 0x13u) {
+        r = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 20u || r[0] != 0x13u || r[2] != 0x00u || r[17] > 100u) return 0;
+    out->battery_percent = (int8_t)r[17];
+    out->power_state = (r[18] == 1u) ? OCTANS_PWR_FULL
+                     : (r[16] == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    out->valid = 1;
+    return 1;
+}
+
 /* ---- Family 7: ASUS ROG ---- */
 
 void octans_proto_build_rog_1207(uint8_t report_id, uint8_t out_buf[65], size_t *out_len) {
@@ -289,6 +306,35 @@ int octans_proto_parse_corsair_void_elite(const uint8_t *buf, size_t len, octans
     if (lvl > 100u) return 0;
     out->battery_percent = (int8_t)lvl;
     out->power_state = (buf[4] == 4u || buf[4] == 5u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+int octans_proto_parse_corsair_legacy_nxp(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || len < 7u || !out) return 0;
+    const uint8_t *p = buf;
+    size_t n = len;
+    if (buf[0] == 0x0Eu && len >= 8u) {
+        p = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 7u) return 0;
+    uint8_t status = p[4];
+    uint8_t charge = p[5];
+    int pct = -1;
+    switch (status) {
+        case 2u: pct = 100; break; /* Charged */
+        case 3u: pct = 90;  break; /* High */
+        case 4u: pct = 60;  break; /* Medium */
+        case 5u: pct = 30;  break; /* Low */
+        case 6u: pct = 5;   break; /* VeryLow */
+        case 7u: pct = 10;  break; /* CriticalLow */
+        default: return 0;
+    }
+    out->battery_percent = (int8_t)pct;
+    out->is_estimated = 1;
+    out->power_state = (status == 2u) ? OCTANS_PWR_FULL
+                     : ((charge == 2u || charge == 3u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
     out->valid = 1;
     return 1;
 }
@@ -446,16 +492,84 @@ int octans_proto_parse_hyperx(const uint8_t *buf,
         return 0;
     }
 
+    if (var == VAR_HX_AIROHA && len >= 9u) {
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] != 0x05u && len >= 10u && buf[1] == 0x05u) {
+            d = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 9u || d[0] != 0x05u || d[6] != 0x00u) return 0;
+        uint16_t race = (uint16_t)((uint16_t)d[4] | ((uint16_t)d[5] << 8));
+        if (d[1] == 0x5Bu && race == 0x30CFu && d[8] <= 100u) {
+            out->battery_percent = (int8_t)d[8];
+            out->power_state = (d[7] != 0u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+        if (d[1] == 0x5Du && race == 0x0CD6u && d[8] <= 100u) {
+            out->battery_percent = (int8_t)d[8];
+            out->power_state = OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+        return 0;
+    }
+
     return 0;
 }
 
-/* ---- Family 11: Rapoo passive ---- */
+/* ---- Family 11: Rapoo (active Vision AP / CH315 + passive fallback) ---- */
+
+void octans_proto_build_rapoo_vision(uint8_t out64[64]) {
+    memset(out64, 0, 64u);
+    out64[0] = 0x04u; /* Report ID 4 */
+    uint8_t *f = out64 + 1;
+    f[2] = 0xADu;     /* VIS_GET_BATTERY_LEVEL (173) */
+    f[3] = 0x06u;
+    uint16_t sum = 0;
+    for (size_t i = 2u; i < 63u; ++i) sum = (uint16_t)(sum + f[i]);
+    f[0] = (uint8_t)(sum & 0xFFu);
+    f[1] = (uint8_t)((sum >> 8) & 0xFFu);
+}
 
 int octans_proto_parse_rapoo(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,
                              octans_proto_reading_t *out) {
     if (!buf || !out) return 0;
+
+    if (var == VAR_RAPOO_VISION_AP && len >= 9u) {
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] == 0x04u && len >= 10u && buf[3] == 0xADu) {
+            d = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 9u || d[2] != 0xADu || d[3] > 56u || d[6] != 0u) return 0;
+        if (n < (size_t)(7u + d[3])) return 0;
+        if (d[7] > 100u || (d[8] != 0u && d[8] != 1u)) return 0;
+        out->battery_percent = (int8_t)d[7];
+        out->power_state = (d[8] == 1u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    if (var == VAR_RAPOO_CH315 && len >= 5u) {
+        if ((buf[2] == 1u || buf[2] == 2u) && buf[3] == 1u && buf[4] <= 100u && buf[4] > 0u) {
+            out->battery_percent = (int8_t)buf[4];
+            out->power_state = OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+        if (len >= 7u && (buf[4] == 1u || buf[4] == 2u) && buf[5] == 1u && buf[6] <= 100u && buf[6] > 0u) {
+            out->battery_percent = (int8_t)buf[6];
+            out->power_state = OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+        return 0;
+    }
 
     if (var == VAR_RAPOO_MOUSE_R7 && len >= 8u) {
         uint8_t state = buf[6];
@@ -543,6 +657,30 @@ int octans_proto_parse_ajazz_0x05(const uint8_t *buf, size_t len, octans_proto_r
     if (buf[0] != 0x05u || buf[3] > 100u) return 0;
     out->battery_percent = (int8_t)buf[3];
     out->power_state = OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+int octans_proto_parse_ajazz_mkbms(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || len < 40u || !out) return 0;
+    const uint8_t *d = buf;
+    size_t n = len;
+    if (buf[0] == 0x00u && len >= 41u && buf[1] == 0x55u && buf[3] == 0x80u) {
+        d = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 40u || d[0] != 0x55u || d[2] != 0x80u || d[3] != 0x20u) return 0;
+    if (d[3] == 0xFFu && d[4] == 0xFFu && d[5] == 0xFFu) return 0;
+    uint8_t flags = d[4];
+    int plugged = (flags & 0x80u) != 0;
+    int full = plugged && ((flags & 0x40u) != 0);
+    int chg = plugged && ((flags & 0x40u) == 0);
+    uint8_t pct = full ? 100u : d[5];
+    if (pct > 100u) return 0;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = full ? OCTANS_PWR_FULL : (chg ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    if (d[6] == 1u || d[6] == 3u) out->conn = OCTANS_CONN_WIRED;
+    else if (d[6] == 2u) out->conn = OCTANS_CONN_DONGLE_24G;
     out->valid = 1;
     return 1;
 }
@@ -690,6 +828,35 @@ int octans_proto_parse_keyboard(const uint8_t *buf,
         if (p[0] != 0x08u || p[1] != 0x00u || p[2] != 0x07u || p[3] > 100u) return 0;
         out->battery_percent = (int8_t)p[3];
         out->power_state = OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    if (var == VAR_KB_ATK_HFD && len >= 5u) {
+        const uint8_t *p = buf;
+        size_t n = len;
+        if (buf[0] == 0x00u && len >= 6u && buf[1] == 0x02u) {
+            p = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 5u || p[0] != 0x02u || p[3] > 100u) return 0;
+        out->battery_percent = (int8_t)p[3];
+        out->power_state = (p[4] != 0u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    if (var == VAR_KB_DURGOD_3123 && len >= 4u) {
+        const uint8_t *p = buf;
+        size_t n = len;
+        if (buf[0] == 0x00u && len >= 5u && buf[1] == 0x82u) {
+            p = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 4u || p[1] == 0u || p[1] > 100u) return 0;
+        out->battery_percent = (int8_t)p[1];
+        out->power_state = (p[2] == 2u) ? OCTANS_PWR_FULL
+                         : (p[2] == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
         out->valid = 1;
         return 1;
     }
@@ -931,6 +1098,74 @@ int octans_proto_parse_mchose_audio_mc(const uint8_t *buf, size_t len, octans_pr
     return 1;
 }
 
+int octans_proto_parse_dareu_tg(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || len < 10u || !out) return 0;
+    const uint8_t *d = buf;
+    size_t n = len;
+    if (len == 65u || ((buf[0] & 0x0Fu) != 2u && len > 64u)) {
+        d = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 10u || (d[0] & 0x0Fu) != 2u || d[7] > 100u) return 0;
+    out->battery_percent = (int8_t)d[7];
+    out->power_state = OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+int octans_proto_parse_iqunix_texthex(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || len < 4u || !out) return 0;
+    char text[160];
+    size_t copy = len < sizeof(text) - 1u ? len : sizeof(text) - 1u;
+    for (size_t i = 0; i < copy; ++i) {
+        char c = (char)buf[i];
+        if (c == '\r' || c == '\n' || c == '\0') c = ' ';
+        text[i] = c;
+    }
+    text[copy] = '\0';
+
+    char *tok[16];
+    int nt = 0;
+    char *p = text;
+    while (*p && nt < 16) {
+        while (*p == ' ') ++p;
+        if (!*p) break;
+        tok[nt++] = p;
+        while (*p && *p != ' ') ++p;
+        if (*p) *p++ = '\0';
+    }
+    if (nt < 2) return 0;
+    int i = 0;
+    if (_stricmp(tok[0], "55") == 0) ++i;
+    if (i >= nt || _stricmp(tok[i], "65") != 0) return 0;
+    ++i;
+    if (i >= nt) return 0;
+    if (_stricmp(tok[i], "FE") == 0) {
+        out->offline = 1;
+        out->power_state = OCTANS_PWR_OFFLINE;
+        return 1;
+    }
+    if (_stricmp(tok[i], "FF") == 0) return 0;
+
+    char *endp = NULL;
+    long pct = strtol(tok[i], &endp, 16);
+    if (endp == tok[i] || pct < 0 || pct > 100) return 0;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = OCTANS_PWR_DISCHARGING;
+
+    ++i;
+    if (i < nt) {
+        if (_stricmp(tok[i], "03") == 0) {
+            out->power_state = OCTANS_PWR_CHARGING;
+        } else if (_stricmp(tok[i], "04") == 0) {
+            out->power_state = OCTANS_PWR_FULL;
+            out->battery_percent = 100;
+        }
+    }
+    out->valid = 1;
+    return 1;
+}
+
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,
@@ -1080,6 +1315,58 @@ int octans_proto_parse_indep(const uint8_t *buf,
         out->power_state = (buf[8] != 0u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
         out->valid = 1;
         return 1;
+
+    case VAR_INDEP_AULA_GEN64: {
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] == 0x00u && len >= 6u && (buf[1] == 0x0Du || buf[5] <= 100u)) {
+            d = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 5u || d[4] == 0u || d[4] > 100u) return 0;
+        out->battery_percent = (int8_t)d[4];
+        out->power_state = (d[3] != 0u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    case VAR_INDEP_AULA_KBD_AA: {
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] == 0x00u && len >= 28u && buf[1] == 0x55u) {
+            d = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 27u || d[0] != 0x55u || d[1] != 0x10u) return 0;
+        const uint8_t *p = d + 8;
+        if (p[17] > 100u) return 0;
+        out->battery_percent = (int8_t)p[17];
+        out->power_state = (p[18] != 0u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    case VAR_INDEP_AULA_24G_RX: {
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] != 0x81u && len >= 19u && buf[1] == 0x81u) {
+            d = buf + 1;
+            n = len - 1u;
+        }
+        if (n < 18u || d[0] != 0x81u) return 0;
+        const uint8_t *p = d + 3;
+        if (p[14] > 100u) return 0;
+        out->battery_percent = (int8_t)p[14];
+        out->power_state = (p[13] == 1u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    case VAR_INDEP_DAREU_TG:
+        return octans_proto_parse_dareu_tg(buf, len, out);
+
+    case VAR_INDEP_IQUNIX_TEXTHEX:
+        return octans_proto_parse_iqunix_texthex(buf, len, out);
 
     default:
         return 0;
@@ -1378,8 +1665,19 @@ static int run_feature_or_output_live(const proto_entry_t *e,
         }
     } else if (e->family == FAM_COMPX && dev.output_len >= 17) {
         octans_proto_build_compx(0x04u, req);
-        ok = send_and_read_loop(&dev, e->tx == TX_FEATURE, req, 17u, 4, 120u,
-                                wrap_parse_compx, NULL, out);
+        if (e->tx == TX_OUTPUT_INTR) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 17u;
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 150u);
+                    if (n >= 17 && octans_proto_parse_compx(resp, (size_t)n, out)) { ok = 1; break; }
+                }
+            }
+        } else {
+            ok = send_and_read_loop(&dev, e->tx == TX_FEATURE, req, 17u, 4, 120u,
+                                    wrap_parse_compx, NULL, out);
+        }
     } else if (e->family == FAM_ATK_NORDIC) {
         if (e->variant == VAR_ATK_54L15_64B && dev.output_len >= 64) {
             octans_proto_build_atk_54l15(req);
@@ -1387,6 +1685,20 @@ static int run_feature_or_output_live(const proto_entry_t *e,
         } else if (e->variant == VAR_ATK_52840_17B && dev.output_len >= 17) {
             octans_proto_build_atk_52840(req);
             ok = send_and_read_loop(&dev, 0, req, 17u, 4, 120u, wrap_parse_atk52, NULL, out);
+        } else if (e->variant == VAR_ATK_MOUSEINFO && dev.output_len >= 64u && dev.can_read) {
+            static const uint8_t rids[3] = {11u, 8u, 6u};
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            for (int ri = 0; ri < 3 && !ok; ++ri) {
+                memset(req, 0, olen);
+                req[0] = rids[ri];
+                req[1] = 0x13u; /* cmd 19 = MouseInfo */
+                if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                    for (int a = 0; a < 4; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 160u);
+                        if (n >= 20 && octans_proto_parse_atk_mouseinfo(resp, (size_t)n, out)) { ok = 1; break; }
+                    }
+                }
+            }
         }
     } else if (e->family == FAM_ASUS && dev.output_len >= 64) {
         size_t rlen = 64u;
@@ -1407,6 +1719,18 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     ok = 1;
                     break;
                 }
+            }
+        }
+    } else if (e->family == FAM_CORSAIR && e->variant == VAR_CORSAIR_LEGACY_NXP && dev.output_len >= 64u && dev.can_read) {
+        size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+        memset(req, 0, olen);
+        req[0] = 0x0Eu;
+        req[1] = 0x50u;
+        if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+            octans_hid_write_output(&dev, req, olen) == 0) {
+            for (int t = 0; t < 3; ++t) {
+                int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                if (n >= 7 && octans_proto_parse_corsair_legacy_nxp(resp, (size_t)n, out)) { ok = 1; break; }
             }
         }
     } else if (e->family == FAM_STEELSERIES && dev.output_len >= 64) {
@@ -1430,6 +1754,38 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     if (cn > 0) octans_proto_parse_hyperx(resp, (size_t)cn, var, out);
                 }
             }
+        } else if (e->variant == VAR_HX_AIROHA && dev.output_len >= 8u && dev.can_read) {
+            static const uint8_t enc_tws[7] = {
+                OCTANS_ENC8(0x05, 80), OCTANS_ENC8(0x5A, 81), OCTANS_ENC8(0x03, 82),
+                OCTANS_ENC8(0x00, 83), OCTANS_ENC8(0xD6, 84), OCTANS_ENC8(0x0C, 85),
+                OCTANS_ENC8(0x00, 86)
+            };
+            static const uint8_t enc_ms[6] = {
+                OCTANS_ENC8(0x05, 88), OCTANS_ENC8(0x5A, 89), OCTANS_ENC8(0x02, 90),
+                OCTANS_ENC8(0x00, 91), OCTANS_ENC8(0xCF, 92), OCTANS_ENC8(0x30, 93)
+            };
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            size_t off = (olen >= 65u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_tws, sizeof(enc_tws), 80u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int t = 0; t < 4; ++t) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                    if (n >= 9 && octans_proto_parse_hyperx(resp, (size_t)n, var, out)) { ok = 1; break; }
+                }
+            }
+            if (!ok) {
+                memset(req, 0, olen);
+                octans_dec_bytes(req + off, enc_ms, sizeof(enc_ms), 88u);
+                if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                    octans_hid_write_output(&dev, req, olen) == 0) {
+                    for (int t = 0; t < 4; ++t) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                        if (n >= 9 && octans_proto_parse_hyperx(resp, (size_t)n, var, out)) { ok = 1; break; }
+                    }
+                }
+            }
         } else if (dev.output_len >= 52) {
             size_t rlen = dev.output_len > 64 ? 64u : dev.output_len;
             if (e->variant == VAR_HX_GEN1) { req[0]=0x06; req[1]=0xFF; req[2]=0xBB; req[3]=0x02; }
@@ -1437,8 +1793,50 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             else { req[0]=0x50; req[1]=0x02; }
             ok = send_and_read_loop(&dev, 0, req, rlen, 4, 120u, wrap_parse_hx, &var, out);
         }
+    } else if (e->family == FAM_RAPOO_PUSH && dev.can_read) {
+        if (e->variant == VAR_RAPOO_VISION_AP && dev.output_len >= 64u) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            octans_proto_build_rapoo_vision(req);
+            static const uint32_t tms[2] = { 300u, 120u };
+            for (int a = 0; a < 2 && !ok; ++a) {
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0) break;
+                for (int r = 0; r < 3; ++r) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), tms[a]);
+                    if (n >= 9 && octans_proto_parse_rapoo(resp, (size_t)n, var, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_RAPOO_CH315 && dev.output_len >= 3u) {
+            static const uint8_t rids[4] = { 0u, 1u, 2u, 4u };
+            static const uint8_t sels[2] = { 1u, 2u };
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            for (int si = 0; si < 2 && !ok; ++si) {
+                for (int ri = 0; ri < 4 && !ok; ++ri) {
+                    memset(req, 0, olen);
+                    req[0] = rids[ri];
+                    req[1] = 0xAAu;
+                    req[2] = sels[si];
+                    if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 160u);
+                        if (n >= 5 && octans_proto_parse_rapoo(resp, (size_t)n, var, out)) { ok = 1; break; }
+                    }
+                }
+            }
+        }
     } else if (e->family == FAM_AJAZZ) {
-        if (e->variant == VAR_EWEADN_0X30 && dev.output_len >= 33) {
+        if (e->variant == VAR_AJAZZ_MKBMS && dev.output_len >= 64u && dev.can_read) {
+            static const uint8_t enc_mkbms[3] = { OCTANS_ENC8(0x55, 96), OCTANS_ENC8(0xAA, 97), OCTANS_ENC8(0x80, 98) };
+            size_t olen = dev.output_len >= 65u ? 65u : 64u;
+            size_t off = (olen >= 65u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_mkbms, sizeof(enc_mkbms), 96u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n >= 40 && octans_proto_parse_ajazz_mkbms(resp, (size_t)n, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_EWEADN_0X30 && dev.output_len >= 33) {
             octans_proto_build_eweadn(0x30u, req);
             ok = send_and_read_loop(&dev, 0, req, 33u, 4, 120u, wrap_parse_eweadn, NULL, out);
         } else if (e->variant == VAR_AJAZZ_0X10 && dev.output_len >= 33) {
@@ -1497,6 +1895,29 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             size_t len = dev.output_len >= 33 ? 33u : 32u;
             octans_proto_build_via_battery(req);
             ok = send_and_read_loop(&dev, 0, req, len, 2, 150u, wrap_parse_kb, &var, out);
+        } else if (e->variant == VAR_KB_ATK_HFD && dev.output_len >= 32u && dev.can_read) {
+            static const uint8_t enc_hfd[3] = { OCTANS_ENC8(0x02, 100), OCTANS_ENC8(0x96, 101), OCTANS_ENC8(0x24, 102) };
+            size_t olen = dev.output_len >= 33u ? 33u : 32u;
+            size_t off = (olen >= 33u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_hfd, sizeof(enc_hfd), 100u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 160u);
+                    if (n >= 5 && octans_proto_parse_keyboard(resp, (size_t)n, var, 0u, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_KB_DURGOD_3123 && dev.feature_len >= 8u) {
+            size_t flen = (dev.feature_len <= sizeof(req)) ? dev.feature_len : 9u;
+            memset(req, 0, flen);
+            size_t off = (flen >= 9u) ? 1u : 0u;
+            req[off] = octans_dec8(OCTANS_ENC8(0x82u, 105), 105u);
+            if (octans_hid_set_feature(&dev, req, flen) == 0) {
+                Sleep(40);
+                int n = octans_hid_get_feature(&dev, 0x00u, resp, flen);
+                if (n >= 4 && octans_proto_parse_keyboard(resp, (size_t)n, var, 0u, out)) { ok = 1; }
+            }
         } else if (e->variant == VAR_KB_MCHOSE_BY && is_mchose_by_kb_name(info->product)) {
             if (dev.feature_len >= 519u) {
                 uint8_t by_req[520];
@@ -1700,6 +2121,70 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             };
             octans_dec_bytes(req, enc_astro, sizeof(enc_astro), 70u);
             ok = send_and_read_loop(&dev, 0, req, 64u, 6, 200u, wrap_parse_indep, &var, out);
+        } else if (e->variant == VAR_INDEP_AULA_GEN64 && dev.output_len >= 64u && dev.can_read) {
+            static const uint8_t enc_ag[2] = { OCTANS_ENC8(0x0D, 110), OCTANS_ENC8(0x01, 111) };
+            size_t olen = dev.output_len >= 65u ? 65u : 64u;
+            size_t off = (olen >= 65u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_ag, sizeof(enc_ag), 110u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                for (int a = 0; a < 3; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n >= 5 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_AULA_KBD_AA && dev.output_len >= 32u && dev.can_read) {
+            static const uint8_t enc_aa[2] = { OCTANS_ENC8(0xAA, 114), OCTANS_ENC8(0x10, 115) };
+            size_t olen = dev.output_len >= 33u ? 33u : 32u;
+            size_t off = (olen >= 33u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_aa, sizeof(enc_aa), 114u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n >= 27 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_AULA_24G_RX && dev.output_len >= 3u && dev.can_read) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            memset(req, 0, olen);
+            req[0] = 11u;
+            req[1] = octans_dec8(OCTANS_ENC8(0x81u, 118), 118u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n >= 18 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_DAREU_TG && dev.feature_len >= 64u) {
+            static const uint8_t rids[3] = { 0u, 7u, 10u };
+            static const uint8_t enc_tg[4] = {
+                OCTANS_ENC8(0x00, 120), OCTANS_ENC8(0x03, 121),
+                OCTANS_ENC8(0x07, 122), OCTANS_ENC8(0x80, 123)
+            };
+            size_t flen = (dev.feature_len <= sizeof(req)) ? dev.feature_len : 65u;
+            size_t off = (flen >= 65u) ? 1u : 0u;
+            for (int ri = 0; ri < 3 && !ok; ++ri) {
+                memset(req, 0, flen);
+                if (off) req[0] = rids[ri];
+                octans_dec_bytes(req + off, enc_tg, sizeof(enc_tg), 120u);
+                if (octans_hid_set_feature(&dev, req, flen) == 0) {
+                    Sleep(35);
+                    int n = octans_hid_get_feature(&dev, rids[ri], resp, flen);
+                    if (n >= 10 && octans_proto_parse_dareu_tg(resp, (size_t)n, out)) { ok = 1; }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_IQUNIX_TEXTHEX && dev.output_len >= 32u && dev.can_read &&
+                   wstr_contains_nocase(info->product, L"IQUNIX")) {
+            static const uint8_t enc_iq[2] = { OCTANS_ENC8(0x65, 126), OCTANS_ENC8(0x02, 127) };
+            size_t olen = dev.output_len >= 33u ? 33u : 32u;
+            size_t off = (olen >= 33u) ? 1u : 0u;
+            memset(req, 0, olen);
+            octans_dec_bytes(req + off, enc_iq, sizeof(enc_iq), 126u);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                int n = octans_hid_read_input(&dev, resp, sizeof(resp), 260u);
+                if (n >= 4 && octans_proto_parse_iqunix_texthex(resp, (size_t)n, out)) { ok = 1; }
+            }
         }
     }
 
