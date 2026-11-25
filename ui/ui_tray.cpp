@@ -202,7 +202,7 @@ static HICON RenderTrayIcon(
             float cy = sz * 0.5f;
 
             if (!dev) {
-                /* No peripheral detected: render standalone transparent Octans Logo (no background). */
+                /* 0 pinned devices or no device detected: standalone transparent Octans Logo. */
                 float logo_r = sz * LerpF(0.38f, 0.48f, s);
                 DrawOctansLogo(
                     g_tray.d2d_factory.Get(),
@@ -214,111 +214,108 @@ static HICON RenderTrayIcon(
                     1.0f,
                     1.0f
                 );
-            } else if (style == TRAY_STYLE_ICON_NUMBER && g_tray.dwrite_factory) {
+            } else if (style == TRAY_STYLE_NEBULA) {
                 /* =====================================================================
-                 * SPLIT-STACK COMPLICATION driven smoothly by continuous tray_scale [0..1]:
-                 *   0.50 (Default) = old 100% scale (with boosted Mouse + unclipped bottom)
-                 *   1.00 (Max)     = ultra-bold full-canvas presence with zero clipping
+                 * SCHEME 2 (Nebula): Full-bleed Liquid Silhouette Fill (no outer ring!)
+                 * ===================================================================== */
+                float pct = (dev->battery_percent >= 0)
+                    ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
+                    : 0.0f;
+                D2D1_COLOR_F fill_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_NEBULA);
+                D2D1_COLOR_F soft_col = GetDeviceSoftAccentColor(*dev, pal);
+                D2D1_COLOR_F trk_col  = tb_dark
+                    ? MakeColor(1.0f, 1.0f, 1.0f, 0.26f)
+                    : MakeColor(0.08f, 0.12f, 0.18f, 0.22f);
+                D2D1_COLOR_F det_col  = tb_dark
+                    ? HexColor(0x18181A, 0.96f)
+                    : HexColor(0xFFFFFF, 0.96f);
+
+                float sil_sz = sz * LerpF(0.76f, 0.98f, s);
+                DrawLiquidSilhouetteGlyph(
+                    g_tray.d2d_factory.Get(),
+                    rt.Get(),
+                    g_tray.round_stroke.Get(),
+                    dev->kind,
+                    cx, cy,
+                    sil_sz,
+                    pct,
+                    fill_col,
+                    soft_col,
+                    trk_col,
+                    det_col
+                );
+
+                if (dev->power_state == OCTANS_PWR_CHARGING) {
+                    float br = sz * 0.20f;
+                    float bx = sz - br - 0.5f;
+                    float by = sz - br - 0.5f;
+                    ComPtr<ID2D1SolidColorBrush> bg_b, bolt_b;
+                    rt->CreateSolidColorBrush(
+                        tb_dark ? HexColor(0x18181A, 0.98f) : HexColor(0xFFFFFF, 0.98f),
+                        bg_b.Put()
+                    );
+                    rt->CreateSolidColorBrush(fill_col, bolt_b.Put());
+                    if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
+                    if (bolt_b) DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), bolt_b.Get(), bx, by, br * 0.88f);
+                }
+            } else if (style == TRAY_STYLE_PULSAR) {
+                /* =====================================================================
+                 * SCHEME 3 (Pulsar): Clean outline device icon + bottom horizontal bar
                  * ===================================================================== */
                 D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
                     ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
                     : (tb_dark ? HexColor(0xFFFFFF, 0.98f) : HexColor(0x141416, 0.96f));
+                D2D1_COLOR_F bar_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_PULSAR);
+                D2D1_COLOR_F bar_trk = tb_dark
+                    ? MakeColor(1.0f, 1.0f, 1.0f, 0.24f)
+                    : MakeColor(0.0f, 0.0f, 0.0f, 0.16f);
 
-                D2D1_COLOR_F num_col;
-                if (IsDeviceMuted(*dev) || dev->battery_percent < 0) {
-                    num_col = tb_dark ? HexColor(0xAEAEB2, 0.85f) : HexColor(0x6E6E73, 0.92f);
-                } else if (dev->power_state == OCTANS_PWR_CHARGING || dev->power_state == OCTANS_PWR_FULL) {
-                    num_col = tb_dark ? HexColor(0x30D158, 1.0f) : HexColor(0x149B38, 1.0f);
-                } else if (dev->is_low_battery || dev->battery_percent <= 20) {
-                    num_col = tb_dark ? HexColor(0xFF453A, 1.0f) : HexColor(0xDC2620, 1.0f);
-                } else {
-                    num_col = tb_dark ? HexColor(0x30D158, 1.0f) : HexColor(0x149B38, 1.0f);
-                }
-
-                ComPtr<ID2D1SolidColorBrush> ink_brush;
-                ComPtr<ID2D1SolidColorBrush> num_brush;
+                ComPtr<ID2D1SolidColorBrush> ink_brush, bar_brush, trk_brush;
                 rt->CreateSolidColorBrush(glyph_ink, ink_brush.Put());
-                rt->CreateSolidColorBrush(num_col, num_brush.Put());
+                rt->CreateSolidColorBrush(bar_col, bar_brush.Put());
+                rt->CreateSolidColorBrush(bar_trk, trk_brush.Put());
 
-                bool charging = (dev->power_state == OCTANS_PWR_CHARGING);
-                bool is_tall_glyph = (dev->kind == OCTANS_DEV_MOUSE ||
-                                      dev->kind == OCTANS_DEV_SPEAKER ||
-                                      dev->kind == OCTANS_DEV_STYLUS ||
-                                      dev->kind == OCTANS_DEV_EARBUDS);
-
-                /* Piecewise smooth curve: 0.50 = old 100% default; 0.50..1.00 scales further up */
-                float g_half;
-                if (is_tall_glyph) {
-                    g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.215f, 0.270f, s * 2.0f))
-                        : (sz * LerpF(0.270f, 0.292f, (s - 0.50f) * 2.0f));
-                } else {
-                    g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.285f, 0.368f, s * 2.0f))
-                        : (sz * LerpF(0.368f, 0.402f, (s - 0.50f) * 2.0f));
-                }
-
-                float h_factor = is_tall_glyph ? 0.93f : ((dev->kind == OCTANS_DEV_HEADSET) ? 0.74f : 0.65f);
-                float visual_half_h = g_half * h_factor;
-                float g_cy = visual_half_h + LerpF(0.95f, 0.35f, s);
-                float icon_bottom = g_cy + visual_half_h;
-
+                float g_half = sz * LerpF(0.28f, 0.36f, s);
+                float g_cy   = sz * LerpF(0.40f, 0.37f, s);
                 if (ink_brush) {
                     DrawDeviceGlyph(g_tray.d2d_factory.Get(), rt.Get(), ink_brush.Get(), dev->kind, cx, g_cy, g_half, true);
                 }
 
-                if (charging && num_brush) {
-                    float br = sz * LerpF(0.145f, 0.168f, s);
-                    float bx = sz - br - 0.30f;
-                    float by = g_cy + visual_half_h * 0.34f;
+                /* Bottom horizontal pill bar */
+                float bar_w = sz * LerpF(0.74f, 0.90f, s);
+                float bar_h = sz * LerpF(0.13f, 0.16f, s);
+                if (bar_h < 3.0f) bar_h = 3.0f;
+                float bar_l = cx - bar_w * 0.5f;
+                float bar_t = sz - bar_h - sz * LerpF(0.08f, 0.04f, s);
+                float bar_r = bar_h * 0.5f;
+
+                if (trk_brush) {
+                    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(bar_l, bar_t, bar_l + bar_w, bar_t + bar_h), bar_r, bar_r), trk_brush.Get());
+                }
+                float pct = (dev->battery_percent >= 0)
+                    ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
+                    : 0.0f;
+                if (bar_brush && pct > 0.01f) {
+                    float fw = bar_w * pct;
+                    if (fw < bar_h) fw = bar_h;
+                    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(bar_l, bar_t, bar_l + fw, bar_t + bar_h), bar_r, bar_r), bar_brush.Get());
+                }
+
+                if (dev->power_state == OCTANS_PWR_CHARGING && bar_brush) {
+                    float br = sz * 0.16f;
+                    float bx = sz - br - 0.5f;
+                    float by = br + 0.5f;
                     ComPtr<ID2D1SolidColorBrush> bg_b;
                     rt->CreateSolidColorBrush(
                         tb_dark ? HexColor(0x18181A, 0.96f) : HexColor(0xFFFFFF, 0.96f),
                         bg_b.Put()
                     );
-                    if (bg_b) {
-                        rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
-                    }
-                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.90f);
-                }
-
-                wchar_t num_buf[8] = {};
-                if (dev->power_state == OCTANS_PWR_OFFLINE || dev->battery_percent < 0) {
-                    wcscpy(num_buf, L"--");
-                } else {
-                    _snwprintf(num_buf, 7, L"%d", static_cast<int>(dev->battery_percent));
-                }
-
-                /* Bold Anthropic Serif digits with guaranteed breathing gap & safe bottom margin */
-                float base_ratio = (s <= 0.50f)
-                    ? LerpF(0.415f, 0.510f, s * 2.0f)
-                    : LerpF(0.510f, 0.565f, (s - 0.50f) * 2.0f);
-                float font_ratio = (dev->battery_percent >= 100) ? (base_ratio * 0.78f) : base_ratio;
-                float font_sz = sz * font_ratio;
-                if (font_sz < 10.0f) font_sz = 10.0f;
-
-                ComPtr<IDWriteTextFormat> fmt;
-                if (num_brush && CreateOctansDigitFormat(g_tray.dwrite_factory.Get(), DWRITE_FONT_WEIGHT_EXTRA_BOLD, font_sz, fmt)) {
-                    float gap_px = sz * LerpF(0.080f, 0.052f, s);
-                    float bottom_pad = sz * LerpF(0.055f, 0.032f, s);
-                    float top_num_y = icon_bottom + gap_px;
-                    if (top_num_y < sz * 0.49f) top_num_y = sz * 0.49f;
-                    if (top_num_y > sz * 0.58f) top_num_y = sz * 0.58f;
-                    D2D1_RECT_F tr = MakeRect(-2.0f, top_num_y, sz + 2.0f, sz - bottom_pad);
-                    rt->DrawText(
-                        num_buf,
-                        static_cast<UINT32>(wcslen(num_buf)),
-                        fmt.Get(),
-                        tr,
-                        num_brush.Get(),
-                        D2D1_DRAW_TEXT_OPTIONS_NONE
-                    );
+                    if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
+                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), bar_brush.Get(), bx, by, br * 0.88f);
                 }
             } else {
                 /* =====================================================================
-                 * DEFAULT RING + GLYPH driven smoothly by continuous tray_scale [0..1]:
-                 *   0.50 (Default) = old 100% scale (edge-to-edge crisp ring + bold glyph)
-                 *   1.00 (Max)     = extra-bold heavy ring + larger glyph, zero overlap
+                 * SCHEME 1 (Octans, Default): Circular Battery Ring + Sleek Outline Icon
                  * ===================================================================== */
                 float radius_ratio = (s <= 0.50f)
                     ? LerpF(0.420f, 0.500f, s * 2.0f)
@@ -343,74 +340,72 @@ static HICON RenderTrayIcon(
                     rt->DrawEllipse(MakeEllipse(cx, cy, radius, radius), track_brush.Get(), stroke);
                 }
 
-                if (dev) {
-                    float pct = (dev->battery_percent >= 0)
-                        ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
-                        : 0.0f;
-                    D2D1_COLOR_F ring_col = GetDeviceAccentColor(*dev, pal);
-                    ComPtr<ID2D1SolidColorBrush> ring_brush;
-                    rt->CreateSolidColorBrush(ring_col, ring_brush.Put());
-                    if (ring_brush && pct > 0.0f) {
-                        DrawBatteryRingArc(
-                            g_tray.d2d_factory.Get(),
-                            rt.Get(),
-                            ring_brush.Get(),
-                            g_tray.round_stroke.Get(),
-                            cx, cy,
-                            radius,
-                            stroke,
-                            pct,
-                            false
-                        );
+                float pct = (dev->battery_percent >= 0)
+                    ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
+                    : 0.0f;
+                D2D1_COLOR_F ring_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_OCTANS);
+                ComPtr<ID2D1SolidColorBrush> ring_brush;
+                rt->CreateSolidColorBrush(ring_col, ring_brush.Put());
+                if (ring_brush && pct > 0.0f) {
+                    DrawBatteryRingArc(
+                        g_tray.d2d_factory.Get(),
+                        rt.Get(),
+                        ring_brush.Get(),
+                        g_tray.round_stroke.Get(),
+                        cx, cy,
+                        radius,
+                        stroke,
+                        pct,
+                        false
+                    );
+                }
+
+                D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
+                    ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
+                    : (tb_dark ? HexColor(0xFFFFFF, 0.98f) : HexColor(0x2C2C2E, 0.92f));
+                ComPtr<ID2D1SolidColorBrush> ink_brush;
+                rt->CreateSolidColorBrush(glyph_ink, ink_brush.Put());
+
+                if (ink_brush) {
+                    bool wide_diag = (dev->kind == OCTANS_DEV_KEYBOARD ||
+                                      dev->kind == OCTANS_DEV_GAMEPAD  ||
+                                      dev->kind == OCTANS_DEV_HEADSET);
+                    float glyph_ratio;
+                    if (wide_diag) {
+                        glyph_ratio = (s <= 0.50f)
+                            ? LerpF(0.68f, 0.78f, s * 2.0f)
+                            : LerpF(0.78f, 0.82f, (s - 0.50f) * 2.0f);
+                    } else {
+                        glyph_ratio = (s <= 0.50f)
+                            ? LerpF(0.72f, 0.85f, s * 2.0f)
+                            : LerpF(0.85f, 0.89f, (s - 0.50f) * 2.0f);
                     }
+                    float glyph_half = inner_r * glyph_ratio;
+                    DrawDeviceGlyph(
+                        g_tray.d2d_factory.Get(),
+                        rt.Get(),
+                        ink_brush.Get(),
+                        dev->kind,
+                        cx, cy,
+                        glyph_half,
+                        true
+                    );
+                }
 
-                    D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
-                        ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
-                        : (tb_dark ? HexColor(0xFFFFFF, 0.98f) : HexColor(0x2C2C2E, 0.92f));
-                    ComPtr<ID2D1SolidColorBrush> ink_brush;
-                    rt->CreateSolidColorBrush(glyph_ink, ink_brush.Put());
-
-                    if (ink_brush) {
-                        bool wide_diag = (dev->kind == OCTANS_DEV_KEYBOARD ||
-                                          dev->kind == OCTANS_DEV_GAMEPAD  ||
-                                          dev->kind == OCTANS_DEV_HEADSET);
-                        float glyph_ratio;
-                        if (wide_diag) {
-                            glyph_ratio = (s <= 0.50f)
-                                ? LerpF(0.68f, 0.78f, s * 2.0f)
-                                : LerpF(0.78f, 0.82f, (s - 0.50f) * 2.0f);
-                        } else {
-                            glyph_ratio = (s <= 0.50f)
-                                ? LerpF(0.72f, 0.85f, s * 2.0f)
-                                : LerpF(0.85f, 0.89f, (s - 0.50f) * 2.0f);
-                        }
-                        float glyph_half = inner_r * glyph_ratio;
-                        DrawDeviceGlyph(
-                            g_tray.d2d_factory.Get(),
-                            rt.Get(),
-                            ink_brush.Get(),
-                            dev->kind,
-                            cx, cy,
-                            glyph_half,
-                            true
-                        );
+                if (dev->power_state == OCTANS_PWR_CHARGING) {
+                    float bx = sz - sz * 0.19f;
+                    float by = sz - sz * 0.19f;
+                    float br = sz * 0.21f;
+                    ComPtr<ID2D1SolidColorBrush> bg_b;
+                    rt->CreateSolidColorBrush(
+                        tb_dark ? HexColor(0x18181A, 0.98f) : HexColor(0xFFFFFF, 0.98f),
+                        bg_b.Put()
+                    );
+                    if (bg_b) {
+                        rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
                     }
-
-                    if (dev->power_state == OCTANS_PWR_CHARGING) {
-                        float bx = sz - sz * 0.19f;
-                        float by = sz - sz * 0.19f;
-                        float br = sz * 0.21f;
-                        ComPtr<ID2D1SolidColorBrush> bg_b;
-                        rt->CreateSolidColorBrush(
-                            tb_dark ? HexColor(0x18181A, 0.98f) : HexColor(0xFFFFFF, 0.98f),
-                            bg_b.Put()
-                        );
-                        if (bg_b) {
-                            rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
-                        }
-                        if (ring_brush) {
-                            DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), ring_brush.Get(), bx, by, br * 0.88f);
-                        }
+                    if (ring_brush) {
+                        DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), ring_brush.Get(), bx, by, br * 0.88f);
                     }
                 }
             }
@@ -667,15 +662,15 @@ void TraySyncAll(
     }
 
     if (matched_count == 0) {
-        int fb = SelectFallbackTrayDeviceIndex(devices, count);
-        const octans_device_view_t *fb_dev = (fb >= 0 && static_cast<size_t>(fb) < count) ? &devices[fb] : nullptr;
+        /* Zero pinned devices -> ALWAYS show standalone transparent Octans Logo on Slot 0! */
         wchar_t tip[128] = {};
-        if (fb_dev) {
-            BuildPinnedDeviceTooltip(tip, 128, *fb_dev);
+        if (count > 0) {
+            _snwprintf(tip, 127, L"Octans \u00b7 %u \u53f0\u65e0\u7ebf\u5916\u8bbe", static_cast<unsigned>(count));
         } else {
-            wcsncpy(tip, L"Octans - \u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 127);
+            wcsncpy(tip, L"Octans \u00b7 \u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 127);
         }
-        UpsertTraySlot(0, fb_dev ? fb_dev->id : nullptr, fb_dev, tip, style, tray_scale, icon_px, tb_dark);
+        tip[127] = L'\0';
+        UpsertTraySlot(0, nullptr, nullptr, tip, style, tray_scale, icon_px, tb_dark);
         for (size_t s = 1; s < MAX_DEVICES; ++s) {
             if (g_tray.slots[s].active) RemoveTraySlot(g_tray.slots[s]);
         }

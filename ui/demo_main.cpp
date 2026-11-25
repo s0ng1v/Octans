@@ -303,10 +303,8 @@ static bool DemoHandleKey(WPARAM vk, void *ctx) {
     if (vk == 'C') { DemoCycleCount();          return true; }
     if (vk == 'R') { ActionTriggerRefresh();    return true; }
     if (vk == 'S') {
-        TrayStyle next = (GetState().tray_style == TRAY_STYLE_RING_GLYPH)
-            ? TRAY_STYLE_ICON_NUMBER
-            : TRAY_STYLE_RING_GLYPH;
-        ActionToggleTrayStyle(next);
+        int next_i = (static_cast<int>(GetState().tray_style) + 1) % 3;
+        ActionToggleTrayStyle(static_cast<TrayStyle>(next_i));
         return true;
     }
     return false;

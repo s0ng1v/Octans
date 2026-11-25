@@ -71,6 +71,8 @@ struct PanelContext {
     float refresh_spin_deg = 0.0f;
     bool refresh_spinning = false;
     float brand_anim_t = 1.0f;
+    float scan_elapsed_sec = 0.0f;
+    float refresh_tip_t = 0.0f;
 
     /* Interaction & inertial scroll state */
     int hover_card = -1;
@@ -475,9 +477,9 @@ static void ComputeLayoutMetrics() {
         footer_top + kFooterH
     );
 
-    if (count == 0 && !(st.demo_hooks.on_action != nullptr)) {
+    if (count == 0 && !st.is_scanning && !(st.demo_hooks.on_action != nullptr)) {
         float cx = g_panel.logical_w * 0.5f;
-        float btn_w = 156.0f;
+        float btn_w = 136.0f;
         float btn_h = 34.0f;
         float btn_top = grid_top + 106.0f;
         g_panel.discover_btn_rc = MakeRect(cx - btn_w * 0.5f, btn_top, cx + btn_w * 0.5f, btn_top + btn_h);
@@ -803,6 +805,8 @@ static void RenderPanel() {
     wchar_t count_buf[48] = {};
     if (st.device_count > 0) {
         _snwprintf(count_buf, 47, L"\u00b7 %u \u53f0\u8bbe\u5907", static_cast<unsigned>(st.device_count));
+    } else if (st.is_scanning) {
+        wcscpy(count_buf, L"\u00b7 \u626b\u63cf\u4e2d");
     } else {
         wcscpy(count_buf, L"\u00b7 \u65e0\u8bbe\u5907");
     }
@@ -853,40 +857,66 @@ static void RenderPanel() {
 
     if (st.device_count == 0) {
         float cx = (g_panel.grid_hit_rc.left + g_panel.grid_hit_rc.right) * 0.5f;
-        float cy = g_panel.grid_hit_rc.top + 36.0f;
-        DrawOctansLogo(
-            g_panel.d2d_factory.Get(),
-            ctx,
-            cx, cy,
-            24.0f,
-            st.is_dark,
-            false,
-            g_panel.brand_anim_t,
-            content_alpha
-        );
+        if (st.is_scanning) {
+            /* Bespoke Octans Polar Starlight Sonar Scanning Animation */
+            float cy = g_panel.grid_hit_rc.top + 58.0f;
+            DrawCelestialScanAnim(
+                g_panel.d2d_factory.Get(),
+                ctx,
+                g_panel.round_stroke.Get(),
+                cx, cy,
+                21.0f,
+                st.is_dark,
+                g_panel.scan_elapsed_sec,
+                content_alpha
+            );
 
-        D2D1_RECT_F er = MakeRect(g_panel.grid_hit_rc.left, cy + 30.0f, g_panel.grid_hit_rc.right, cy + 54.0f);
-        set_col(pal.text_secondary);
-        ctx->DrawText(L"\u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 8, g_panel.fmt_empty.Get(), er, brush.Get());
+            int dots = static_cast<int>(g_panel.scan_elapsed_sec * 2.2f) % 4;
+            wchar_t scan_lbl[32] = L"\u6b63\u5728\u626b\u63cf\u8bbe\u5907";
+            for (int d = 0; d < dots; ++d) wcscat(scan_lbl, L".");
+            D2D1_RECT_F sr = MakeRect(g_panel.grid_hit_rc.left, cy + 56.0f, g_panel.grid_hit_rc.right, cy + 80.0f);
+            float txt_pulse = 0.72f + 0.28f * (0.5f + 0.5f * sinf(g_panel.scan_elapsed_sec * 2.6f));
+            set_col(pal.text_secondary, txt_pulse);
+            ctx->DrawText(scan_lbl, static_cast<UINT32>(wcslen(scan_lbl)), g_panel.fmt_empty.Get(), sr, brush.Get());
+        } else {
+            float cy = g_panel.grid_hit_rc.top + 36.0f;
+            DrawOctansLogo(
+                g_panel.d2d_factory.Get(),
+                ctx,
+                cx, cy,
+                24.0f,
+                st.is_dark,
+                false,
+                g_panel.brand_anim_t,
+                content_alpha
+            );
 
-        if (!(st.demo_hooks.on_action != nullptr) && g_panel.discover_btn_rc.right > g_panel.discover_btn_rc.left) {
-            bool hov = (g_panel.hover_header_btn == 3);
-            D2D1_ROUNDED_RECT drr = MakeRoundedRect(g_panel.discover_btn_rc, 17.0f, 17.0f);
-            D2D1_COLOR_F bg = pal.ring_normal;
-            if (hov) {
-                bg.r *= 0.90f;
-                bg.g *= 0.90f;
-                bg.b *= 0.90f;
+            D2D1_RECT_F er = MakeRect(g_panel.grid_hit_rc.left, cy + 30.0f, g_panel.grid_hit_rc.right, cy + 54.0f);
+            set_col(pal.text_secondary);
+            ctx->DrawText(L"\u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 8, g_panel.fmt_empty.Get(), er, brush.Get());
+
+            if (!(st.demo_hooks.on_action != nullptr) && g_panel.discover_btn_rc.right > g_panel.discover_btn_rc.left) {
+                bool hov = (g_panel.hover_header_btn == 3);
+                D2D1_ROUNDED_RECT drr = MakeRoundedRect(g_panel.discover_btn_rc, 17.0f, 17.0f);
+                D2D1_COLOR_F bg = pal.ring_normal;
+                if (hov) {
+                    bg.r *= 0.90f;
+                    bg.g *= 0.90f;
+                    bg.b *= 0.90f;
+                }
+                set_col(bg, hov ? 1.0f : 0.92f);
+                ctx->FillRoundedRectangle(drr, brush.Get());
+
+                set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.22f));
+                ctx->DrawRoundedRectangle(drr, brush.Get(), 1.0f);
+
+                set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.98f));
+                float bcy = (g_panel.discover_btn_rc.top + g_panel.discover_btn_rc.bottom) * 0.5f;
+                float icon_x = g_panel.discover_btn_rc.left + 26.0f;
+                DrawScanRadarIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), g_panel.round_stroke.Get(), icon_x, bcy, 6.2f);
+                D2D1_RECT_F tr = MakeRect(g_panel.discover_btn_rc.left + 20.0f, g_panel.discover_btn_rc.top, g_panel.discover_btn_rc.right - 6.0f, g_panel.discover_btn_rc.bottom);
+                ctx->DrawText(L"\u626b\u63cf\u8bbe\u5907", 4, g_panel.fmt_empty.Get(), tr, brush.Get());
             }
-            set_col(bg, hov ? 1.0f : 0.92f);
-            ctx->FillRoundedRectangle(drr, brush.Get());
-
-            set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.22f));
-            ctx->DrawRoundedRectangle(drr, brush.Get(), 1.0f);
-
-            set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.98f));
-            const wchar_t *btn_lbl = L"\u53d1\u73b0 / \u6dfb\u52a0\u8bbe\u5907";
-            ctx->DrawText(btn_lbl, 9, g_panel.fmt_empty.Get(), g_panel.discover_btn_rc, brush.Get());
         }
     } else {
         for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
@@ -938,11 +968,12 @@ static void RenderPanel() {
             ctx->DrawRoundedRectangle(MakeRoundedRect(cbr, kCardRadius - 0.5f, kCardRadius - 0.5f), brush.Get(), is_pinned ? 1.35f : 1.0f);
 
             /* Multi-pin badge at top-right: always visible when pinned, subtle outline on hover */
+            D2D1_COLOR_F accent = GetDeviceAccentColor(d, pal, st.tray_style);
             if (is_pinned || ht > 0.04f) {
                 float px = cr.right - 14.0f;
                 float py = cr.top + 14.0f;
                 if (is_pinned) {
-                    set_card_col(GetDeviceAccentColor(d, pal), 0.94f);
+                    set_card_col(accent, 0.94f);
                     DrawPinIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), px, py, 5.2f, true);
                 } else {
                     set_card_col(pal.text_muted, ht * 0.88f);
@@ -950,61 +981,132 @@ static void RenderPanel() {
                 }
             }
 
-            /* Circular battery ring */
+            /* Battery Visual Widget — adapts smoothly to Octans / Nebula / Pulsar */
             float cx = card_cx;
             float ring_cy = cr.top + 39.0f;
             float ring_r = 25.5f;
             float ring_stroke = 5.4f;
+            float frac = (d.battery_percent >= 0) ? ClampF(g_panel.anims[i].display_pct / 100.0f, 0.0f, 1.0f) : 0.0f;
 
-            D2D1_COLOR_F accent = GetDeviceAccentColor(d, pal);
-
-            /* Expanding ring halo pulse when clicked/pinned */
+            /* Expanding halo pulse when clicked/pinned */
             if (pulse > 0.01f) {
                 float halo_r = ring_r + (1.0f - pulse) * 9.0f;
                 set_card_col(accent, pulse * 0.42f);
                 ctx->DrawEllipse(MakeEllipse(cx, ring_cy, halo_r, halo_r), brush.Get(), 2.2f * pulse);
             }
 
-            set_card_col(pal.ring_track);
-            ctx->DrawEllipse(MakeEllipse(cx, ring_cy, ring_r, ring_r), brush.Get(), ring_stroke);
+            if (st.tray_style == TRAY_STYLE_NEBULA) {
+                /* Scheme 2 (Nebula): Liquid Silhouette Fill (no outer ring) */
+                D2D1_COLOR_F fc = accent;
+                D2D1_COLOR_F sc = GetDeviceSoftAccentColor(d, pal);
+                D2D1_COLOR_F tc = pal.kit_track;
+                D2D1_COLOR_F dc = pal.kit_detail_ink;
+                float ca = content_alpha * card_alpha;
+                fc.a *= ca; sc.a *= ca; tc.a *= ca; dc.a *= ca;
 
-            float frac = ClampF(g_panel.anims[i].display_pct / 100.0f, 0.0f, 1.0f);
-            if (d.battery_percent >= 0 && frac > 0.005f) {
-                set_card_col(accent);
-                DrawBatteryRingArc(
+                DrawLiquidSilhouetteGlyph(
+                    g_panel.d2d_factory.Get(),
+                    ctx,
+                    g_panel.round_stroke.Get(),
+                    d.kind,
+                    cx, ring_cy,
+                    54.0f,
+                    frac,
+                    fc, sc, tc, dc
+                );
+
+                if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
+                    float bx = cx + 19.0f;
+                    float by = ring_cy + 18.0f;
+                    float br = 8.2f;
+                    set_card_col(pal.bolt_badge_bg);
+                    ctx->FillEllipse(MakeEllipse(bx, by, br, br), brush.Get());
+                    set_card_col(accent);
+                    DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.4f);
+                }
+            } else if (st.tray_style == TRAY_STYLE_PULSAR) {
+                /* Scheme 3 (Pulsar): 12-Segment Precision Radial Dial + sleek outline icon */
+                ComPtr<ID2D1SolidColorBrush> act_b, trk_b;
+                D2D1_COLOR_F ac = accent;
+                D2D1_COLOR_F tc = pal.kit_track;
+                ac.a *= (content_alpha * card_alpha);
+                tc.a *= (content_alpha * card_alpha);
+                ctx->CreateSolidColorBrush(ac, act_b.Put());
+                ctx->CreateSolidColorBrush(tc, trk_b.Put());
+                if (act_b && trk_b) {
+                    DrawPrecisionDialArc(
+                        ctx,
+                        act_b.Get(),
+                        trk_b.Get(),
+                        g_panel.round_stroke.Get(),
+                        cx, ring_cy + 1.0f,
+                        19.5f,
+                        26.5f,
+                        2.85f,
+                        frac
+                    );
+                }
+
+                set_card_col(muted ? pal.glyph_muted : pal.glyph_active);
+                DrawDeviceGlyph(
                     g_panel.d2d_factory.Get(),
                     ctx,
                     brush.Get(),
-                    g_panel.round_stroke.Get(),
-                    cx, ring_cy,
-                    ring_r,
-                    ring_stroke,
-                    frac,
-                    (d.power_state == OCTANS_PWR_CHARGING)
+                    d.kind,
+                    cx, ring_cy + 1.0f,
+                    11.0f,
+                    false
                 );
-            }
 
-            /* Centered bespoke peripheral vector glyph */
-            set_card_col(muted ? pal.glyph_muted : pal.glyph_active);
-            DrawDeviceGlyph(
-                g_panel.d2d_factory.Get(),
-                ctx,
-                brush.Get(),
-                d.kind,
-                cx, ring_cy,
-                11.2f,
-                false
-            );
+                if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
+                    float bx = cx;
+                    float by = ring_cy + 23.0f;
+                    float br = 7.8f;
+                    set_card_col(pal.bolt_badge_bg);
+                    ctx->FillEllipse(MakeEllipse(bx, by, br, br), brush.Get());
+                    set_card_col(accent);
+                    DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.2f);
+                }
+            } else {
+                /* Scheme 1 (Octans, Default): Classic Circular Battery Ring + new sleek outline icon */
+                set_card_col(pal.ring_track);
+                ctx->DrawEllipse(MakeEllipse(cx, ring_cy, ring_r, ring_r), brush.Get(), ring_stroke);
 
-            /* Charging lightning bolt badge at 6 o'clock on the ring */
-            if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
-                float bx = cx;
-                float by = ring_cy + ring_r;
-                float br = 8.2f;
-                set_card_col(pal.bolt_badge_bg);
-                ctx->FillEllipse(MakeEllipse(bx, by, br, br), brush.Get());
-                set_card_col(pal.bolt_color);
-                DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.6f);
+                if (d.battery_percent >= 0 && frac > 0.005f) {
+                    set_card_col(accent);
+                    DrawBatteryRingArc(
+                        g_panel.d2d_factory.Get(),
+                        ctx,
+                        brush.Get(),
+                        g_panel.round_stroke.Get(),
+                        cx, ring_cy,
+                        ring_r,
+                        ring_stroke,
+                        frac,
+                        (d.power_state == OCTANS_PWR_CHARGING)
+                    );
+                }
+
+                set_card_col(muted ? pal.glyph_muted : pal.glyph_active);
+                DrawDeviceGlyph(
+                    g_panel.d2d_factory.Get(),
+                    ctx,
+                    brush.Get(),
+                    d.kind,
+                    cx, ring_cy,
+                    11.4f,
+                    false
+                );
+
+                if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
+                    float bx = cx;
+                    float by = ring_cy + ring_r;
+                    float br = 8.2f;
+                    set_card_col(pal.bolt_badge_bg);
+                    ctx->FillEllipse(MakeEllipse(bx, by, br, br), brush.Get());
+                    set_card_col(pal.bolt_color);
+                    DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.6f);
+                }
             }
 
             /* Percentage (20pt SemiBold Tabular Figures) */
@@ -1086,14 +1188,40 @@ static void RenderPanel() {
             ctx->DrawText(tip_text, static_cast<UINT32>(wcslen(tip_text)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         } else {
             wchar_t idle_hint[96] = {};
-            if (st.pinned_count > 0) {
-                _snwprintf(idle_hint, 95, L"\u5df2\u56fa\u5b9a %u \u53f0\u5230\u6258\u76d8 \u00b7 \u60ac\u505c\u5361\u7247\u67e5\u770b\u8be6\u60c5", static_cast<unsigned>(st.pinned_count));
+            size_t active_pins = CountActivePinnedDevices(st);
+            if (st.device_count == 0) {
+                if (st.is_scanning) {
+                    wcscpy(idle_hint, L"\u6b63\u5728\u5168\u76d8\u626b\u63cf 2.4G / \u84dd\u7259 / HID \u8bbe\u5907...");
+                } else {
+                    wcscpy(idle_hint, L"\u672a\u68c0\u6d4b\u5230\u8bbe\u5907 \u00b7 \u70b9\u51fb\u626b\u63cf\u8bbe\u5907\u91cd\u65b0\u641c\u7d22");
+                }
+            } else if (active_pins > 0) {
+                _snwprintf(idle_hint, 95, L"\u5df2\u56fa\u5b9a %u \u53f0\u5230\u4efb\u52a1\u680f \u00b7 \u60ac\u505c\u5361\u7247\u67e5\u770b\u8be6\u60c5", static_cast<unsigned>(active_pins));
             } else {
-                wcscpy(idle_hint, L"\u70b9\u51fb\u5361\u7247\u56fa\u5b9a\u5230\u6258\u76d8 \u00b7 \u60ac\u505c\u67e5\u770b\u7535\u538b\u8be6\u60c5");
+                wcscpy(idle_hint, L"\u70b9\u51fb\u8bbe\u5907\u56fa\u5b9a\u5230\u4efb\u52a1\u680f \u00b7 \u60ac\u505c\u5361\u7247\u67e5\u770b\u8be6\u60c5");
             }
             set_col(pal.text_muted, 1.0f - ClampF(g_panel.tooltip_t, 0.0f, 1.0f));
             ctx->DrawText(idle_hint, static_cast<UINT32>(wcslen(idle_hint)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         }
+    }
+
+    /* 5. Hover Micro-Tooltip Pill for Top-Right Refresh Button ("立即刷新电量") */
+    if (g_panel.refresh_tip_t > 0.02f) {
+        float rt_a = ClampF(g_panel.refresh_tip_t, 0.0f, 1.0f);
+        float tip_w = 78.0f;
+        float tip_h = 22.0f;
+        float rcx = (g_panel.refresh_btn_rc.left + g_panel.refresh_btn_rc.right) * 0.5f;
+        float tl = ClampF(rcx - tip_w * 0.5f, kPanelPadX, g_panel.logical_w - kPanelPadX - tip_w);
+        float tt = g_panel.refresh_btn_rc.bottom + 4.0f - (1.0f - rt_a) * 3.0f;
+        D2D1_RECT_F trc = MakeRect(tl, tt, tl + tip_w, tt + tip_h);
+        D2D1_ROUNDED_RECT trr = MakeRoundedRect(trc, 7.0f, 7.0f);
+
+        set_col(st.is_dark ? HexColor(0x2A2A30, 0.96f) : HexColor(0xFFFFFF, 0.96f), rt_a);
+        ctx->FillRoundedRectangle(trr, brush.Get());
+        set_col(pal.panel_outer_border, rt_a);
+        ctx->DrawRoundedRectangle(trr, brush.Get(), 0.9f);
+        set_col(pal.text_primary, rt_a * 0.92f);
+        ctx->DrawText(L"\u7acb\u5373\u5237\u65b0\u7535\u91cf", 6, g_panel.fmt_tooltip.Get(), trc, brush.Get());
     }
 
     HRESULT hr = ctx->EndDraw();
@@ -1207,7 +1335,7 @@ static void StepAnimations() {
         g_panel.scroll_y = g_panel.target_scroll_y;
     }
 
-    /* 4. Tooltip smooth fade */
+    /* 4. Tooltip smooth fade & refresh micro-tooltip fade */
     float tip_target = (g_panel.tooltip_card >= 0) ? 1.0f : 0.0f;
     if (fabsf(g_panel.tooltip_t - tip_target) > 0.01f) {
         g_panel.tooltip_t = LerpF(g_panel.tooltip_t, tip_target, 1.0f - expf(-dt * 15.0f));
@@ -1216,7 +1344,19 @@ static void StepAnimations() {
         g_panel.tooltip_t = tip_target;
     }
 
-    /* 5. Brand writing entrance + refresh icon spin */
+    float ref_tip_target = (g_panel.hover_header_btn == 1) ? 1.0f : 0.0f;
+    if (fabsf(g_panel.refresh_tip_t - ref_tip_target) > 0.01f) {
+        g_panel.refresh_tip_t = LerpF(g_panel.refresh_tip_t, ref_tip_target, 1.0f - expf(-dt * 18.0f));
+        any_active = true;
+    } else {
+        g_panel.refresh_tip_t = ref_tip_target;
+    }
+
+    /* 5. Brand writing entrance, celestial scan animation & refresh icon spin */
+    if (st.device_count == 0 && st.is_scanning) {
+        g_panel.scan_elapsed_sec += dt;
+        any_active = true;
+    }
     if (g_panel.brand_anim_t < 1.0f) {
         g_panel.brand_anim_t += dt * (1.0f / 0.72f);
         if (g_panel.brand_anim_t >= 1.0f) {
@@ -1257,7 +1397,7 @@ static void HitTestAt(float dip_x, float dip_y, int *out_card, int *out_header_b
     }
     if (PtInD2DRect(g_panel.grid_hit_rc, dip_x, dip_y)) {
         const UiState &st = GetState();
-        if (st.device_count == 0 && !(st.demo_hooks.on_action != nullptr) &&
+        if (st.device_count == 0 && !st.is_scanning && !(st.demo_hooks.on_action != nullptr) &&
             PtInD2DRect(g_panel.discover_btn_rc, dip_x, dip_y)) {
             *out_header_btn = 3;
             return;
@@ -1273,6 +1413,14 @@ static void HitTestAt(float dip_x, float dip_y, int *out_card, int *out_header_b
 
 static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
+        case WM_SETCURSOR:
+            if (LOWORD(lp) == HTCLIENT) {
+                bool interactive = (g_panel.hover_card >= 0 || g_panel.hover_header_btn != 0);
+                SetCursor(LoadCursorW(nullptr, interactive ? IDC_HAND : IDC_ARROW));
+                return TRUE;
+            }
+            break;
+
         case WM_TIMER:
             if (wp == TIMER_ANIM) {
                 StepAnimations();
@@ -1353,8 +1501,7 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
                 ClientToScreen(hwnd, &pt);
                 ActionShowContextMenu(pt.x, pt.y, -1, MENU_MODE_PANEL_GENERAL);
             } else if (btn == 3) {
-                PanelHide();
-                ActionLaunchDeviceHelper();
+                ActionTriggerFullScan();
             } else if (card >= 0) {
                 const UiState &st = GetState();
                 if (static_cast<size_t>(card) < st.device_count) {
@@ -1572,6 +1719,10 @@ void PanelOnDevicesChanged(const octans_device_view_t *devices, size_t count) {
     /* Preserve smooth animation progress by matching device IDs across snapshots */
     CardAnim old_anims[MAX_DEVICES];
     memcpy(old_anims, g_panel.anims, sizeof(old_anims));
+    size_t old_init_count = 0;
+    for (size_t j = 0; j < MAX_DEVICES; ++j) {
+        if (old_anims[j].initialized) ++old_init_count;
+    }
 
     for (size_t i = 0; i < count; ++i) {
         CardAnim next = {};
@@ -1580,12 +1731,12 @@ void PanelOnDevicesChanged(const octans_device_view_t *devices, size_t count) {
             ? ClampF(static_cast<float>(devices[i].battery_percent), 0.0f, 100.0f)
             : 0.0f;
         next.target_pct = tgt;
-        next.pct_start = tgt;
-        next.display_pct = tgt;
-        next.pct_t = 1.0f;
-        next.pct_dur = 0.42f;
+        next.pct_start = (old_init_count == 0) ? 0.0f : tgt;
+        next.display_pct = (old_init_count == 0) ? 0.0f : tgt;
+        next.pct_t = (old_init_count == 0) ? 0.0f : 1.0f;
+        next.pct_dur = (old_init_count == 0) ? 0.56f : 0.42f;
         next.hover_t = 0.0f;
-        next.enter_t = 1.0f;
+        next.enter_t = (old_init_count == 0) ? (-0.10f * static_cast<float>(i)) : 1.0f;
         next.pulse_t = 0.0f;
         next.initialized = true;
 
@@ -1631,6 +1782,24 @@ void PanelOnDevicesChanged(const octans_device_view_t *devices, size_t count) {
 void PanelOnPinnedChanged() {
     if (PanelIsVisible()) {
         RenderPanel();
+    }
+}
+
+void PanelOnStyleChanged() {
+    if (PanelIsVisible()) {
+        RenderPanel();
+    }
+}
+
+void PanelOnScanStateChanged() {
+    const UiState &st = GetState();
+    if (st.is_scanning && st.device_count == 0) {
+        g_panel.scan_elapsed_sec = 0.0f;
+        g_panel.hover_header_btn = 0;
+    }
+    ComputeLayoutMetrics();
+    if (PanelIsVisible()) {
+        StartAnimTimer();
     }
 }
 

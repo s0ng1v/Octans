@@ -1,5 +1,5 @@
 ﻿#ifndef MyAppVersion
-  #define MyAppVersion "0.3.0"
+  #define MyAppVersion "0.4.0"
 #endif
 
 [Setup]
@@ -40,13 +40,11 @@ Name: "desktopicon"; Description: "{cm:TaskDesktopIcon}"; Flags: unchecked
 
 [Files]
 Source: "..\build\Octans.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\build\octans-add.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\octans-cli.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\build\fonts\AnthropicSerifWebText.ttf"; DestDir: "{app}\fonts"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Icons]
 Name: "{autoprograms}\Octans\Octans"; Filename: "{app}\Octans.exe"
-Name: "{autoprograms}\Octans\Octans 添加设备向导"; Filename: "{app}\octans-add.exe"
 Name: "{autoprograms}\Octans\{cm:UninstallShortcut}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\Octans"; Filename: "{app}\Octans.exe"; Tasks: desktopicon
 

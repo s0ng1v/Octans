@@ -46,8 +46,9 @@ static constexpr UINT WM_APP_HIDE_PANEL       = WM_APP + 13;
 static constexpr UINT WM_APP_THEME_CHANGED    = WM_APP + 14;
 
 enum TrayStyle : uint8_t {
-    TRAY_STYLE_RING_GLYPH  = 0, /* Default: battery ring + centered vector device glyph */
-    TRAY_STYLE_ICON_NUMBER = 1  /* Split-stack: top vector device glyph + bottom colored battery number */
+    TRAY_STYLE_OCTANS = 0, /* Scheme 1 (Default): Circular battery ring + sleek outline icons */
+    TRAY_STYLE_NEBULA = 1, /* Scheme 2: Liquid silhouette fill (panel + full-bleed tray) */
+    TRAY_STYLE_PULSAR = 2  /* Scheme 3: 12-segment precision dial (panel) + icon with bottom bar (tray) */
 };
 
 enum MenuMode : uint8_t {
@@ -240,8 +241,11 @@ struct UiState {
     bool com_initialized = false;
     bool is_dark = true;
     bool modal_open = false;
+    bool is_scanning = false;
+    bool initial_scan_done = false;
+    uint64_t scan_started_ms = 0;
     uint64_t last_inactive_hide_ms = 0;
-    TrayStyle tray_style = TRAY_STYLE_RING_GLYPH;
+    TrayStyle tray_style = TRAY_STYLE_OCTANS;
     float tray_scale = kDefaultTrayScale;
 
     octans_backend_ops_t ops = {};
@@ -268,16 +272,17 @@ UiState &GetState();
 
 /* Multi-pin helpers */
 bool IsDevicePinned(const UiState &st, const char *device_id);
+size_t CountActivePinnedDevices(const UiState &st);
 
 /* Shared controller actions called by panel & tray. */
 void ActionTriggerRefresh();
+void ActionTriggerFullScan();
 void ActionTogglePinDevice(const char *device_id);
 void ActionShowContextMenu(int screen_x, int screen_y, int clicked_device_index, MenuMode mode);
 void ActionPromptRenameDevice(int device_index);
 void ActionToggleTrayStyle(TrayStyle style);
 void ActionSetTrayScale(float scale);
 void ActionToggleAutostart();
-void ActionLaunchDeviceHelper();
 void ActionRunDemoAction(int action_id);
 void ActionRequestQuit();
 void ActionSetDemoHooks(const DemoMenuHooks *hooks);

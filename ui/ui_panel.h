@@ -23,6 +23,12 @@ void PanelOnDevicesChanged(const octans_device_view_t *devices, size_t count);
 /* Update pinned device visual indicator immediately. */
 void PanelOnPinnedChanged();
 
+/* Update display style (Octans / Nebula / Pulsar) immediately. */
+void PanelOnStyleChanged();
+
+/* Update scanning animation state immediately. */
+void PanelOnScanStateChanged();
+
 /* Update light/dark theme and DWM backdrop immediately. */
 void PanelOnThemeChanged(bool is_dark);
 

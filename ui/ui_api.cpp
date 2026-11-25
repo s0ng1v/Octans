@@ -11,6 +11,10 @@ namespace octans_ui {
 
 static UiState g_state;
 static UINT g_msg_taskbar_created = 0;
+static constexpr UINT_PTR TIMER_SCAN_SETTLE = 2;
+static octans_device_view_t g_deferred_devices[MAX_DEVICES] = {};
+static size_t g_deferred_count = 0;
+static bool g_has_deferred = false;
 
 static void GetUiIniPath(wchar_t out_dir[MAX_PATH], wchar_t out_ini[MAX_PATH]) {
     wchar_t appdata[MAX_PATH] = {};
@@ -32,7 +36,9 @@ static void LoadUiConfig() {
     GetUiIniPath(dir, ini);
 
     int style_v = static_cast<int>(GetPrivateProfileIntW(L"UI", L"TrayStyle", 0, ini));
-    g_state.tray_style = (style_v == 1) ? TRAY_STYLE_ICON_NUMBER : TRAY_STYLE_RING_GLYPH;
+    if (style_v == 1) g_state.tray_style = TRAY_STYLE_NEBULA;
+    else if (style_v == 2) g_state.tray_style = TRAY_STYLE_PULSAR;
+    else g_state.tray_style = TRAY_STYLE_OCTANS;
 
     int scale_pct = static_cast<int>(GetPrivateProfileIntW(L"UI", L"TrayScalePct", 50, ini));
     g_state.tray_scale = ClampF(static_cast<float>(scale_pct) / 100.0f, 0.0f, 1.0f);
@@ -70,7 +76,7 @@ static void SaveUiConfig() {
     if (dir[0]) CreateDirectoryW(dir, nullptr);
 
     wchar_t buf[32] = {};
-    _snwprintf(buf, 31, L"%d", (g_state.tray_style == TRAY_STYLE_ICON_NUMBER) ? 1 : 0);
+    _snwprintf(buf, 31, L"%d", static_cast<int>(g_state.tray_style));
     WritePrivateProfileStringW(L"UI", L"TrayStyle", buf, ini);
 
     int pct = static_cast<int>(roundf(ClampF(g_state.tray_scale, 0.0f, 1.0f) * 100.0f));
@@ -110,6 +116,16 @@ bool IsDevicePinned(const UiState &st, const char *device_id) {
     return false;
 }
 
+size_t CountActivePinnedDevices(const UiState &st) {
+    size_t n = 0;
+    for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+        if (IsDevicePinned(st, st.devices[i].id)) {
+            ++n;
+        }
+    }
+    return n;
+}
+
 int SelectFallbackTrayDeviceIndex(const octans_device_view_t *devices, size_t count) {
     if (!devices || count == 0) return -1;
 
@@ -137,30 +153,61 @@ int SelectFallbackTrayDeviceIndex(const octans_device_view_t *devices, size_t co
     return 0;
 }
 
-static void ApplyDeviceSnapshotOnUiThread(const octans_device_view_t *devices, size_t count) {
+static void CommitDeviceSnapshotNow(const octans_device_view_t *devices, size_t count) {
     if (count > MAX_DEVICES) count = MAX_DEVICES;
     if (devices && count > 0) {
         memcpy(g_state.devices, devices, count * sizeof(octans_device_view_t));
     }
     g_state.device_count = count;
-
-    /* Default to pinning the first device so the single startup tray icon matches Card #1 1:1. */
-    if (g_state.pinned_count == 0 && g_state.device_count > 0 && g_state.devices[0].id[0] != '\0') {
-        strncpy(g_state.pinned_ids[0], g_state.devices[0].id, 63);
-        g_state.pinned_ids[0][63] = '\0';
-        g_state.pinned_count = 1;
-        SaveUiConfig();
-        if (g_state.ops.set_pinned_device) {
-            g_state.ops.set_pinned_device(g_state.backend_ctx, g_state.pinned_ids[0]);
-        }
-    }
+    g_state.is_scanning = false;
+    g_state.initial_scan_done = true;
 
     PanelOnDevicesChanged(g_state.devices, g_state.device_count);
     TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
 }
 
+static void ApplyDeviceSnapshotOnUiThread(const octans_device_view_t *devices, size_t count) {
+    if (count > MAX_DEVICES) count = MAX_DEVICES;
+
+    /* If we're actively displaying the celestial scan animation with 0 devices, let it play
+     * for at least 900ms so the transition feels smooth and deliberate instead of flashing. */
+    if (g_state.is_scanning && g_state.device_count == 0 && PanelIsVisible() && g_state.host_hwnd &&
+        g_state.demo_hooks.on_action == nullptr) {
+        uint64_t now = GetTickCount64();
+        uint64_t elapsed = (now >= g_state.scan_started_ms) ? (now - g_state.scan_started_ms) : 900ULL;
+        if (elapsed < 900ULL) {
+            if (devices && count > 0) {
+                memcpy(g_deferred_devices, devices, count * sizeof(octans_device_view_t));
+            }
+            g_deferred_count = count;
+            g_has_deferred = true;
+            SetTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE, static_cast<UINT>(900ULL - elapsed), nullptr);
+            return;
+        }
+    }
+
+    if (g_state.host_hwnd) {
+        KillTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE);
+    }
+    g_has_deferred = false;
+    CommitDeviceSnapshotNow(devices, count);
+}
+
 void ActionTriggerRefresh() {
     PanelTriggerRefreshSpin();
+    if (g_state.ops.request_refresh) {
+        g_state.ops.request_refresh(g_state.backend_ctx);
+    }
+}
+
+void ActionTriggerFullScan() {
+    g_state.is_scanning = true;
+    g_state.scan_started_ms = GetTickCount64();
+    if (g_state.device_count == 0 && !PanelIsVisible() && g_state.host_hwnd) {
+        PostMessageW(g_state.host_hwnd, WM_APP_SHOW_PANEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
+    }
+    PanelTriggerRefreshSpin();
+    PanelOnScanStateChanged();
     if (g_state.ops.request_refresh) {
         g_state.ops.request_refresh(g_state.backend_ctx);
     }
@@ -178,12 +225,7 @@ void ActionTogglePinDevice(const char *device_id) {
     }
 
     if (found >= 0) {
-        /* Always keep at least 1 pinned device so tray icon <-> pinned card stay strictly 1:1 */
-        if (g_state.pinned_count <= 1) {
-            PanelOnPinnedChanged();
-            return;
-        }
-        /* Unpin: remove from pinned_ids preserving order */
+        /* Unpin: allow unpinning down to 0 so the last taskbar slot cleanly returns to Octans Logo! */
         for (size_t i = static_cast<size_t>(found); i + 1 < g_state.pinned_count; ++i) {
             memcpy(g_state.pinned_ids[i], g_state.pinned_ids[i + 1], sizeof(g_state.pinned_ids[i]));
         }
@@ -244,6 +286,7 @@ void ActionToggleTrayStyle(TrayStyle style) {
     if (g_state.tray_style != style) {
         g_state.tray_style = style;
         SaveUiConfig();
+        PanelOnStyleChanged();
         TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
     }
 }
@@ -261,22 +304,6 @@ void ActionToggleAutostart() {
     if (!g_state.ops.set_autostart) return;
     int cur = g_state.ops.get_autostart ? g_state.ops.get_autostart(g_state.backend_ctx) : 0;
     g_state.ops.set_autostart(g_state.backend_ctx, cur ? 0 : 1);
-}
-
-void ActionLaunchDeviceHelper() {
-    wchar_t exe_dir[MAX_PATH] = {};
-    DWORD len = GetModuleFileNameW(nullptr, exe_dir, MAX_PATH);
-    if (len == 0 || len >= MAX_PATH) return;
-    wchar_t *slash = wcsrchr(exe_dir, L'\\');
-    if (slash) *slash = L'\0';
-
-    wchar_t helper[MAX_PATH] = {};
-    _snwprintf(helper, MAX_PATH - 1, L"%ls\\octans-add.exe", exe_dir);
-    helper[MAX_PATH - 1] = L'\0';
-
-    if (GetFileAttributesW(helper) != INVALID_FILE_ATTRIBUTES) {
-        ShellExecuteW(nullptr, L"open", helper, nullptr, exe_dir, SW_SHOWNORMAL);
-    }
 }
 
 void ActionRunDemoAction(int action_id) {
@@ -297,7 +324,9 @@ void ActionRequestQuit() {
 void ActionSetDemoHooks(const DemoMenuHooks *hooks) {
     if (hooks) {
         g_state.demo_hooks = *hooks;
-        g_state.tray_style = TRAY_STYLE_RING_GLYPH;
+        g_state.is_scanning = false;
+        g_state.initial_scan_done = true;
+        g_state.tray_style = TRAY_STYLE_OCTANS;
         g_state.tray_scale = kDefaultTrayScale;
         g_state.pinned_count = 0;
         for (size_t i = 0; i < MAX_DEVICES; ++i) g_state.pinned_ids[i][0] = '\0';
@@ -346,6 +375,21 @@ static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     }
 
     switch (msg) {
+        case WM_TIMER:
+            if (wp == TIMER_SCAN_SETTLE) {
+                KillTimer(hwnd, TIMER_SCAN_SETTLE);
+                if (g_has_deferred) {
+                    g_has_deferred = false;
+                    CommitDeviceSnapshotNow(g_deferred_devices, g_deferred_count);
+                } else if (g_state.is_scanning) {
+                    g_state.is_scanning = false;
+                    g_state.initial_scan_done = true;
+                    PanelOnScanStateChanged();
+                }
+                return 0;
+            }
+            break;
+
         case WM_APP_TRAY_CALLBACK: {
             UINT ev = LOWORD(lp);
             UINT clicked_uid = HIWORD(lp);
@@ -455,13 +499,17 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
     }
     st.backend_ctx = backend_ctx;
     st.is_dark = DetectSystemDarkMode();
-    st.tray_style = TRAY_STYLE_RING_GLYPH;
+    st.tray_style = TRAY_STYLE_OCTANS;
     st.tray_scale = kDefaultTrayScale;
     st.device_count = 0;
     st.pinned_count = 0;
     for (size_t i = 0; i < MAX_DEVICES; ++i) st.pinned_ids[i][0] = '\0';
     st.modal_open = false;
+    st.is_scanning = true;
+    st.initial_scan_done = false;
+    st.scan_started_ms = GetTickCount64();
     st.last_inactive_hide_ms = 0;
+    g_has_deferred = false;
     LoadUiConfig();
 
     g_msg_taskbar_created = RegisterWindowMessageW(L"TaskbarCreated");

@@ -61,6 +61,56 @@ void DrawRefreshIcon(
     float rotation_deg
 );
 
+/* Draw 12-segment precision radial dial (Scheme 3: Pulsar, -215 deg to +35 deg). */
+void DrawPrecisionDialArc(
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *active_brush,
+    ID2D1Brush *track_brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float inner_r,
+    float outer_r,
+    float stroke_width,
+    float fraction
+);
+
+/* Draw Scheme 2 (Nebula) liquid-filled solid device silhouette (48x48 viewBox scaled to `size` diameter). */
+void DrawLiquidSilhouetteGlyph(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    octans_device_kind_t kind,
+    float cx, float cy,
+    float size,
+    float fraction,
+    const D2D1_COLOR_F &fill_col,
+    const D2D1_COLOR_F &soft_col,
+    const D2D1_COLOR_F &track_col,
+    const D2D1_COLOR_F &detail_col
+);
+
+/* Draw minimalist radar/signal scan icon (used for "扫描设备"). */
+void DrawScanRadarIcon(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float radius
+);
+
+/* Draw bespoke Octans celestial starlight scanning animation (non-cliche polar sonar). */
+void DrawCelestialScanAnim(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float base_radius,
+    bool is_dark,
+    float elapsed_sec,
+    float alpha
+);
+
 /* Draw three horizontal ellipsis dots ("..."). */
 void DrawMoreIcon(
     ID2D1RenderTarget *rt,

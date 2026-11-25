@@ -12,11 +12,12 @@ static constexpr UINT_PTR TIMER_MENU_ANIM = 1;
 enum HitZone : int {
     HIT_NONE = 0,
     HIT_REFRESH,
-    HIT_ADD_DEVICE,
+    HIT_SCAN_DEVICES,
     HIT_PIN_DEVICE,
     HIT_RENAME_DEVICE,
-    HIT_SEG_RING,
-    HIT_SEG_NUMBER,
+    HIT_SEG_OCTANS,
+    HIT_SEG_NEBULA,
+    HIT_SEG_PULSAR,
     HIT_SLIDER,
     HIT_AUTOSTART,
     HIT_DEMO_DRAIN,
@@ -31,12 +32,12 @@ struct MenuState {
     HWND owner = nullptr;
     UINT dpi = 96;
     MenuMode mode = MENU_MODE_TRAY;
-    float logical_w = 246.0f;
-    float logical_h = 300.0f;
+    float logical_w = 256.0f;
+    float logical_h = 320.0f;
     int device_index = -1;
 
     bool has_refresh = false;
-    bool has_add_device = false;
+    bool has_scan_devices = false;
     bool has_device_pin = false;
     bool has_rename = false;
     bool has_general = false;
@@ -48,26 +49,26 @@ struct MenuState {
     bool dragging_slider = false;
     bool mouse_tracked = false;
     int hover_zone = HIT_NONE;
-    int pending_post_action = 0; /* 1=rename, 2=quit, 3=add_device */
+    int pending_post_action = 0; /* 1=rename, 2=quit, 3=full_scan */
 
-    /* Smooth animations (segmented pill slide + autostart pill switch) */
+    /* Smooth animations (3-way segmented pill slide + autostart pill switch) */
     bool anim_active = false;
     LARGE_INTEGER qpc_freq = {};
     LARGE_INTEGER qpc_last = {};
-    float seg_pos = 0.0f;         /* 0.0 = Ring, 1.0 = Icon+Number */
+    float seg_pos = 0.0f;         /* 0.0 = Octans, 1.0 = Nebula, 2.0 = Pulsar */
     float seg_target = 0.0f;
     float auto_pos = 0.0f;        /* 0.0 = Off, 1.0 = On */
     float auto_target = 0.0f;
 
     /* Layout rects (DIPs) */
     D2D1_RECT_F rc_refresh = {};
-    D2D1_RECT_F rc_add_device = {};
+    D2D1_RECT_F rc_scan_devices = {};
     D2D1_RECT_F rc_pin = {};
     D2D1_RECT_F rc_rename = {};
     float div1_y = 0.0f;
+    float style_label_y = 0.0f;
     D2D1_RECT_F rc_seg_wrap = {};
-    D2D1_RECT_F rc_seg_ring = {};
-    D2D1_RECT_F rc_seg_num = {};
+    D2D1_RECT_F rc_seg[3] = {};
     D2D1_RECT_F rc_slider_hit = {};
     D2D1_RECT_F rc_slider_track = {};
     float slider_label_y = 0.0f;
@@ -109,30 +110,30 @@ static void LayoutMenu(MenuState &m) {
     bool valid_dev = (m.device_index >= 0 && static_cast<size_t>(m.device_index) < st.device_count);
 
     if (m.mode == MENU_MODE_PANEL_DEVICE) {
-        m.logical_w      = 196.0f;
-        m.has_refresh    = false;
-        m.has_add_device = false;
-        m.has_device_pin = valid_dev;
-        m.has_rename     = valid_dev;
-        m.has_general    = false;
-        m.has_demo       = false;
+        m.logical_w        = 200.0f;
+        m.has_refresh      = false;
+        m.has_scan_devices = false;
+        m.has_device_pin   = valid_dev;
+        m.has_rename       = valid_dev;
+        m.has_general      = false;
+        m.has_demo         = false;
     } else if (m.mode == MENU_MODE_PANEL_GENERAL) {
-        m.logical_w      = 246.0f;
-        m.has_refresh    = true;
-        m.has_add_device = (st.demo_hooks.on_action == nullptr);
-        m.has_device_pin = false;
-        m.has_rename     = false;
-        m.has_general    = true;
-        m.has_demo       = (st.demo_hooks.on_action != nullptr);
+        m.logical_w        = 256.0f;
+        m.has_refresh      = true;
+        m.has_scan_devices = (st.demo_hooks.on_action == nullptr);
+        m.has_device_pin   = false;
+        m.has_rename       = false;
+        m.has_general      = true;
+        m.has_demo         = (st.demo_hooks.on_action != nullptr);
     } else {
         /* MENU_MODE_TRAY */
-        m.logical_w      = 246.0f;
-        m.has_refresh    = true;
-        m.has_add_device = (st.demo_hooks.on_action == nullptr);
-        m.has_device_pin = valid_dev;
-        m.has_rename     = (st.device_count > 0);
-        m.has_general    = true;
-        m.has_demo       = (st.demo_hooks.on_action != nullptr);
+        m.logical_w        = 256.0f;
+        m.has_refresh      = true;
+        m.has_scan_devices = (st.demo_hooks.on_action == nullptr);
+        m.has_device_pin   = valid_dev;
+        m.has_rename       = (st.device_count > 0);
+        m.has_general      = true;
+        m.has_demo         = (st.demo_hooks.on_action != nullptr);
     }
 
     float pad = 8.0f;
@@ -140,7 +141,6 @@ static void LayoutMenu(MenuState &m) {
     float y = 8.0f;
     float row_h = 32.0f;
 
-    /* Top action rows */
     if (m.has_refresh) {
         m.rc_refresh = MakeRect(pad, y, w - pad, y + row_h);
         y += row_h + 2.0f;
@@ -148,11 +148,11 @@ static void LayoutMenu(MenuState &m) {
         m.rc_refresh = {};
     }
 
-    if (m.has_add_device) {
-        m.rc_add_device = MakeRect(pad, y, w - pad, y + row_h);
+    if (m.has_scan_devices) {
+        m.rc_scan_devices = MakeRect(pad, y, w - pad, y + row_h);
         y += row_h + 2.0f;
     } else {
-        m.rc_add_device = {};
+        m.rc_scan_devices = {};
     }
 
     if (m.has_device_pin) {
@@ -172,8 +172,7 @@ static void LayoutMenu(MenuState &m) {
     if (!m.has_general) {
         m.div1_y = 0.0f;
         m.rc_seg_wrap = {};
-        m.rc_seg_ring = {};
-        m.rc_seg_num = {};
+        for (int i = 0; i < 3; ++i) m.rc_seg[i] = {};
         m.rc_slider_hit = {};
         m.rc_slider_track = {};
         m.div2_y = 0.0f;
@@ -188,15 +187,25 @@ static void LayoutMenu(MenuState &m) {
 
     y += 4.0f;
     m.div1_y = y;
-    y += 9.0f;
+    y += 8.0f;
 
-    /* Segmented Tray Style Control */
+    /* Display Style Section Header + 3-Way Cosmic Segmented Control (Octans | Nebula | Pulsar) */
+    m.style_label_y = y;
+    y += 19.0f;
     float seg_h = 30.0f;
     m.rc_seg_wrap = MakeRect(pad + 4.0f, y, w - pad - 4.0f, y + seg_h);
-    float seg_mid = (m.rc_seg_wrap.left + m.rc_seg_wrap.right) * 0.5f;
-    m.rc_seg_ring = MakeRect(m.rc_seg_wrap.left + 2.5f, m.rc_seg_wrap.top + 2.5f, seg_mid - 1.0f, m.rc_seg_wrap.bottom - 2.5f);
-    m.rc_seg_num  = MakeRect(seg_mid + 1.0f, m.rc_seg_wrap.top + 2.5f, m.rc_seg_wrap.right - 2.5f, m.rc_seg_wrap.bottom - 2.5f);
-    y += seg_h + 10.0f;
+    float inner_l = m.rc_seg_wrap.left + 2.5f;
+    float inner_r = m.rc_seg_wrap.right - 2.5f;
+    float seg_w = (inner_r - inner_l) / 3.0f;
+    for (int i = 0; i < 3; ++i) {
+        m.rc_seg[i] = MakeRect(
+            inner_l + seg_w * static_cast<float>(i),
+            m.rc_seg_wrap.top + 2.5f,
+            inner_l + seg_w * static_cast<float>(i + 1),
+            m.rc_seg_wrap.bottom - 2.5f
+        );
+    }
+    y += seg_h + 11.0f;
 
     /* Live Tray Size Slider Section */
     m.slider_label_y = y;
@@ -275,7 +284,7 @@ static bool EnsureMenuResources(MenuState &m) {
         };
         mk(m.fmt_item,  DWRITE_FONT_WEIGHT_REGULAR,   12.5f, DWRITE_TEXT_ALIGNMENT_LEADING);
         mk(m.fmt_small, DWRITE_FONT_WEIGHT_MEDIUM,    11.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
-        mk(m.fmt_seg,   DWRITE_FONT_WEIGHT_SEMI_BOLD, 11.5f, DWRITE_TEXT_ALIGNMENT_CENTER);
+        mk(m.fmt_seg,   DWRITE_FONT_WEIGHT_SEMI_BOLD, 11.2f, DWRITE_TEXT_ALIGNMENT_CENTER);
         mk(m.fmt_right, DWRITE_FONT_WEIGHT_SEMI_BOLD, 11.0f, DWRITE_TEXT_ALIGNMENT_TRAILING);
     }
     if (!m.rt) {
@@ -339,7 +348,6 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
         ComPtr<ID2D1SolidColorBrush> b;
         rt->CreateSolidColorBrush(pal.text_primary, b.Put());
         if (b) {
-            /* Subtle outer hairline */
             b->SetColor(pal.panel_outer_border);
             rt->DrawRoundedRectangle(
                 MakeRoundedRect(MakeRect(0.5f, 0.5f, m.logical_w - 0.5f, m.logical_h - 0.5f), 7.5f, 7.5f),
@@ -369,17 +377,16 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                              MakeRect(m.rc_refresh.left + 32.0f, m.rc_refresh.top, m.rc_refresh.right - 8.0f, m.rc_refresh.bottom), b.Get());
             }
 
-            /* 1b. Add / Discover Device row */
-            if (m.has_add_device) {
-                draw_row_bg(m.rc_add_device, HIT_ADD_DEVICE);
-                float pcx = m.rc_add_device.left + 16.0f;
-                float pcy = (m.rc_add_device.top + m.rc_add_device.bottom) * 0.5f;
+            /* 1b. Scan Devices row (replaces old Add/Discover helper) */
+            if (m.has_scan_devices) {
+                draw_row_bg(m.rc_scan_devices, HIT_SCAN_DEVICES);
+                float pcx = m.rc_scan_devices.left + 16.0f;
+                float pcy = (m.rc_scan_devices.top + m.rc_scan_devices.bottom) * 0.5f;
                 b->SetColor(pal.text_secondary);
-                rt->DrawLine(MakePt(pcx - 4.6f, pcy), MakePt(pcx + 4.6f, pcy), b.Get(), 1.5f, m.round_stroke.Get());
-                rt->DrawLine(MakePt(pcx, pcy - 4.6f), MakePt(pcx, pcy + 4.6f), b.Get(), 1.5f, m.round_stroke.Get());
+                DrawScanRadarIcon(m.d2d_factory.Get(), rt, b.Get(), m.round_stroke.Get(), pcx, pcy, 5.8f);
                 b->SetColor(pal.text_primary);
-                rt->DrawText(L"\u6dfb\u52a0 / \u53d1\u73b0\u8bbe\u5907...", 12, m.fmt_item.Get(),
-                             MakeRect(m.rc_add_device.left + 32.0f, m.rc_add_device.top, m.rc_add_device.right - 8.0f, m.rc_add_device.bottom), b.Get());
+                rt->DrawText(L"\u626b\u63cf\u8bbe\u5907", 4, m.fmt_item.Get(),
+                             MakeRect(m.rc_scan_devices.left + 32.0f, m.rc_scan_devices.top, m.rc_scan_devices.right - 8.0f, m.rc_scan_devices.bottom), b.Get());
             }
 
             /* 2. Device Pin/Unpin row */
@@ -391,7 +398,7 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                 DrawPinIcon(m.d2d_factory.Get(), rt, b.Get(),
                             m.rc_pin.left + 16.0f, (m.rc_pin.top + m.rc_pin.bottom) * 0.5f, 5.0f, pinned);
                 b->SetColor(pal.text_primary);
-                const wchar_t *txt = pinned ? L"\u4ece\u6258\u76d8\u53d6\u6d88\u56fa\u5b9a" : L"\u56fa\u5b9a\u5230\u4efb\u52a1\u680f\u6258\u76d8";
+                const wchar_t *txt = pinned ? L"\u4ece\u4efb\u52a1\u680f\u53d6\u6d88\u56fa\u5b9a" : L"\u56fa\u5b9a\u5230\u4efb\u52a1\u680f";
                 rt->DrawText(txt, static_cast<UINT32>(wcslen(txt)), m.fmt_item.Get(),
                              MakeRect(m.rc_pin.left + 32.0f, m.rc_pin.top, m.rc_pin.right - 8.0f, m.rc_pin.bottom), b.Get());
             }
@@ -417,18 +424,19 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
             if (m.has_general) {
                 draw_div(m.div1_y);
 
-                /* 4. Animated Apple Segmented Control: Ring <-> Icon+Number */
+                /* 4. Display Style Label + 3-Way Cosmic Segmented Control: Octans | Nebula | Pulsar */
+                b->SetColor(pal.text_secondary);
+                rt->DrawText(L"\u663e\u793a\u6837\u5f0f", 4, m.fmt_small.Get(),
+                             MakeRect(14.0f, m.style_label_y, m.logical_w - 14.0f, m.style_label_y + 18.0f), b.Get());
+
                 b->SetColor(dk ? MakeColor(1, 1, 1, 0.08f) : MakeColor(0, 0, 0, 0.06f));
                 rt->FillRoundedRectangle(MakeRoundedRect(m.rc_seg_wrap, 9.0f, 9.0f), b.Get());
 
-                float sp = ClampF(m.seg_pos, 0.0f, 1.0f);
-                D2D1_RECT_F pill_rc = MakeRect(
-                    LerpF(m.rc_seg_ring.left,   m.rc_seg_num.left,   sp),
-                    m.rc_seg_ring.top,
-                    LerpF(m.rc_seg_ring.right,  m.rc_seg_num.right,  sp),
-                    m.rc_seg_ring.bottom
-                );
-                /* Subtle drop shadow under sliding pill */
+                float sp = ClampF(m.seg_pos, 0.0f, 2.0f);
+                float seg_w = m.rc_seg[0].right - m.rc_seg[0].left;
+                float pill_l = m.rc_seg[0].left + sp * seg_w;
+                D2D1_RECT_F pill_rc = MakeRect(pill_l, m.rc_seg[0].top, pill_l + seg_w, m.rc_seg[0].bottom);
+
                 b->SetColor(MakeColor(0, 0, 0, dk ? 0.28f : 0.07f));
                 rt->FillRoundedRectangle(
                     MakeRoundedRect(MakeRect(pill_rc.left, pill_rc.top + 0.8f, pill_rc.right, pill_rc.bottom + 0.8f), 7.0f, 7.0f),
@@ -439,10 +447,13 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                 b->SetColor(dk ? MakeColor(1, 1, 1, 0.12f) : MakeColor(0, 0, 0, 0.07f));
                 rt->DrawRoundedRectangle(MakeRoundedRect(pill_rc, 7.0f, 7.0f), b.Get(), 0.8f);
 
-                b->SetColor(LerpColor(pal.text_primary, pal.text_secondary, sp));
-                rt->DrawText(L"\u5706\u73af\u56fe\u6807", 4, m.fmt_seg.Get(), m.rc_seg_ring, b.Get());
-                b->SetColor(LerpColor(pal.text_secondary, pal.text_primary, sp));
-                rt->DrawText(L"\u56fe\u6807 + \u6570\u5b57", 7, m.fmt_seg.Get(), m.rc_seg_num, b.Get());
+                static const wchar_t *kStyleNames[3] = { L"Octans", L"Nebula", L"Pulsar" };
+                for (int i = 0; i < 3; ++i) {
+                    float dist = fabsf(sp - static_cast<float>(i));
+                    float active_w = ClampF(1.0f - dist, 0.0f, 1.0f);
+                    b->SetColor(LerpColor(pal.text_secondary, pal.text_primary, active_w));
+                    rt->DrawText(kStyleNames[i], static_cast<UINT32>(wcslen(kStyleNames[i])), m.fmt_seg.Get(), m.rc_seg[i], b.Get());
+                }
 
                 /* 5. Live Continuous Tray Size Slider (50% = Default center tick) */
                 b->SetColor(pal.text_secondary);
@@ -470,7 +481,6 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                     rt->FillRoundedRectangle(MakeRoundedRect(fill_rc, 2.2f, 2.2f), b.Get());
                 }
 
-                /* 5 subtle tick dots below track (0, 25, 50 [Default green], 75, 100%) */
                 for (int t = 0; t <= 4; ++t) {
                     float tx = LerpF(tl, tr, static_cast<float>(t) * 0.25f);
                     bool is_def = (t == 2);
@@ -614,12 +624,13 @@ static void StepMenuAnim(MenuState &m) {
 
 static int HitTestMenu(const MenuState &m, float dx, float dy) {
     if (m.has_refresh && PtInR(m.rc_refresh, dx, dy)) return HIT_REFRESH;
-    if (m.has_add_device && PtInR(m.rc_add_device, dx, dy)) return HIT_ADD_DEVICE;
+    if (m.has_scan_devices && PtInR(m.rc_scan_devices, dx, dy)) return HIT_SCAN_DEVICES;
     if (m.has_device_pin && PtInR(m.rc_pin, dx, dy)) return HIT_PIN_DEVICE;
     if (m.has_rename && PtInR(m.rc_rename, dx, dy)) return HIT_RENAME_DEVICE;
     if (m.has_general) {
-        if (PtInR(m.rc_seg_ring, dx, dy)) return HIT_SEG_RING;
-        if (PtInR(m.rc_seg_num, dx, dy)) return HIT_SEG_NUMBER;
+        if (PtInR(m.rc_seg[0], dx, dy)) return HIT_SEG_OCTANS;
+        if (PtInR(m.rc_seg[1], dx, dy)) return HIT_SEG_NEBULA;
+        if (PtInR(m.rc_seg[2], dx, dy)) return HIT_SEG_PULSAR;
         if (PtInR(m.rc_slider_hit, dx, dy)) return HIT_SLIDER;
         if (PtInR(m.rc_autostart, dx, dy)) return HIT_AUTOSTART;
         if (m.has_demo) {
@@ -661,6 +672,14 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
             return DefWindowProcW(hwnd, msg, wp, lp);
         }
+
+        case WM_SETCURSOR:
+            if (m && LOWORD(lp) == HTCLIENT) {
+                bool interactive = (m->hover_zone != HIT_NONE || m->dragging_slider);
+                SetCursor(LoadCursorW(nullptr, interactive ? IDC_HAND : IDC_ARROW));
+                return TRUE;
+            }
+            break;
 
         case WM_TIMER:
             if (m && wp == TIMER_MENU_ANIM) {
@@ -737,7 +756,7 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                         ActionTriggerRefresh();
                         m->done = true;
                         break;
-                    case HIT_ADD_DEVICE:
+                    case HIT_SCAN_DEVICES:
                         m->pending_post_action = 3;
                         m->done = true;
                         break;
@@ -757,14 +776,19 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                         m->pending_post_action = 1;
                         m->done = true;
                         break;
-                    case HIT_SEG_RING:
-                        ActionToggleTrayStyle(TRAY_STYLE_RING_GLYPH);
+                    case HIT_SEG_OCTANS:
+                        ActionToggleTrayStyle(TRAY_STYLE_OCTANS);
                         m->seg_target = 0.0f;
                         StartMenuAnim(*m);
                         break;
-                    case HIT_SEG_NUMBER:
-                        ActionToggleTrayStyle(TRAY_STYLE_ICON_NUMBER);
+                    case HIT_SEG_NEBULA:
+                        ActionToggleTrayStyle(TRAY_STYLE_NEBULA);
                         m->seg_target = 1.0f;
+                        StartMenuAnim(*m);
+                        break;
+                    case HIT_SEG_PULSAR:
+                        ActionToggleTrayStyle(TRAY_STYLE_PULSAR);
+                        m->seg_target = 2.0f;
                         StartMenuAnim(*m);
                         break;
                     case HIT_AUTOSTART: {
@@ -875,7 +899,7 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     m.device_index = device_index;
     m.dpi = GetWindowDpiSafe(owner);
     QueryPerformanceFrequency(&m.qpc_freq);
-    m.seg_pos = m.seg_target = (st.tray_style == TRAY_STYLE_ICON_NUMBER) ? 1.0f : 0.0f;
+    m.seg_pos = m.seg_target = static_cast<float>(static_cast<int>(st.tray_style));
     bool auto_on = (st.ops.get_autostart && st.ops.get_autostart(st.backend_ctx) != 0);
     m.auto_pos = m.auto_target = auto_on ? 1.0f : 0.0f;
     LayoutMenu(m);
@@ -965,7 +989,7 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     } else if (post_action == 2) {
         ActionRequestQuit();
     } else if (post_action == 3) {
-        ActionLaunchDeviceHelper();
+        ActionTriggerFullScan();
     }
 }
 

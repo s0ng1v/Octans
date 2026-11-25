@@ -76,9 +76,9 @@ $cliArgs = @("-std=c11", "-Os", "-Wall", "-Wextra", "-Werror", "-ffunction-secti
 & clang @cliArgs
 if ($LASTEXITCODE -ne 0) { throw "Failed to build build\octans-cli.exe." }
 
-Write-Host "[3/8] Building & running build\test_engine.exe..."
+Write-Host "[3/7] Building & running build\test_engine.exe..."
 $testArgs = @("-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Iinclude") +
-            $coreSources + $engineSources + @("tools\usb_etw_learn.c", "tests\test_engine.c", "-o", "build\test_engine.exe", "-ltdh") + $backendLibs
+            $coreSources + $engineSources + @("tests\test_engine.c", "-o", "build\test_engine.exe") + $backendLibs
 & clang @testArgs
 if ($LASTEXITCODE -ne 0) { throw "Failed to build build\test_engine.exe." }
 
@@ -141,32 +141,6 @@ $allLibs = ($backendLibs + $uiLibs) | Select-Object -Unique
 & clang++ @linkFlags @appObjs $libOut @allLibs -o "build\Octans.exe"
 if ($LASTEXITCODE -ne 0) { throw "Link failed for build\Octans.exe" }
 
-Write-Host "[6/8] Building build\octans-add.exe (Unified D2D 3-Step ETW Learning Wizard)..."
-$etwObj = "build\obj_app\usb_etw_learn.o"
-& clang @cFlags -c "tools\usb_etw_learn.c" -o $etwObj
-if ($LASTEXITCODE -ne 0) { throw "Compilation failed for tools\usb_etw_learn.c" }
-
-$addObj = "build\obj_app\add_device_main.o"
-& clang++ @uiFlags -Werror -c "tools\add_device_main.cpp" -o $addObj
-if ($LASTEXITCODE -ne 0) { throw "Compilation failed for tools\add_device_main.cpp" }
-
-$helperObjs = @($resObj)
-foreach ($src in ($coreSources + $engineSources)) {
-    $name = [System.IO.Path]::GetFileNameWithoutExtension($src)
-    $helperObjs += "build\obj_app\$name.o"
-}
-$helperObjs += @(
-    "build\obj_ui\ui_theme.o",
-    "build\obj_ui\ui_fonts.o",
-    "build\obj_ui\ui_brand.o",
-    "build\obj_ui\ui_glyphs.o",
-    $etwObj,
-    $addObj
-)
-$helperLibs = ($backendLibs + $uiLibs + @("-ltdh")) | Select-Object -Unique
-& clang++ @linkFlags @helperObjs @helperLibs -o "build\octans-add.exe"
-if ($LASTEXITCODE -ne 0) { throw "Link failed for build\octans-add.exe" }
-
 # Stage private Anthropic Serif font beside executable
 $srcFont = "ui\fonts\AnthropicSerifWebText.ttf"
 if (Test-Path $srcFont) {
@@ -174,33 +148,25 @@ if (Test-Path $srcFont) {
     Copy-Item -Force $srcFont "build\fonts\AnthropicSerifWebText.ttf"
 }
 
-Write-Host "`n[7/8] Checking binary footprints..."
+Write-Host "`n[6/7] Checking binary footprints..."
 $cliItem = Get-Item "build\octans-cli.exe"
-$addItem = Get-Item "build\octans-add.exe"
 $appItem = Get-Item "build\Octans.exe"
 Write-Host ("  build\octans-cli.exe : {0} bytes ({1} KB)" -f $cliItem.Length, [math]::Round($cliItem.Length / 1024.0, 1))
-Write-Host ("  build\octans-add.exe : {0} bytes ({1} KB)" -f $addItem.Length, [math]::Round($addItem.Length / 1024.0, 1))
 Write-Host ("  build\Octans.exe     : {0} bytes ({1} KB)" -f $appItem.Length, [math]::Round($appItem.Length / 1024.0, 1))
 if ($cliItem.Length -gt 307200) {
     throw "octans-cli.exe size exceeded 300 KB budget!"
-}
-if ($addItem.Length -gt 389120) {
-    throw "octans-add.exe size exceeded 380 KB budget!"
 }
 if ($appItem.Length -gt 358400) {
     throw "Octans.exe size exceeded 350 KB budget!"
 }
 
-Write-Host "[8/8] Checking DLL imports (offline & zero non-system dependencies)..."
-foreach ($bin in @("build\octans-cli.exe", "build\octans-add.exe", "build\Octans.exe")) {
+Write-Host "[7/7] Checking DLL imports (offline & zero non-system dependencies)..."
+foreach ($bin in @("build\octans-cli.exe", "build\Octans.exe")) {
     Write-Host "  $bin imports:"
     $imports = & llvm-objdump -p $bin | Select-String "DLL Name:"
     $imports | ForEach-Object { Write-Host ("    " + $_.Line.Trim()) }
-    if ($imports -match "ws2_32|winhttp|wininet|libstdc\+\+|libgcc_s") {
-        throw "Forbidden network or C++ runtime DLL imported by $bin!"
-    }
-    if ($bin -eq "build\Octans.exe" -and ($imports -match "tdh\.dll")) {
-        throw "Resident Octans.exe must not import tdh.dll (keep ETW isolated in octans-add.exe)!"
+    if ($imports -match "ws2_32|winhttp|wininet|libstdc\+\+|libgcc_s|tdh\.dll") {
+        throw "Forbidden network, ETW, or C++ runtime DLL imported by $bin!"
     }
 }
 

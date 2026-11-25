@@ -32,14 +32,24 @@ void octans_hidpp_build_short(uint8_t slot, uint8_t sub_id, uint8_t reg, uint8_t
 int octans_hidpp_parse_error(const uint8_t *frame, size_t len, uint8_t *out_err);
 
 /** Pure parsers for HID++ 2.0 battery feature reply params (bytes after [0..3] header). */
+int octans_hidpp_parse_unified_battery_ex(const uint8_t *params,
+                                          size_t len,
+                                          int soc_supported,
+                                          octans_proto_reading_t *out);
 int octans_hidpp_parse_unified_battery(const uint8_t *params, size_t len, octans_proto_reading_t *out);
 int octans_hidpp_parse_battery_status(const uint8_t *params, size_t len, octans_proto_reading_t *out);
 int octans_hidpp_parse_battery_voltage(const uint8_t *params, size_t len, octans_proto_reading_t *out);
 int octans_hidpp_parse_adc_battery(const uint8_t *params, size_t len, octans_proto_reading_t *out);
+int octans_hidpp_parse_centpp_soc(const uint8_t *params, size_t len, octans_proto_reading_t *out);
 
-/** Pure parsers for HID++ 1.0 battery registers 0x0D and 0x07 (params after header). */
+/** Pure parsers for HID++ 1.0 battery registers 0x0D, 0x07, and 0x0F (params after header). */
 int octans_hidpp_parse_v10_reg0d(const uint8_t *params, size_t len, octans_proto_reading_t *out);
 int octans_hidpp_parse_v10_reg07(const uint8_t *params, size_t len, octans_proto_reading_t *out);
+int octans_hidpp_parse_v10_reg0f(const uint8_t *params, size_t len, octans_proto_reading_t *out);
+
+/** Classify Logitech modelId prefix (MOUSE./KEYBOARD./HEADSET./GAMEPAD./WHEEL.).
+ *  Returns 1 if kind matched, -1 if non-battery (GAMEPAD./WHEEL.), 0 if unrecognized. */
+int octans_hidpp_classify_model_id(const char *model_id, octans_device_kind_t *out_kind);
 
 /** Pure parser for G535/G533 long headset charge register reply (10 slot 05 reg mv_hi mv_lo state). */
 int octans_hidpp_parse_headset_reg(const uint8_t *frame, size_t len, octans_proto_reading_t *out);

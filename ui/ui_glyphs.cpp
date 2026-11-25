@@ -1,4 +1,5 @@
 #include "ui_glyphs.h"
+#include "ui_brand.h"
 
 namespace octans_ui {
 
@@ -49,20 +50,11 @@ void DrawBatteryRingArc(
         return;
     }
 
-    float max_sweep = leave_bottom_notch ? 330.0f : 360.0f;
-    float start_deg = leave_bottom_notch ? -90.0f : -90.0f;
-    float sweep_deg = fraction * max_sweep;
-
-    /* When charging with a bottom notch, center the 30 deg gap around 6 o'clock (+90 deg).
-     * That means full arc sweeps from +105 deg clockwise to +75 deg (330 deg), OR
-     * for intuitive clockwise battery fill from 12 o'clock (-90 deg), we draw full 360 deg
-     * and only punch the badge cleanly on top. Keeping clockwise from -90 deg looks most natural! */
-    if (leave_bottom_notch) {
-        sweep_deg = fraction * 360.0f;
-        if (sweep_deg >= 359.5f) {
-            rt->DrawEllipse(MakeEllipse(cx, cy, radius, radius), brush, stroke_width);
-            return;
-        }
+    float start_deg = -90.0f;
+    float sweep_deg = fraction * 360.0f;
+    if (sweep_deg >= 359.5f) {
+        rt->DrawEllipse(MakeEllipse(cx, cy, radius, radius), brush, stroke_width);
+        return;
     }
 
     ComPtr<ID2D1PathGeometry> geo;
@@ -71,7 +63,6 @@ void DrawBatteryRingArc(
     if (FAILED(geo->Open(sink.Put()))) return;
 
     if (sweep_deg >= 359.5f) {
-        /* Split near-full arc to avoid endpoint collapse */
         AddArcSegmentToSink(sink.Get(), cx, cy, radius, start_deg, 180.0f);
         AddArcSegmentToSink(sink.Get(), cx, cy, radius, start_deg + 180.0f, sweep_deg - 180.0f);
     } else {
@@ -82,225 +73,227 @@ void DrawBatteryRingArc(
     rt->DrawGeometry(geo.Get(), brush, stroke_width, round_cap_style);
 }
 
-static void DrawMouseGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    if (compact) {
-        /* Panel-matching crisp white wireless mouse (clean white interior + crisp contour/wheel).
-         * Notice brush carries the contour/ink color; on light taskbar we fill bright white inside
-         * so it looks white & panel-identical rather than a dark black blob. */
-        float w = s * 1.32f;
-        float h = s * 1.74f;
-        float stroke = s * 0.165f;
-        if (stroke < 1.35f) stroke = 1.35f;
+/* ============================================================================
+ * Sleek 24x24 Outline Peripheral Icons (from Octans Battery UI Kit)
+ * Mapped cleanly around (cx, cy) with scale = half_size / 10.5f
+ * ============================================================================ */
 
-        D2D1_RECT_F body = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
-        D2D1_ROUNDED_RECT rr = MakeRoundedRect(body, w * 0.48f, w * 0.48f);
+static void CreateRoundStroke(ID2D1Factory *factory, ComPtr<ID2D1StrokeStyle> &out) {
+    if (!factory) return;
+    D2D1_STROKE_STYLE_PROPERTIES sp = {};
+    sp.startCap = D2D1_CAP_STYLE_ROUND;
+    sp.endCap = D2D1_CAP_STYLE_ROUND;
+    sp.dashCap = D2D1_CAP_STYLE_ROUND;
+    sp.lineJoin = D2D1_LINE_JOIN_ROUND;
+    sp.miterLimit = 10.0f;
+    sp.dashStyle = D2D1_DASH_STYLE_SOLID;
+    factory->CreateStrokeStyle(sp, nullptr, 0, out.Put());
+}
 
-        ComPtr<ID2D1SolidColorBrush> solid_src;
-        D2D1_COLOR_F ink = MakeColor(1.0f, 1.0f, 1.0f, 1.0f);
-        if (SUCCEEDED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), solid_src.PutVoid()))) {
-            ink = solid_src->GetColor();
-        }
-        bool is_dark_contour = (ink.r + ink.g + ink.b) < 1.5f;
-
-        if (is_dark_contour) {
-            /* Light taskbar: bright pure-white mouse body + crisp dark panel-style outline & scroll wheel */
-            ComPtr<ID2D1SolidColorBrush> white_fill;
-            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.98f), white_fill.Put()))) {
-                rt->FillRoundedRectangle(rr, white_fill.Get());
-            }
-            rt->DrawRoundedRectangle(rr, brush, stroke);
-            float sw_w = s * 0.21f;
-            float sw_h = s * 0.42f;
-            float sw_y = cy - h * 0.19f;
-            rt->FillRoundedRectangle(
-                MakeRoundedRect(MakeRect(cx - sw_w * 0.5f, sw_y - sw_h * 0.5f, cx + sw_w * 0.5f, sw_y + sw_h * 0.5f), sw_w * 0.5f, sw_w * 0.5f),
-                brush
-            );
-            float seam_y = cy - h * 0.02f;
-            rt->DrawLine(MakePt(cx - w * 0.42f, seam_y), MakePt(cx + w * 0.42f, seam_y), brush, stroke * 0.72f);
-        } else {
-            /* Dark taskbar: crisp bright white panel-style outline + scroll wheel */
-            rt->DrawRoundedRectangle(rr, brush, stroke);
-            float sw_w = s * 0.21f;
-            float sw_h = s * 0.42f;
-            float sw_y = cy - h * 0.19f;
-            rt->FillRoundedRectangle(
-                MakeRoundedRect(MakeRect(cx - sw_w * 0.5f, sw_y - sw_h * 0.5f, cx + sw_w * 0.5f, sw_y + sw_h * 0.5f), sw_w * 0.5f, sw_w * 0.5f),
-                brush
-            );
-            float seam_y = cy - h * 0.02f;
-            rt->DrawLine(MakePt(cx - w * 0.42f, seam_y), MakePt(cx + w * 0.42f, seam_y), brush, stroke * 0.72f);
-        }
-        return;
+static bool IsDarkContourInk(ID2D1Brush *brush) {
+    ComPtr<ID2D1SolidColorBrush> solid_src;
+    if (brush && SUCCEEDED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), solid_src.PutVoid()))) {
+        D2D1_COLOR_F ink = solid_src->GetColor();
+        return (ink.r + ink.g + ink.b) < 1.5f;
     }
+    return false;
+}
 
-    float w = s * 1.12f;
-    float h = s * 1.62f;
-    float stroke = s * 0.145f;
-    if (stroke < 1.15f) stroke = 1.15f;
+static void DrawMouseGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
+    /* Kit mouse-outline (viewBox 0 0 24 24):
+     *   rect x=6.5 y=3.2 w=11 h=17.6 rx=5.5
+     *   scroll line x=12 y=6.6..10.2 (round cap) */
+    float u = s / (compact ? 9.4f : 10.2f);
+    float ox = cx - 12.0f * u;
+    float oy = cy - 12.0f * u;
+    float stroke = (compact ? 2.15f : 1.85f) * u;
+    if (stroke < (compact ? 1.35f : 1.20f)) stroke = compact ? 1.35f : 1.20f;
 
-    D2D1_RECT_F body = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
-    rt->DrawRoundedRectangle(MakeRoundedRect(body, w * 0.48f, w * 0.48f), brush, stroke);
+    ComPtr<ID2D1StrokeStyle> rcap;
+    CreateRoundStroke(factory, rcap);
 
-    /* Scroll wheel capsule */
-    float sw_w = s * 0.18f;
-    float sw_h = s * 0.38f;
-    float sw_y = cy - h * 0.18f;
-    D2D1_RECT_F wheel = MakeRect(cx - sw_w * 0.5f, sw_y - sw_h * 0.5f, cx + sw_w * 0.5f, sw_y + sw_h * 0.5f);
-    rt->FillRoundedRectangle(MakeRoundedRect(wheel, sw_w * 0.5f, sw_w * 0.5f), brush);
+    D2D1_RECT_F body = MakeRect(ox + 6.5f * u, oy + 3.2f * u, ox + 17.5f * u, oy + 20.8f * u);
+    D2D1_ROUNDED_RECT rr = MakeRoundedRect(body, 5.5f * u, 5.5f * u);
 
-    /* Subtle horizontal top button seam */
-    float seam_y = cy - h * 0.04f;
+    if (compact && IsDarkContourInk(brush)) {
+        ComPtr<ID2D1SolidColorBrush> wf;
+        if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.96f), wf.Put()))) {
+            rt->FillRoundedRectangle(rr, wf.Get());
+        }
+    }
+    rt->DrawRoundedRectangle(rr, brush, stroke);
     rt->DrawLine(
-        MakePt(cx - w * 0.42f, seam_y),
-        MakePt(cx + w * 0.42f, seam_y),
+        MakePt(ox + 12.0f * u, oy + 6.6f * u),
+        MakePt(ox + 12.0f * u, oy + 10.2f * u),
         brush,
-        stroke * 0.65f
+        stroke * 1.06f,
+        rcap.Get()
     );
 }
 
-static void DrawKeyboardGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    if (compact) {
-        /* Panel-matching crisp white wireless keyboard (white interior + clean outline & keycap rows) */
-        float w = s * 1.88f;
-        float h = s * 1.20f;
-        float stroke = s * 0.16f;
-        if (stroke < 1.35f) stroke = 1.35f;
+static void DrawKeyboardGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
+    /* Kit keyboard-outline (viewBox 0 0 24 24):
+     *   rect x=2.6 y=6.2 w=18.8 h=11.6 rx=2.6
+     *   4 top-row key dashes at y=10 (6.2..7.6, 9.6..11.0, 13.0..14.4, 16.4..17.8)
+     *   spacebar dash at y=14 (7.5..16.5) */
+    float u = s / (compact ? 10.0f : 10.6f);
+    float ox = cx - 12.0f * u;
+    float oy = cy - 12.0f * u;
+    float stroke = (compact ? 2.10f : 1.78f) * u;
+    if (stroke < (compact ? 1.30f : 1.15f)) stroke = compact ? 1.30f : 1.15f;
 
-        D2D1_RECT_F frame = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
-        D2D1_ROUNDED_RECT rr = MakeRoundedRect(frame, s * 0.24f, s * 0.24f);
+    ComPtr<ID2D1StrokeStyle> rcap;
+    CreateRoundStroke(factory, rcap);
 
-        ComPtr<ID2D1SolidColorBrush> solid_src;
-        D2D1_COLOR_F ink = MakeColor(1.0f, 1.0f, 1.0f, 1.0f);
-        if (SUCCEEDED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), solid_src.PutVoid()))) {
-            ink = solid_src->GetColor();
+    D2D1_RECT_F frame = MakeRect(ox + 2.6f * u, oy + 6.2f * u, ox + 21.4f * u, oy + 17.8f * u);
+    D2D1_ROUNDED_RECT rr = MakeRoundedRect(frame, 2.6f * u, 2.6f * u);
+
+    if (compact && IsDarkContourInk(brush)) {
+        ComPtr<ID2D1SolidColorBrush> wf;
+        if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.96f), wf.Put()))) {
+            rt->FillRoundedRectangle(rr, wf.Get());
         }
-        bool is_dark_contour = (ink.r + ink.g + ink.b) < 1.5f;
-
-        if (is_dark_contour) {
-            ComPtr<ID2D1SolidColorBrush> white_fill;
-            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.98f), white_fill.Put()))) {
-                rt->FillRoundedRectangle(rr, white_fill.Get());
-            }
-        }
-        rt->DrawRoundedRectangle(rr, brush, stroke);
-
-        /* Crisp 2-row keycaps + wide spacebar inside */
-        float pad_x = w * 0.14f;
-        float iw = w - pad_x * 2.0f;
-        float gap = iw * 0.08f;
-        float kw = (iw - gap * 3.0f) / 4.0f;
-        float kh = h * 0.17f;
-        if (kh < 1.2f) kh = 1.2f;
-        float r1y = frame.top + h * 0.22f;
-        for (int i = 0; i < 4; ++i) {
-            float x0 = frame.left + pad_x + i * (kw + gap);
-            rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(x0, r1y, x0 + kw, r1y + kh), kh * 0.3f, kh * 0.3f), brush);
-        }
-        float r2y = frame.bottom - h * 0.22f - kh;
-        rt->FillRoundedRectangle(
-            MakeRoundedRect(MakeRect(frame.left + w * 0.22f, r2y, frame.right - w * 0.22f, r2y + kh), kh * 0.3f, kh * 0.3f),
-            brush
-        );
-        return;
     }
+    rt->DrawRoundedRectangle(rr, brush, stroke);
 
-    float w = s * 1.82f;
-    float h = s * 1.18f;
-    float stroke = s * 0.145f;
-    if (stroke < 1.15f) stroke = 1.15f;
-
-    D2D1_RECT_F frame = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
-    float rad = s * 0.24f;
-    rt->DrawRoundedRectangle(MakeRoundedRect(frame, rad, rad), brush, stroke);
-
-    /* Crisp 3-row keycap layout inside frame */
-    float inner_l = frame.left + w * 0.12f;
-    float inner_r = frame.right - w * 0.12f;
-    float inner_w = inner_r - inner_l;
-    float key_h   = h * 0.15f;
-    float gap_x   = inner_w * 0.06f;
-
-    /* Row 1: 5 keys */
-    float r1_y = cy - h * 0.28f;
-    float k5_w = (inner_w - gap_x * 4.0f) / 5.0f;
-    for (int i = 0; i < 5; ++i) {
-        float x0 = inner_l + i * (k5_w + gap_x);
-        rt->FillRoundedRectangle(
-            MakeRoundedRect(MakeRect(x0, r1_y, x0 + k5_w, r1_y + key_h), key_h * 0.32f, key_h * 0.32f),
-            brush
-        );
-    }
-
-    /* Row 2: 4 keys */
-    float r2_y = cy - key_h * 0.5f;
-    float k4_w = (inner_w - gap_x * 3.0f) / 4.0f;
+    static const float kx[4][2] = {
+        { 6.2f, 7.6f }, { 9.6f, 11.0f }, { 13.0f, 14.4f }, { 16.4f, 17.8f }
+    };
+    float kstroke = stroke * 0.96f;
     for (int i = 0; i < 4; ++i) {
-        float x0 = inner_l + i * (k4_w + gap_x);
-        rt->FillRoundedRectangle(
-            MakeRoundedRect(MakeRect(x0, r2_y, x0 + k4_w, r2_y + key_h), key_h * 0.32f, key_h * 0.32f),
-            brush
+        rt->DrawLine(
+            MakePt(ox + kx[i][0] * u, oy + 10.0f * u),
+            MakePt(ox + kx[i][1] * u, oy + 10.0f * u),
+            brush,
+            kstroke,
+            rcap.Get()
         );
     }
-
-    /* Row 3: side key + wide spacebar + side key */
-    float r3_y = cy + h * 0.28f - key_h;
-    float side_w = inner_w * 0.16f;
-    float sp_l = inner_l + side_w + gap_x;
-    float sp_r = inner_r - side_w - gap_x;
-    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(inner_l, r3_y, inner_l + side_w, r3_y + key_h), key_h * 0.32f, key_h * 0.32f), brush);
-    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(sp_l, r3_y, sp_r, r3_y + key_h), key_h * 0.32f, key_h * 0.32f), brush);
-    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(inner_r - side_w, r3_y, inner_r, r3_y + key_h), key_h * 0.32f, key_h * 0.32f), brush);
+    rt->DrawLine(
+        MakePt(ox + 7.5f * u, oy + 14.0f * u),
+        MakePt(ox + 16.5f * u, oy + 14.0f * u),
+        brush,
+        kstroke,
+        rcap.Get()
+    );
 }
 
 static void DrawHeadsetGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    float stroke = compact ? (s * 0.20f) : (s * 0.16f);
-    if (stroke < 1.3f) stroke = 1.3f;
+    /* Kit headset-outline (viewBox 0 0 24 24):
+     *   headband M4.5 14.5 V12 A7.5 7.5 0 0 1 19.5 12 V14.5
+     *   left cup  x=3.5 y=13.2 w=3.6 h=6.4 rx=1.8
+     *   right cup x=16.9 y=13.2 w=3.6 h=6.4 rx=1.8 */
+    float u = s / (compact ? 9.8f : 10.4f);
+    float ox = cx - 12.0f * u;
+    float oy = cy - 12.0f * u;
+    float stroke = (compact ? 2.15f : 1.80f) * u;
+    if (stroke < (compact ? 1.35f : 1.18f)) stroke = compact ? 1.35f : 1.18f;
 
-    float arch_r = s * 0.72f;
-    float arch_cy = cy + s * 0.08f;
+    ComPtr<ID2D1StrokeStyle> rcap;
+    CreateRoundStroke(factory, rcap);
 
-    /* Headband top semicircle */
-    ComPtr<ID2D1PathGeometry> geo;
-    if (SUCCEEDED(factory->CreatePathGeometry(geo.Put()))) {
-        ComPtr<ID2D1GeometrySink> sink;
-        if (SUCCEEDED(geo->Open(sink.Put()))) {
-            AddArcSegmentToSink(sink.Get(), cx, arch_cy, arch_r, 180.0f, 180.0f);
-            sink->Close();
-            rt->DrawGeometry(geo.Get(), brush, stroke);
-        }
-    }
-
-    /* Left & right earcups */
-    float cup_w = s * 0.38f;
-    float cup_h = s * 0.70f;
-    float cup_y0 = arch_cy - s * 0.06f;
-    D2D1_RECT_F left_cup  = MakeRect(cx - arch_r - cup_w * 0.35f, cup_y0, cx - arch_r + cup_w * 0.65f, cup_y0 + cup_h);
-    D2D1_RECT_F right_cup = MakeRect(cx + arch_r - cup_w * 0.65f, cup_y0, cx + arch_r + cup_w * 0.35f, cup_y0 + cup_h);
-    D2D1_ROUNDED_RECT lrr = MakeRoundedRect(left_cup, cup_w * 0.45f, cup_w * 0.45f);
-    D2D1_ROUNDED_RECT rrr = MakeRoundedRect(right_cup, cup_w * 0.45f, cup_w * 0.45f);
-
-    if (compact) {
-        ComPtr<ID2D1SolidColorBrush> solid_src;
-        D2D1_COLOR_F ink = MakeColor(1.0f, 1.0f, 1.0f, 1.0f);
-        if (SUCCEEDED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), solid_src.PutVoid()))) {
-            ink = solid_src->GetColor();
-        }
-        bool is_dark_contour = (ink.r + ink.g + ink.b) < 1.5f;
-        if (is_dark_contour) {
-            ComPtr<ID2D1SolidColorBrush> white_fill;
-            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.98f), white_fill.Put()))) {
-                rt->FillRoundedRectangle(lrr, white_fill.Get());
-                rt->FillRoundedRectangle(rrr, white_fill.Get());
+    if (factory) {
+        ComPtr<ID2D1PathGeometry> geo;
+        if (SUCCEEDED(factory->CreatePathGeometry(geo.Put()))) {
+            ComPtr<ID2D1GeometrySink> sink;
+            if (SUCCEEDED(geo->Open(sink.Put()))) {
+                sink->BeginFigure(MakePt(ox + 4.5f * u, oy + 14.5f * u), D2D1_FIGURE_BEGIN_HOLLOW);
+                sink->AddLine(MakePt(ox + 4.5f * u, oy + 12.0f * u));
+                D2D1_ARC_SEGMENT arc = {};
+                arc.point = MakePt(ox + 19.5f * u, oy + 12.0f * u);
+                arc.size.width = 7.5f * u;
+                arc.size.height = 7.5f * u;
+                arc.rotationAngle = 0.0f;
+                arc.sweepDirection = D2D1_SWEEP_DIRECTION_CLOCKWISE;
+                arc.arcSize = D2D1_ARC_SIZE_SMALL;
+                sink->AddArc(arc);
+                sink->AddLine(MakePt(ox + 19.5f * u, oy + 14.5f * u));
+                sink->EndFigure(D2D1_FIGURE_END_OPEN);
+                sink->Close();
+                rt->DrawGeometry(geo.Get(), brush, stroke, rcap.Get());
             }
-            rt->DrawRoundedRectangle(lrr, brush, stroke * 0.85f);
-            rt->DrawRoundedRectangle(rrr, brush, stroke * 0.85f);
-            return;
         }
     }
 
-    rt->FillRoundedRectangle(lrr, brush);
-    rt->FillRoundedRectangle(rrr, brush);
+    D2D1_RECT_F lc = MakeRect(ox + 3.5f * u, oy + 13.2f * u, ox + 7.1f * u, oy + 19.6f * u);
+    D2D1_RECT_F rc = MakeRect(ox + 16.9f * u, oy + 13.2f * u, ox + 20.5f * u, oy + 19.6f * u);
+    D2D1_ROUNDED_RECT lrr = MakeRoundedRect(lc, 1.8f * u, 1.8f * u);
+    D2D1_ROUNDED_RECT rrr = MakeRoundedRect(rc, 1.8f * u, 1.8f * u);
+
+    if (compact && IsDarkContourInk(brush)) {
+        ComPtr<ID2D1SolidColorBrush> wf;
+        if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.96f), wf.Put()))) {
+            rt->FillRoundedRectangle(lrr, wf.Get());
+            rt->FillRoundedRectangle(rrr, wf.Get());
+        }
+    }
+    rt->DrawRoundedRectangle(lrr, brush, stroke);
+    rt->DrawRoundedRectangle(rrr, brush, stroke);
+}
+
+static void BuildGamepadPath24(ID2D1Factory *factory, float ox, float oy, float u, ComPtr<ID2D1PathGeometry> &out_geo) {
+    if (!factory || FAILED(factory->CreatePathGeometry(out_geo.Put()))) return;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(out_geo->Open(sink.Put()))) return;
+
+    auto p = [&](float x, float y) { return MakePt(ox + x * u, oy + y * u); };
+    auto bez = [&](float x1, float y1, float x2, float y2, float x3, float y3) {
+        D2D1_BEZIER_SEGMENT b = { p(x1, y1), p(x2, y2), p(x3, y3) };
+        sink->AddBezier(b);
+    };
+
+    sink->BeginFigure(p(7.4f, 5.8f), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(p(16.6f, 5.8f));
+    bez(18.8f, 5.8f, 20.6f, 7.4f, 21.0f, 9.6f);
+    sink->AddLine(p(22.1f, 15.8f));
+    bez(22.4f, 17.5f, 21.1f, 19.0f, 19.4f, 19.0f);
+    bez(18.4f, 19.0f, 17.5f, 18.5f, 16.9f, 17.7f);
+    sink->AddLine(p(15.4f, 15.7f));
+    bez(14.9f, 15.0f, 14.1f, 14.6f, 13.3f, 14.6f);
+    sink->AddLine(p(10.7f, 14.6f));
+    bez(9.9f, 14.6f, 9.1f, 15.0f, 8.6f, 15.7f);
+    sink->AddLine(p(7.1f, 17.7f));
+    bez(6.5f, 18.5f, 5.6f, 19.0f, 4.6f, 19.0f);
+    bez(2.9f, 19.0f, 1.6f, 17.5f, 1.9f, 15.8f);
+    sink->AddLine(p(3.0f, 9.6f));
+    bez(3.4f, 7.4f, 5.2f, 5.8f, 7.4f, 5.8f);
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+}
+
+static void DrawGamepadGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
+    /* Kit gamepad-outline (viewBox 0 0 24 24) */
+    float u = s / (compact ? 10.2f : 10.8f);
+    float ox = cx - 12.0f * u;
+    float oy = cy - 12.0f * u;
+    float stroke = (compact ? 2.05f : 1.75f) * u;
+    if (stroke < (compact ? 1.28f : 1.15f)) stroke = compact ? 1.28f : 1.15f;
+
+    ComPtr<ID2D1StrokeStyle> rcap;
+    CreateRoundStroke(factory, rcap);
+
+    ComPtr<ID2D1PathGeometry> geo;
+    BuildGamepadPath24(factory, ox, oy, u, geo);
+    if (geo) {
+        if (compact && IsDarkContourInk(brush)) {
+            ComPtr<ID2D1SolidColorBrush> wf;
+            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.96f), wf.Put()))) {
+                rt->FillGeometry(geo.Get(), wf.Get());
+            }
+        }
+        rt->DrawGeometry(geo.Get(), brush, stroke, rcap.Get());
+    }
+
+    /* Left D-pad cross */
+    float ds = stroke * 0.96f;
+    rt->DrawLine(MakePt(ox + 6.8f * u, oy + 10.6f * u), MakePt(ox + 10.0f * u, oy + 10.6f * u), brush, ds, rcap.Get());
+    rt->DrawLine(MakePt(ox + 8.4f * u, oy + 9.0f * u), MakePt(ox + 8.4f * u, oy + 12.2f * u), brush, ds, rcap.Get());
+
+    /* Right 2 action buttons */
+    float dr = 1.02f * u;
+    if (dr < 0.95f) dr = 0.95f;
+    rt->FillEllipse(MakeEllipse(ox + 15.4f * u, oy + 9.9f * u, dr, dr), brush);
+    rt->FillEllipse(MakeEllipse(ox + 17.3f * u, oy + 11.5f * u, dr, dr), brush);
 }
 
 static void DrawEarbudsGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
@@ -309,56 +302,13 @@ static void DrawEarbudsGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx,
     float stem_w = compact ? (s * 0.24f) : (s * 0.19f);
     float stem_h = s * 0.76f;
 
-    /* Left earbud */
     rt->FillEllipse(MakeEllipse(cx - dx, cy - s * 0.24f, head_r, head_r * 0.88f), brush);
     D2D1_RECT_F lstem = MakeRect(cx - dx - stem_w * 0.5f, cy - s * 0.10f, cx - dx + stem_w * 0.5f, cy - s * 0.10f + stem_h);
     rt->FillRoundedRectangle(MakeRoundedRect(lstem, stem_w * 0.5f, stem_w * 0.5f), brush);
 
-    /* Right earbud */
     rt->FillEllipse(MakeEllipse(cx + dx, cy - s * 0.24f, head_r, head_r * 0.88f), brush);
     D2D1_RECT_F rstem = MakeRect(cx + dx - stem_w * 0.5f, cy - s * 0.10f, cx + dx + stem_w * 0.5f, cy - s * 0.10f + stem_h);
     rt->FillRoundedRectangle(MakeRoundedRect(rstem, stem_w * 0.5f, stem_w * 0.5f), brush);
-}
-
-static void DrawGamepadGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    float w = s * 1.82f;
-    float h = s * 1.10f;
-    float stroke = compact ? (s * 0.16f) : (s * 0.15f);
-    if (stroke < 1.3f) stroke = 1.3f;
-
-    D2D1_RECT_F body = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
-    D2D1_ROUNDED_RECT brr = MakeRoundedRect(body, h * 0.48f, h * 0.48f);
-
-    if (compact) {
-        ComPtr<ID2D1SolidColorBrush> solid_src;
-        D2D1_COLOR_F ink = MakeColor(1.0f, 1.0f, 1.0f, 1.0f);
-        if (SUCCEEDED(brush->QueryInterface(__uuidof(ID2D1SolidColorBrush), solid_src.PutVoid()))) {
-            ink = solid_src->GetColor();
-        }
-        if ((ink.r + ink.g + ink.b) < 1.5f) {
-            ComPtr<ID2D1SolidColorBrush> white_fill;
-            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.98f), white_fill.Put()))) {
-                rt->FillRoundedRectangle(brr, white_fill.Get());
-            }
-        }
-    }
-
-    rt->DrawRoundedRectangle(brr, brush, stroke);
-
-    /* Left D-pad */
-    float dcx = cx - w * 0.22f;
-    float arm = s * 0.23f;
-    float dstroke = compact ? (s * 0.17f) : (s * 0.14f);
-    if (dstroke < 1.15f) dstroke = 1.15f;
-    rt->DrawLine(MakePt(dcx - arm, cy), MakePt(dcx + arm, cy), brush, dstroke);
-    rt->DrawLine(MakePt(dcx, cy - arm), MakePt(dcx, cy + arm), brush, dstroke);
-
-    /* Right action buttons */
-    float bcx = cx + w * 0.22f;
-    float dot = s * 0.12f;
-    if (dot < 1.05f) dot = 1.05f;
-    rt->FillEllipse(MakeEllipse(bcx - s * 0.13f, cy + s * 0.11f, dot, dot), brush);
-    rt->FillEllipse(MakeEllipse(bcx + s * 0.13f, cy - s * 0.11f, dot, dot), brush);
 }
 
 static void DrawStylusGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
@@ -370,8 +320,6 @@ static void DrawStylusGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, 
     float h = s * 1.54f;
     D2D1_RECT_F shaft = MakeRect(cx - w * 0.5f, cy - h * 0.48f, cx + w * 0.5f, cy + h * 0.30f);
     rt->FillRoundedRectangle(MakeRoundedRect(shaft, w * 0.45f, w * 0.45f), brush);
-
-    /* Tip triangle approximated by compact tapered ellipse/dot */
     rt->FillEllipse(MakeEllipse(cx, cy + h * 0.42f, w * 0.26f, w * 0.36f), brush);
 
     rt->SetTransform(prev);
@@ -380,23 +328,19 @@ static void DrawStylusGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, 
 static void DrawSpeakerGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
     float w = s * 1.18f;
     float h = s * 1.58f;
-    float stroke = compact ? (s * 0.24f) : (s * 0.145f);
+    float stroke = compact ? (s * 0.22f) : (s * 0.145f);
     if (stroke < 1.15f) stroke = 1.15f;
 
     D2D1_RECT_F box = MakeRect(cx - w * 0.5f, cy - h * 0.5f, cx + w * 0.5f, cy + h * 0.5f);
     rt->DrawRoundedRectangle(MakeRoundedRect(box, s * 0.24f, s * 0.24f), brush, stroke);
-
-    /* Tweeter dot */
     rt->FillEllipse(MakeEllipse(cx, cy - h * 0.22f, s * 0.14f, s * 0.14f), brush);
-    /* Woofer ring */
     rt->DrawEllipse(MakeEllipse(cx, cy + h * 0.16f, s * 0.30f, s * 0.30f), brush, stroke * 0.9f);
 }
 
 static void DrawGenericDeviceGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    /* Sleek battery/dongle capsule */
     float w = s * 1.46f;
     float h = s * 0.92f;
-    float stroke = compact ? (s * 0.24f) : (s * 0.15f);
+    float stroke = compact ? (s * 0.22f) : (s * 0.15f);
     if (stroke < 1.15f) stroke = 1.15f;
 
     D2D1_RECT_F body = MakeRect(cx - w * 0.52f, cy - h * 0.5f, cx + w * 0.42f, cy + h * 0.5f);
@@ -425,10 +369,10 @@ void DrawDeviceGlyph(
 
     switch (kind) {
         case OCTANS_DEV_MOUSE:
-            DrawMouseGlyph(rt, brush, cx, cy, half_size, compact_tray);
+            DrawMouseGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_KEYBOARD:
-            DrawKeyboardGlyph(rt, brush, cx, cy, half_size, compact_tray);
+            DrawKeyboardGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_HEADSET:
             DrawHeadsetGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
@@ -437,7 +381,7 @@ void DrawDeviceGlyph(
             DrawEarbudsGlyph(rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_GAMEPAD:
-            DrawGamepadGlyph(rt, brush, cx, cy, half_size, compact_tray);
+            DrawGamepadGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_STYLUS:
             DrawStylusGlyph(rt, brush, cx, cy, half_size, compact_tray);
@@ -451,6 +395,379 @@ void DrawDeviceGlyph(
             DrawGenericDeviceGlyph(rt, brush, cx, cy, half_size, compact_tray);
             break;
     }
+}
+
+/* ============================================================================
+ * Scheme 2 (Nebula): Liquid Silhouette Fill (48x48 viewBox from UI Kit)
+ * ============================================================================ */
+
+static bool BuildSolidSilhouette48(
+    ID2D1Factory *factory,
+    octans_device_kind_t kind,
+    float ox, float oy, float u,
+    ComPtr<ID2D1Geometry> &out_geo
+) {
+    if (!factory) return false;
+    auto rrect = [&](float x, float y, float w, float h, float rx, ComPtr<ID2D1RoundedRectangleGeometry> &rr) {
+        D2D1_ROUNDED_RECT d = MakeRoundedRect(MakeRect(ox + x * u, oy + y * u, ox + (x + w) * u, oy + (y + h) * u), rx * u, rx * u);
+        return SUCCEEDED(factory->CreateRoundedRectangleGeometry(d, rr.Put()));
+    };
+
+    switch (kind) {
+        case OCTANS_DEV_MOUSE: {
+            ComPtr<ID2D1RoundedRectangleGeometry> g;
+            if (!rrect(12.0f, 5.0f, 24.0f, 38.0f, 12.0f, g)) return false;
+            out_geo.Reset(g.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        case OCTANS_DEV_KEYBOARD: {
+            ComPtr<ID2D1RoundedRectangleGeometry> g;
+            if (!rrect(4.0f, 12.0f, 40.0f, 24.0f, 5.5f, g)) return false;
+            out_geo.Reset(g.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        case OCTANS_DEV_HEADSET: {
+            /* Headband arch + left & right solid earcups grouped cleanly */
+            ComPtr<ID2D1PathGeometry> arch;
+            if (FAILED(factory->CreatePathGeometry(arch.Put()))) return false;
+            ComPtr<ID2D1GeometrySink> sink;
+            if (FAILED(arch->Open(sink.Put()))) return false;
+            auto p = [&](float x, float y) { return MakePt(ox + x * u, oy + y * u); };
+            sink->BeginFigure(p(9.0f, 28.0f), D2D1_FIGURE_BEGIN_FILLED);
+            sink->AddLine(p(9.0f, 23.0f));
+            D2D1_ARC_SEGMENT a_out = { p(39.0f, 23.0f), { 15.0f * u, 15.0f * u }, 0.0f, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_ARC_SIZE_SMALL };
+            sink->AddArc(a_out);
+            sink->AddLine(p(39.0f, 28.0f));
+            sink->AddLine(p(35.0f, 28.0f));
+            sink->AddLine(p(35.0f, 23.0f));
+            D2D1_ARC_SEGMENT a_in = { p(13.0f, 23.0f), { 11.0f * u, 11.0f * u }, 0.0f, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1_ARC_SIZE_SMALL };
+            sink->AddArc(a_in);
+            sink->AddLine(p(13.0f, 28.0f));
+            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+            sink->Close();
+
+            ComPtr<ID2D1RoundedRectangleGeometry> lc, rc;
+            if (!rrect(6.0f, 25.0f, 8.5f, 15.0f, 4.2f, lc)) return false;
+            if (!rrect(33.5f, 25.0f, 8.5f, 15.0f, 4.2f, rc)) return false;
+
+            ID2D1Geometry *parts[3] = { arch.Get(), lc.Get(), rc.Get() };
+            ComPtr<ID2D1GeometryGroup> grp;
+            if (FAILED(factory->CreateGeometryGroup(D2D1_FILL_MODE_WINDING, parts, 3, grp.Put()))) return false;
+            out_geo.Reset(grp.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        case OCTANS_DEV_GAMEPAD: {
+            ComPtr<ID2D1PathGeometry> gp;
+            BuildGamepadPath24(factory, ox, oy, u * 2.0f, gp);
+            if (!gp) return false;
+            out_geo.Reset(gp.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        case OCTANS_DEV_EARBUDS: {
+            ComPtr<ID2D1RoundedRectangleGeometry> l1, r1;
+            if (!rrect(10.0f, 9.0f, 11.0f, 30.0f, 5.5f, l1)) return false;
+            if (!rrect(27.0f, 9.0f, 11.0f, 30.0f, 5.5f, r1)) return false;
+            ID2D1Geometry *parts[2] = { l1.Get(), r1.Get() };
+            ComPtr<ID2D1GeometryGroup> grp;
+            if (FAILED(factory->CreateGeometryGroup(D2D1_FILL_MODE_WINDING, parts, 2, grp.Put()))) return false;
+            out_geo.Reset(grp.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        case OCTANS_DEV_SPEAKER: {
+            ComPtr<ID2D1RoundedRectangleGeometry> g;
+            if (!rrect(11.0f, 6.0f, 26.0f, 36.0f, 6.5f, g)) return false;
+            out_geo.Reset(g.Get());
+            out_geo->AddRef();
+            return true;
+        }
+        default: {
+            /* Generic vertical battery capsule */
+            ComPtr<ID2D1RoundedRectangleGeometry> body, cap;
+            if (!rrect(12.0f, 9.0f, 24.0f, 34.0f, 5.5f, body)) return false;
+            if (!rrect(18.0f, 5.0f, 12.0f, 4.5f, 2.0f, cap)) return false;
+            ID2D1Geometry *parts[2] = { body.Get(), cap.Get() };
+            ComPtr<ID2D1GeometryGroup> grp;
+            if (FAILED(factory->CreateGeometryGroup(D2D1_FILL_MODE_WINDING, parts, 2, grp.Put()))) return false;
+            out_geo.Reset(grp.Get());
+            out_geo->AddRef();
+            return true;
+        }
+    }
+}
+
+void DrawLiquidSilhouetteGlyph(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    octans_device_kind_t kind,
+    float cx, float cy,
+    float size,
+    float fraction,
+    const D2D1_COLOR_F &fill_col,
+    const D2D1_COLOR_F &soft_col,
+    const D2D1_COLOR_F &track_col,
+    const D2D1_COLOR_F &detail_col
+) {
+    if (!factory || !rt || size <= 2.0f) return;
+    float u = size / 48.0f;
+    float ox = cx - size * 0.5f;
+    float oy = cy - size * 0.5f;
+
+    ComPtr<ID2D1Geometry> mask_geo;
+    if (!BuildSolidSilhouette48(factory, kind, ox, oy, u, mask_geo)) return;
+
+    ComPtr<ID2D1Layer> layer;
+    if (FAILED(rt->CreateLayer(layer.Put()))) return;
+
+    ComPtr<ID2D1SolidColorBrush> br;
+    if (FAILED(rt->CreateSolidColorBrush(track_col, br.Put()))) return;
+
+    D2D1_LAYER_PARAMETERS lp = {};
+    lp.contentBounds = MakeRect(ox - 2.0f, oy - 2.0f, ox + size + 2.0f, oy + size + 2.0f);
+    lp.geometricMask = mask_geo.Get();
+    lp.maskAntialiasMode = D2D1_ANTIALIAS_MODE_PER_PRIMITIVE;
+    lp.maskTransform = MatrixIdentity();
+    lp.opacity = 1.0f;
+    lp.opacityBrush = nullptr;
+    lp.layerOptions = D2D1_LAYER_OPTIONS_NONE;
+
+    rt->PushLayer(lp, layer.Get());
+
+    /* 1. Empty silhouette track */
+    br->SetColor(track_col);
+    rt->FillRectangle(MakeRect(ox, oy, ox + size, oy + size), br.Get());
+
+    /* 2. Bottom-up liquid level fill + crisp meniscus surface highlight */
+    float f = ClampF(fraction, 0.0f, 1.0f);
+    if (f > 0.005f) {
+        float y_fill_48 = 44.0f - f * 38.0f;
+        if (f >= 0.995f) y_fill_48 = 0.0f;
+        float y_px = oy + y_fill_48 * u;
+
+        br->SetColor(fill_col);
+        rt->FillRectangle(MakeRect(ox, y_px, ox + size, oy + size), br.Get());
+
+        if (f < 0.985f) {
+            float men_h = 2.4f * u;
+            if (men_h < 1.2f) men_h = 1.2f;
+            br->SetColor(soft_col);
+            rt->FillRectangle(MakeRect(ox, y_px, ox + size, y_px + men_h), br.Get());
+        }
+    }
+
+    rt->PopLayer();
+
+    /* 3. Surface-colored inner detail overlay (scroll wheel, keys, D-pad/buttons) */
+    br->SetColor(detail_col);
+    float ds = 2.6f * u;
+    if (ds < 1.3f) ds = 1.3f;
+
+    if (kind == OCTANS_DEV_MOUSE) {
+        rt->DrawLine(MakePt(ox + 24.0f * u, oy + 12.0f * u), MakePt(ox + 24.0f * u, oy + 19.5f * u), br.Get(), ds, round_cap_style);
+    } else if (kind == OCTANS_DEV_KEYBOARD) {
+        static const float kx[5][2] = {
+            { 11.0f, 14.0f }, { 17.5f, 20.5f }, { 24.0f, 27.0f }, { 30.5f, 33.5f }, { 36.2f, 38.2f }
+        };
+        float ks = 2.4f * u;
+        if (ks < 1.2f) ks = 1.2f;
+        for (int i = 0; i < 5; ++i) {
+            rt->DrawLine(MakePt(ox + kx[i][0] * u, oy + 20.0f * u), MakePt(ox + kx[i][1] * u, oy + 20.0f * u), br.Get(), ks, round_cap_style);
+        }
+        rt->DrawLine(MakePt(ox + 14.0f * u, oy + 28.0f * u), MakePt(ox + 34.0f * u, oy + 28.0f * u), br.Get(), ks, round_cap_style);
+    } else if (kind == OCTANS_DEV_GAMEPAD) {
+        float gs = 2.4f * u;
+        if (gs < 1.2f) gs = 1.2f;
+        rt->DrawLine(MakePt(ox + 12.5f * u, oy + 20.5f * u), MakePt(ox + 19.1f * u, oy + 20.5f * u), br.Get(), gs, round_cap_style);
+        rt->DrawLine(MakePt(ox + 15.8f * u, oy + 17.2f * u), MakePt(ox + 15.8f * u, oy + 23.8f * u), br.Get(), gs, round_cap_style);
+        float dr = 1.9f * u;
+        if (dr < 1.0f) dr = 1.0f;
+        rt->FillEllipse(MakeEllipse(ox + 30.6f * u, oy + 18.8f * u, dr, dr), br.Get());
+        rt->FillEllipse(MakeEllipse(ox + 34.6f * u, oy + 22.2f * u, dr, dr), br.Get());
+    } else if (kind == OCTANS_DEV_SPEAKER) {
+        rt->FillEllipse(MakeEllipse(ox + 24.0f * u, oy + 15.0f * u, 3.0f * u, 3.0f * u), br.Get());
+        rt->DrawEllipse(MakeEllipse(ox + 24.0f * u, oy + 30.0f * u, 6.2f * u, 6.2f * u), br.Get(), ds * 0.85f);
+    }
+}
+
+/* ============================================================================
+ * Scheme 3 (Pulsar): 12-Segment Precision Radial Dial (-215 deg to +35 deg)
+ * ============================================================================ */
+
+void DrawPrecisionDialArc(
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *active_brush,
+    ID2D1Brush *track_brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float inner_r,
+    float outer_r,
+    float stroke_width,
+    float fraction
+) {
+    if (!rt || !active_brush || !track_brush) return;
+    static constexpr int kSegments = 12;
+    float f = ClampF(fraction, 0.0f, 1.0f);
+    int active = (f <= 0.005f) ? 0 : static_cast<int>(roundf(f * static_cast<float>(kSegments)));
+    if (f > 0.005f && active < 1) active = 1;
+    if (active > kSegments) active = kSegments;
+
+    for (int i = 0; i < kSegments; ++i) {
+        float deg = -215.0f + (static_cast<float>(i) * 250.0f) / static_cast<float>(kSegments - 1);
+        float rad = deg * (kPi / 180.0f);
+        float c = cosf(rad);
+        float s = sinf(rad);
+        rt->DrawLine(
+            MakePt(cx + inner_r * c, cy + inner_r * s),
+            MakePt(cx + outer_r * c, cy + outer_r * s),
+            (i < active) ? active_brush : track_brush,
+            stroke_width,
+            round_cap_style
+        );
+    }
+}
+
+/* ============================================================================
+ * Scan Radar Icon & Bespoke Octans Celestial Starlight Scan Animation
+ * ============================================================================ */
+
+void DrawScanRadarIcon(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float r
+) {
+    if (!factory || !rt || !brush || r <= 1.0f) return;
+    float stroke = 1.45f;
+
+    /* Center beacon dot */
+    rt->FillEllipse(MakeEllipse(cx, cy, r * 0.24f, r * 0.24f), brush);
+
+    /* Two symmetric wireless sonar waves (left & right arcs) */
+    ComPtr<ID2D1PathGeometry> geo;
+    if (SUCCEEDED(factory->CreatePathGeometry(geo.Put()))) {
+        ComPtr<ID2D1GeometrySink> sink;
+        if (SUCCEEDED(geo->Open(sink.Put()))) {
+            AddArcSegmentToSink(sink.Get(), cx, cy, r * 0.62f, -45.0f, 90.0f);
+            AddArcSegmentToSink(sink.Get(), cx, cy, r * 0.62f, 135.0f, 90.0f);
+            AddArcSegmentToSink(sink.Get(), cx, cy, r * 1.02f, -52.0f, 104.0f);
+            AddArcSegmentToSink(sink.Get(), cx, cy, r * 1.02f, 128.0f, 104.0f);
+            sink->Close();
+            rt->DrawGeometry(geo.Get(), brush, stroke, round_cap_style);
+        }
+    }
+}
+
+static void DrawFourPointSparkle(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *brush,
+    float cx, float cy,
+    float r
+) {
+    if (!factory || !rt || !brush || r < 0.6f) return;
+    ComPtr<ID2D1PathGeometry> geo;
+    if (FAILED(factory->CreatePathGeometry(geo.Put()))) return;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(geo->Open(sink.Put()))) return;
+
+    float inner = r * 0.24f;
+    sink->BeginFigure(MakePt(cx, cy - r), D2D1_FIGURE_BEGIN_FILLED);
+    sink->AddLine(MakePt(cx + inner, cy - inner));
+    sink->AddLine(MakePt(cx + r, cy));
+    sink->AddLine(MakePt(cx + inner, cy + inner));
+    sink->AddLine(MakePt(cx, cy + r));
+    sink->AddLine(MakePt(cx - inner, cy + inner));
+    sink->AddLine(MakePt(cx - r, cy));
+    sink->AddLine(MakePt(cx - inner, cy - inner));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+    sink->Close();
+    rt->FillGeometry(geo.Get(), brush);
+}
+
+void DrawCelestialScanAnim(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float base_radius,
+    bool is_dark,
+    float elapsed_sec,
+    float alpha
+) {
+    if (!factory || !rt || alpha <= 0.01f) return;
+
+    D2D1_COLOR_F star_col = is_dark ? HexColor(0x56C4F5, 1.0f) : HexColor(0x1B9AD6, 1.0f);
+    D2D1_COLOR_F accent_col = is_dark ? HexColor(0x34D399, 1.0f) : HexColor(0x10B981, 1.0f);
+
+    ComPtr<ID2D1SolidColorBrush> br;
+    if (FAILED(rt->CreateSolidColorBrush(star_col, br.Put()))) return;
+
+    /* 1. Soft breathing celestial aura halo behind the Octans Logo */
+    float breath = 0.5f + 0.5f * sinf(elapsed_sec * 2.6f);
+    D2D1_COLOR_F aura = star_col;
+    aura.a = (is_dark ? 0.13f : 0.10f) * (0.65f + 0.35f * breath) * alpha;
+    br->SetColor(aura);
+    rt->FillEllipse(MakeEllipse(cx, cy, base_radius * (1.25f + 0.14f * breath), base_radius * (1.25f + 0.14f * breath)), br.Get());
+
+    /* 2. Three staggered expanding polar starlight sonar pulses */
+    for (int i = 0; i < 3; ++i) {
+        float phase = fmodf(elapsed_sec * 0.46f + static_cast<float>(i) / 3.0f, 1.0f);
+        float ease = EaseOutCubic(phase);
+        float r = LerpF(base_radius * 0.92f, base_radius * 2.55f, ease);
+        float wave_a = sinf(phase * kPi) * (1.0f - phase * 0.35f) * (is_dark ? 0.44f : 0.36f) * alpha;
+        D2D1_COLOR_F wc = (i == 1) ? accent_col : star_col;
+        wc.a = wave_a;
+        br->SetColor(wc);
+        rt->DrawEllipse(MakeEllipse(cx, cy, r, r), br.Get(), LerpF(1.6f, 0.75f, ease));
+    }
+
+    /* 3. Two delicate inclined orbital tracks + 4 drifting twinkling starlight sparkles */
+    D2D1_MATRIX_3X2_F prev_xf = {};
+    rt->GetTransform(&prev_xf);
+    static const float tilts[2] = { -22.0f, 22.0f };
+    for (int o = 0; o < 2; ++o) {
+        D2D1_MATRIX_3X2_F rot = MatrixRotation(tilts[o], cx, cy);
+        D2D1_MATRIX_3X2_F comb = {};
+        comb._11 = rot._11 * prev_xf._11 + rot._12 * prev_xf._21;
+        comb._12 = rot._11 * prev_xf._12 + rot._12 * prev_xf._22;
+        comb._21 = rot._21 * prev_xf._11 + rot._22 * prev_xf._21;
+        comb._22 = rot._21 * prev_xf._12 + rot._22 * prev_xf._22;
+        comb._31 = rot._31 * prev_xf._11 + rot._32 * prev_xf._21 + prev_xf._31;
+        comb._32 = rot._31 * prev_xf._12 + rot._32 * prev_xf._22 + prev_xf._32;
+        rt->SetTransform(comb);
+
+        float rx = base_radius * (o == 0 ? 1.98f : 1.72f);
+        float ry = base_radius * (o == 0 ? 0.84f : 0.72f);
+        D2D1_COLOR_F oc = star_col;
+        oc.a = (is_dark ? 0.16f : 0.14f) * alpha;
+        br->SetColor(oc);
+        rt->DrawEllipse(MakeEllipse(cx, cy, rx, ry), br.Get(), 0.9f);
+
+        for (int k = 0; k < 2; ++k) {
+            float dir = (o == 0) ? 1.0f : -1.0f;
+            float ang = elapsed_sec * dir * (1.25f + 0.35f * o) + static_cast<float>(k) * kPi + static_cast<float>(o) * 0.9f;
+            float sx = cx + cosf(ang) * rx;
+            float sy = cy + sinf(ang) * ry;
+            float twinkle = 0.55f + 0.45f * sinf(elapsed_sec * 4.5f + static_cast<float>(o * 2 + k) * 1.7f);
+            D2D1_COLOR_F sc = (k == 0) ? star_col : accent_col;
+            sc.a = twinkle * 0.92f * alpha;
+            br->SetColor(sc);
+            DrawFourPointSparkle(factory, rt, br.Get(), sx, sy, 2.2f + 1.4f * twinkle);
+        }
+    }
+    rt->SetTransform(prev_xf);
+    (void)round_cap_style;
+
+    /* 4. Centered gently breathing Octans Logo */
+    float logo_r = base_radius * (1.0f + 0.032f * sinf(elapsed_sec * 2.6f));
+    DrawOctansLogo(factory, rt, cx, cy, logo_r, is_dark, false, 1.0f, alpha);
 }
 
 void DrawLightningBolt(
@@ -467,7 +784,6 @@ void DrawLightningBolt(
     ComPtr<ID2D1GeometrySink> sink;
     if (FAILED(geo->Open(sink.Put()))) return;
 
-    /* Apple-style crisp lightning bolt proportions */
     float w = h * 0.68f;
     sink->BeginFigure(MakePt(cx + w * 0.16f, cy - h), D2D1_FIGURE_BEGIN_FILLED);
     sink->AddLine(MakePt(cx - w * 0.72f, cy + h * 0.10f));
@@ -496,7 +812,6 @@ void DrawPinIcon(
     rt->SetTransform(MatrixRotation(38.0f, cx, cy));
 
     float stroke = 1.25f;
-    /* Pin head */
     D2D1_RECT_F head = MakeRect(cx - s * 0.46f, cy - s * 0.80f, cx + s * 0.46f, cy - s * 0.46f);
     if (filled) {
         rt->FillRoundedRectangle(MakeRoundedRect(head, s * 0.16f, s * 0.16f), brush);
@@ -504,7 +819,6 @@ void DrawPinIcon(
         rt->DrawRoundedRectangle(MakeRoundedRect(head, s * 0.16f, s * 0.16f), brush, stroke);
     }
 
-    /* Pin waist + flange */
     D2D1_RECT_F flange = MakeRect(cx - s * 0.62f, cy - s * 0.08f, cx + s * 0.62f, cy + s * 0.18f);
     if (filled) {
         rt->FillRoundedRectangle(MakeRoundedRect(flange, s * 0.12f, s * 0.12f), brush);
@@ -516,9 +830,7 @@ void DrawPinIcon(
         rt->DrawLine(MakePt(cx - s * 0.58f, cy - s * 0.02f), MakePt(cx + s * 0.58f, cy - s * 0.02f), brush, stroke);
     }
 
-    /* Needle */
     rt->DrawLine(MakePt(cx, cy + s * 0.16f), MakePt(cx, cy + s * 0.85f), brush, stroke);
-
     rt->SetTransform(prev);
 }
 
@@ -544,14 +856,12 @@ void DrawRefreshIcon(
     if (SUCCEEDED(factory->CreatePathGeometry(geo.Put()))) {
         ComPtr<ID2D1GeometrySink> sink;
         if (SUCCEEDED(geo->Open(sink.Put()))) {
-            /* 280-degree clockwise arc ending near top-right (-45 deg) */
             AddArcSegmentToSink(sink.Get(), cx, cy, r, 35.0f, 280.0f);
             sink->Close();
             rt->DrawGeometry(geo.Get(), brush, stroke, round_cap_style);
         }
     }
 
-    /* Crisp SF-Symbols-style filled arrowhead tangent at 315 deg (top-right) */
     float ang = 315.0f * (kPi / 180.0f);
     float tip_x = cx + cosf(ang) * r;
     float tip_y = cy + sinf(ang) * r;

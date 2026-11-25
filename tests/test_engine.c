@@ -11,7 +11,6 @@
 #include "../engine/hidpp.h"
 #include "../engine/merge.h"
 #include "../engine/user_rules.h"
-#include "../tools/usb_etw_learn.h"
 
 static int g_tests_run = 0;
 static int g_tests_failed = 0;
@@ -95,7 +94,7 @@ static void test_hidpp(void) {
     ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
     ASSERT_EQ_INT(0, r.is_estimated);
 
-    /* Approx flag when pct == 0 */
+    /* Approx flag when pct == 0 or soc_supported == 0 (level 4->60%, 8->100%) */
     octans_reading_init(&r);
     const uint8_t p1004_approx[4] = {0, 0x02, 0x01, 0x00};
     ASSERT_EQ_INT(1, octans_hidpp_parse_unified_battery(p1004_approx, 4, &r));
@@ -103,14 +102,30 @@ static void test_hidpp(void) {
     ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
     ASSERT_EQ_INT(1, r.is_estimated);
 
-    /* 0x1000 */
+    octans_reading_init(&r);
+    const uint8_t p1004_nosoc[4] = {42, 0x04, 0x00, 0x00}; /* soc_supported=0 -> must ignore byte0 and use level 4=60% */
+    ASSERT_EQ_INT(1, octans_hidpp_parse_unified_battery_ex(p1004_nosoc, 4, 0, &r));
+    ASSERT_EQ_INT(60, r.battery_percent);
+    ASSERT_EQ_INT(1, r.is_estimated);
+
+    /* 0x1000: normal + charging-0 rejected + full-0 -> 100% */
     octans_reading_init(&r);
     const uint8_t p1000[4] = {64, 50, 0x03, 0x00};
     ASSERT_EQ_INT(1, octans_hidpp_parse_battery_status(p1000, 4, &r));
     ASSERT_EQ_INT(64, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
 
-    /* 0x1001 voltage (3989 mV = 80%, charging + full bits) */
+    octans_reading_init(&r);
+    const uint8_t p1000_chg0[4] = {0, 0, 0x01, 0x00};
+    ASSERT_EQ_INT(0, octans_hidpp_parse_battery_status(p1000_chg0, 4, &r));
+
+    octans_reading_init(&r);
+    const uint8_t p1000_full0[4] = {0, 0, 0x03, 0x00};
+    ASSERT_EQ_INT(1, octans_hidpp_parse_battery_status(p1000_full0, 4, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* 0x1001 voltage (3989 mV = 80%, full 0x81, charging 0x80, undefined 0x83 guard) */
     octans_reading_init(&r);
     const uint8_t p1001[4] = {0x0F, 0x95, 0x81, 0x00};
     ASSERT_EQ_INT(1, octans_hidpp_parse_battery_voltage(p1001, 4, &r));
@@ -118,14 +133,49 @@ static void test_hidpp(void) {
     ASSERT_EQ_INT(80, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
 
-    /* 0x1F20 ADC */
+    octans_reading_init(&r);
+    const uint8_t p1001_chg[4] = {0x0F, 0x95, 0x80, 0x00};
+    ASSERT_EQ_INT(1, octans_hidpp_parse_battery_voltage(p1001_chg, 4, &r));
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    octans_reading_init(&r);
+    const uint8_t p1001_83[4] = {0x0F, 0x95, 0x83, 0x00}; /* bit0..2=3 undefined -> NOT full/charging */
+    ASSERT_EQ_INT(1, octans_hidpp_parse_battery_voltage(p1001_83, 4, &r));
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* 0x1F20 ADC: connected+charging (0x03), full (0x05), unlinked (0x00) */
     octans_reading_init(&r);
     const uint8_t p1f20[4] = {0x0E, 0xE3, 0x03, 0x00}; /* 3811 mV = 50%, connected+charging */
     ASSERT_EQ_INT(1, octans_hidpp_parse_adc_battery(p1f20, 4, &r));
     ASSERT_EQ_INT(50, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
 
-    /* HID++ 1.0 reg 0x0D & 0x07 */
+    octans_reading_init(&r);
+    const uint8_t p1f20_full[4] = {0x10, 0x5E, 0x05, 0x00}; /* 4190 mV = 100%, connected+full */
+    ASSERT_EQ_INT(1, octans_hidpp_parse_adc_battery(p1f20_full, 4, &r));
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    octans_reading_init(&r);
+    const uint8_t p1f20_off[4] = {0x0E, 0xE3, 0x00, 0x00};
+    ASSERT_EQ_INT(0, octans_hidpp_parse_adc_battery(p1f20_off, 4, &r));
+
+    /* 0x0104 CentPP Audio SoC */
+    octans_reading_init(&r);
+    const uint8_t p0104[4] = {74, 0x80, 0x00, 0x00};
+    ASSERT_EQ_INT(1, octans_hidpp_parse_centpp_soc(p0104, 4, &r));
+    ASSERT_EQ_INT(74, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* modelId prefix classification */
+    octans_device_kind_t mk = OCTANS_DEV_UNKNOWN;
+    ASSERT_EQ_INT(1, octans_hidpp_classify_model_id("MOUSE.g502_hero", &mk));
+    ASSERT_EQ_INT(OCTANS_DEV_MOUSE, mk);
+    ASSERT_EQ_INT(1, octans_hidpp_classify_model_id("HEADSET.g733", &mk));
+    ASSERT_EQ_INT(OCTANS_DEV_HEADSET, mk);
+    ASSERT_EQ_INT(-1, octans_hidpp_classify_model_id("WHEEL.g923", &mk));
+    ASSERT_EQ_INT(-1, octans_hidpp_classify_model_id("GAMEPAD.f710", &mk));
+
+    /* HID++ 1.0 reg 0x0D, 0x07 (4-level & direct pct), and 0x0F (voltage) */
     octans_reading_init(&r);
     const uint8_t reg0d[3] = {55, 0x00, 0x50};
     ASSERT_EQ_INT(1, octans_hidpp_parse_v10_reg0d(reg0d, 3, &r));
@@ -137,6 +187,17 @@ static void test_hidpp(void) {
     ASSERT_EQ_INT(1, octans_hidpp_parse_v10_reg07(reg07, 2, &r));
     ASSERT_EQ_INT(50, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    octans_reading_init(&r);
+    const uint8_t reg07_pct[4] = {68, 0x00, 0x00, 0x01};
+    ASSERT_EQ_INT(1, octans_hidpp_parse_v10_reg07(reg07_pct, 4, &r));
+    ASSERT_EQ_INT(68, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    octans_reading_init(&r);
+    const uint8_t reg0f[2] = {0x0E, 0xE3}; /* 3811 mV = 50% */
+    ASSERT_EQ_INT(1, octans_hidpp_parse_v10_reg0f(reg0f, 2, &r));
+    ASSERT_EQ_INT(50, r.battery_percent);
 }
 
 static void test_razer_and_sinowealth(void) {
@@ -672,124 +733,6 @@ static void test_user_rules_and_broad(void) {
     ASSERT_EQ_INT(35, out.battery_percent);
 }
 
-static void test_usb_etw_learner(void) {
-    /* 1. USB Configuration Descriptor parsing: Boot Mouse MI=0 EP=0x81, Vendor HID MI=2 EP=0x83/0x04 */
-    static const uint8_t cfg_desc[] = {
-        /* Config desc (9B) */
-        9, 2, 41, 0, 2, 1, 0, 0xA0, 50,
-        /* Interface 0: HID Boot Mouse (cls=3, sub=1, proto=2) */
-        9, 4, 0, 0, 1, 3, 1, 2, 0,
-        /* Endpoint 0x81 (IN, Interrupt) */
-        7, 5, 0x81, 3, 8, 0, 1,
-        /* Interface 2: Vendor HID (cls=3, sub=0, proto=0) */
-        9, 4, 2, 0, 2, 3, 0, 0, 0,
-        /* Endpoint 0x83 (IN), 0x04 (OUT) */
-        7, 5, 0x83, 3, 64, 0, 1,
-        7, 5, 0x04, 3, 64, 0, 1
-    };
-    octans_usb_ep_map_t em;
-    octans_usb_parse_config_desc(cfg_desc, sizeof(cfg_desc), &em);
-    ASSERT_EQ_INT(0, em.ep_to_iface[1 + 16]);
-    ASSERT_EQ_INT(1, em.ep_is_boot_hid[1 + 16]);
-    ASSERT_EQ_INT(2, em.ep_to_iface[3 + 16]);
-    ASSERT_EQ_INT(0, em.ep_is_boot_hid[3 + 16]);
-    ASSERT_EQ_INT(2, em.ep_to_iface[4]);
-    ASSERT_EQ_INT(0, em.ep_is_boot_hid[4]);
-
-    /* 2. Synthetic Interrupt OUT/IN capture (64B wire -> 65B Windows HID with Report ID 0)
-     *    with a rolling sequence byte at wire offset 1 (win offset 2). */
-    octans_hid_info_t ifaces[2];
-    memset(ifaces, 0, sizeof(ifaces));
-    ifaces[0].vid = 0x9999u;
-    ifaces[0].pid = 0x1010u;
-    ifaces[0].interface_num = 2;
-    ifaces[0].usage_page = 0xFF00u;
-    ifaces[0].usage = 0x0001u;
-    ifaces[0].input_len = 65u;
-    ifaces[0].output_len = 65u;
-    wcscpy(ifaces[0].product, L"Demo 2.4G Headset");
-
-    ifaces[1].vid = 0x9999u;
-    ifaces[1].pid = 0x1010u;
-    ifaces[1].interface_num = 2;
-    ifaces[1].usage_page = 0xFF01u;
-    ifaces[1].usage = 0x0001u;
-    ifaces[1].feature_len = 64u;
-    wcscpy(ifaces[1].product, L"Demo 2.4G Headset");
-
-    octans_usb_pkt_t pkts[4];
-    memset(pkts, 0, sizeof(pkts));
-    /* First TX -> RX (seq=0x01, batt=84%) */
-    pkts[0].ts_100ns = 10000000ULL;
-    pkts[0].vid = 0x9999u; pkts[0].pid = 0x1010u; pkts[0].iface_num = 2;
-    pkts[0].xfer_kind = OCTANS_USB_XFER_INTR_OUT; pkts[0].len = 64u;
-    pkts[0].data[0] = 0xA5u; pkts[0].data[1] = 0x06u;
-
-    pkts[1].ts_100ns = 10200000ULL;
-    pkts[1].vid = 0x9999u; pkts[1].pid = 0x1010u; pkts[1].iface_num = 2;
-    pkts[1].xfer_kind = OCTANS_USB_XFER_INTR_IN; pkts[1].len = 64u;
-    pkts[1].data[0] = 0xA5u; pkts[1].data[1] = 0x01u; pkts[1].data[2] = 0x06u; pkts[1].data[5] = 84u;
-
-    /* Second identical TX -> RX (seq=0x02, batt=84%) */
-    pkts[2] = pkts[0];
-    pkts[2].ts_100ns = 20000000ULL;
-
-    pkts[3] = pkts[1];
-    pkts[3].ts_100ns = 20200000ULL;
-    pkts[3].data[1] = 0x02u; /* varying seq byte */
-
-    octans_learn_candidate_t cands[16];
-    size_t cn = octans_etw_infer_candidates(
-        pkts, 4, 0x9999u, 0x1010u, OCTANS_DEV_HEADSET, L"Demo 2.4G Headset",
-        ifaces, 2, 84, cands, 16);
-    ASSERT_TRUE(cn >= 1u);
-    ASSERT_EQ_INT(TX_OUTPUT_INTR, cands[0].rule.tx);
-    ASSERT_EQ_INT(0xFF00, cands[0].rule.usage_page);
-    /* Leading 0x00 prepended -> wire offset 5 becomes Windows offset 6 */
-    ASSERT_EQ_INT(6, cands[0].rule.batt_offset);
-    ASSERT_EQ_INT(0x00, cands[0].rule.req[0]);
-    ASSERT_EQ_INT(0xA5, cands[0].rule.req[1]);
-    /* Varying byte at win offset 2 (wire offset 1) must be masked to 0x00 */
-    ASSERT_TRUE(cands[0].rule.resp_mask_len >= 3u);
-    ASSERT_EQ_INT(0xFF, cands[0].rule.resp_mask[0]);
-    ASSERT_EQ_INT(0xFF, cands[0].rule.resp_mask[1]);
-    ASSERT_EQ_INT(0x00, cands[0].rule.resp_mask[2]);
-
-    /* 3. Format rule to INI -> round-trip parse -> verify reply matches with new seq byte 0x77 */
-    wchar_t ini_out[1024];
-    ASSERT_EQ_INT(0, octans_user_rule_format_ini(&cands[0].rule, ini_out, 1024));
-    octans_user_rule_t parsed_r[2];
-    ASSERT_EQ_INT(1, octans_user_rules_parse_text(ini_out, parsed_r, 2));
-    uint8_t win_rep[65] = {0};
-    win_rep[0] = 0x00u; win_rep[1] = 0xA5u; win_rep[2] = 0x77u; win_rep[3] = 0x06u; win_rep[6] = 79u;
-    octans_proto_reading_t rd;
-    octans_reading_init(&rd);
-    ASSERT_EQ_INT(1, octans_user_rule_parse_reply(&parsed_r[0], win_rep, sizeof(win_rep), &rd));
-    ASSERT_EQ_INT(79, rd.battery_percent);
-
-    /* 4. Control Feature SET_REPORT -> GET_REPORT with Report ID 0x07 */
-    octans_usb_pkt_t fpkts[2];
-    memset(fpkts, 0, sizeof(fpkts));
-    fpkts[0].ts_100ns = 30000000ULL;
-    fpkts[0].vid = 0x9999u; fpkts[0].pid = 0x1010u; fpkts[0].iface_num = 2;
-    fpkts[0].xfer_kind = OCTANS_USB_XFER_CTRL_SET_FEAT; fpkts[0].report_id = 0x07u; fpkts[0].len = 64u;
-    fpkts[0].data[0] = 0x07u; fpkts[0].data[1] = 0x11u;
-
-    fpkts[1].ts_100ns = 30100000ULL;
-    fpkts[1].vid = 0x9999u; fpkts[1].pid = 0x1010u; fpkts[1].iface_num = 2;
-    fpkts[1].xfer_kind = OCTANS_USB_XFER_CTRL_GET_FEAT; fpkts[1].report_id = 0x07u; fpkts[1].len = 64u;
-    fpkts[1].data[0] = 0x07u; fpkts[1].data[1] = 0x11u; fpkts[1].data[4] = 73u;
-
-    cn = octans_etw_infer_candidates(
-        fpkts, 2, 0x9999u, 0x1010u, OCTANS_DEV_HEADSET, L"Demo 2.4G Headset",
-        ifaces, 2, 73, cands, 16);
-    ASSERT_TRUE(cn >= 1u);
-    ASSERT_EQ_INT(TX_FEATURE, cands[0].rule.tx);
-    ASSERT_EQ_INT(0xFF01, cands[0].rule.usage_page);
-    ASSERT_EQ_INT(4, cands[0].rule.batt_offset);
-    ASSERT_EQ_INT(0x07, cands[0].rule.req[0]);
-}
-
 static void test_mchose_v2_suite(void) {
     octans_proto_reading_t r;
 
@@ -908,7 +851,6 @@ int main(void) {
     test_keyboards_and_independent();
     test_merge_json_and_abi();
     test_user_rules_and_broad();
-    test_usb_etw_learner();
     test_mchose_v2_suite();
 
     printf("test_engine: %d/%d assertions passed\n",
