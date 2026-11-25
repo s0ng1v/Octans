@@ -1,6 +1,6 @@
 {
   "version": "0.6.1",
-  "notes": "全新 Octans 液态渐变水波默认样式；面板支持任意空白区拖动记忆位置且防任务栏遮挡；右键菜单 0ms 失焦收起；Pulsar 托盘放大且零重叠；修复罗技双显重复设备；常驻内存低至数 MB 并内置 SHA256 自动升级。",
+  "notes": "全新 Octans 液态渐变水波默认样式；面板支持任意空白区拖动记忆位置且防任务栏遮挡；右键菜单 0ms 失焦收起；Pulsar 托盘放大且零重叠；修复罗技双显重复设备；常驻内存 <5MB 并内置 SHA256 自动升级。",
   "sha256": "9FB4330F8657ECD77EBF8AEE975B837352A661C74A867CCBB798DE7F1279D8C3",
   "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe",
   "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe",

@@ -9,7 +9,7 @@
 <h3 align="center">轻量原生、极低消耗的 Windows 2.4G 外设托盘电量工具</h3>
 
 <p align="center">
-  把 2.4G 无线鼠标、键盘、耳机、手柄的实时电量直接放进 Windows 任务栏右下角——常驻 <b>0% CPU</b>、仅数 MB 内存，告别臃肿官方驱动。
+  把 2.4G 无线鼠标、键盘、耳机、手柄的实时电量直接放进 Windows 任务栏右下角——常驻 <b>0% CPU</b>、<b>&lt; 5 MB 内存</b>，告别臃肿官方驱动。
 </p>
 
 <p align="center">
@@ -27,11 +27,15 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-16A34A?style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0891B2?style=flat-square">
   <img alt="Idle CPU" src="https://img.shields.io/badge/常驻%20CPU-0%25-10B981?style=flat-square">
-  <img alt="Idle RAM" src="https://img.shields.io/badge/常驻内存-极低占用-6366F1?style=flat-square">
+  <img alt="Idle RAM" src="https://img.shields.io/badge/常驻内存-%3C5MB-6366F1?style=flat-square">
 </p>
 
 <p align="center">
   <img alt="Octans 浅色与深色模式主面板与任务栏托盘预览" src="assets/screenshots/octans-hero.png" width="100%">
+</p>
+
+<p align="center">
+  <img alt="Octans / Nebula / Pulsar 三套样式预览对比" src="assets/screenshots/octans-styles.png" width="100%">
 </p>
 
 ---
@@ -39,29 +43,9 @@
 ## 功能亮点
 
 - **任务栏右下角一眼看电量**：点击面板中任意设备卡片，即可将其直接固定到 Windows 任务栏托盘，支持同时固定多台外设；取消最后一个固定设备后，托盘自动恢复为极简透明 Octans 图标。
-- **常驻性能消耗极低**：静默驻留托盘时 **0% CPU** 占用，不加载任何显卡 3D 驱动或臃肿浏览器内核，闲置自动释放面板内存，全程零后台联网、零遥测，打游戏与办公完全无感。
+- **三套风格自由切换**：内置 **`Octans`**（液态渐变水波，默认）、**`Nebula`**（经典电量环）与 **`Pulsar`**（大字电量数字）三套样式，支持连续滑块微调任务栏图标大小。
+- **常驻性能消耗极低**：静默驻留托盘时 **0% CPU**、**< 5 MB 内存**，不加载任何显卡 3D 驱动或臃肿浏览器内核，闲置自动释放面板内存，全程零后台联网、零遥测，打游戏与办公完全无感。
 - **免开多套官方驱动，即插即用**：自动监听 USB 2.4G 接收器热插拔与电脑休眠唤醒，无需同时常驻罗技 G HUB、雷蛇 Synapse、迈从驱动等动辄数百 MB 的后台全家桶。
-- **贴心的桌面交互细节**：
-  - 自动跟随 Windows 10/11 深色 / 浅色模式切换毛玻璃质感面板；
-  - 统一直观的电量色阶（`>40%` 绿、`21%–40%` 橙、`≤20%` 红、充电态清晰标识）；
-  - 支持右键自定义设备名称、屏蔽/移除不需要的设备、开机静默自启动；
-  - 菜单内置「关于 Octans」，支持手动检查更新并在软件内完成 SHA-256 校验与一键静默升级（优先国内免登录源）。
-
----
-
-## 三套托盘与面板显示样式
-
-右键托盘图标或点击面板右上角 `···`，即可在三套宇宙主题样式间一键实时切换，并可通过连续滑块自由微调任务栏图标大小：
-
-<p align="center">
-  <img alt="Octans / Nebula / Pulsar 三套样式预览对比" src="assets/screenshots/octans-styles.png" width="100%">
-</p>
-
-| 样式 | 面板表现 | 任务栏托盘表现 |
-|---|---|---|
-| **`Octans`（默认）** | 外设本体液态充能，通透三段渐变配合轻柔双层流动水波 | 满幅通透三段渐变液态轮廓，零边框高辨识度 |
-| **`Nebula`** | 经典圆环电量进度 + 极简线性外设图标 | 紧凑高对比度外环 + 清晰线性图标 |
-| **`Pulsar`** | 12 刻度精密环形仪表盘 | 上方大号外设轮廓 + 下方醒目彩色电量数字 |
 
 ---
 
