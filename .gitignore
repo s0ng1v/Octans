@@ -1,0 +1,36 @@
+# Reference archives & upstream repos
+upstream.zip
+halobattery.zip
+2.4G-battery-viewer-main/
+HaloBattery-main/
+.workbuddy/
+
+# Local AI / dev workflow tooling (never publish)
+.agent/
+.trellis/
+AGENTS.md
+
+# Internal dev research notes (publish user-facing docs only)
+docs/01-*.md
+docs/02-*.md
+docs/03-*.md
+docs/04-*.md
+docs/05-*.md
+
+# Third-party / oversized font binaries (app falls back cleanly to system fonts)
+ui/fonts/*.ttf
+ui/fonts/*.otf
+
+# Build artifacts
+build/
+dist/
+out/
+*.exe
+*.dll
+*.lib
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.res

@@ -1,0 +1,1657 @@
+#include "ui_panel.h"
+#include "ui_theme.h"
+#include "ui_glyphs.h"
+#include "ui_brand.h"
+#include "ui_fonts.h"
+#include <mmsystem.h>
+#include <stdio.h>
+
+namespace octans_ui {
+
+static constexpr UINT_PTR TIMER_ANIM  = 1;
+static constexpr UINT_PTR TIMER_HOVER = 2;
+
+/* Layout constants (DIPs) */
+static constexpr float kPanelPadX      = 16.0f;
+static constexpr float kPanelPadTop    = 12.0f;
+static constexpr float kPanelPadBottom = 12.0f;
+static constexpr float kHeaderH        = 30.0f;
+static constexpr float kHeaderGap      = 10.0f;
+static constexpr float kCardW          = 152.0f;
+static constexpr float kCardH          = 134.0f;
+static constexpr float kCardGap        = 12.0f;
+static constexpr float kFooterGap      = 10.0f;
+static constexpr float kFooterH        = 26.0f;
+static constexpr float kCardRadius     = 16.0f;
+static constexpr float kPanelRadius    = 8.0f;  /* Matches Win11 DWMWCP_ROUND seamlessly */
+static constexpr float kMaxGridViewH   = 356.0f; /* ~2.55 rows before scrolling */
+
+struct CardAnim {
+    char id[64];
+    float pct_start;
+    float display_pct;
+    float target_pct;
+    float pct_t;        /* Bounded ease-out tween progress [0 .. 1] — zero asymptotic 77->78 stall */
+    float pct_dur;      /* Duration in seconds (0.52s on panel open, 0.42s on live updates) */
+    float hover_t;
+    float enter_t;      /* Staggered card entrance [<=0 .. 1] */
+    float pulse_t;      /* Tactile click/pin spring pulse [1 -> 0] */
+    bool initialized;
+};
+
+struct PanelContext {
+    HWND hwnd = nullptr;
+    UINT dpi = 96;
+    bool backdrop_supported = false;
+
+    /* Logical panel dimensions (DIPs) & anchored screen position (px) */
+    float logical_w = 342.0f;
+    float logical_h = 338.0f;
+    int target_x = 0;
+    int target_y = 0;
+    int anchor_x = 0;
+    int anchor_y = 0;
+    bool has_anchor = false;
+    bool anchor_from_top = false;
+
+    /* SwapChain pixel size */
+    UINT swap_w = 0;
+    UINT swap_h = 0;
+
+    /* Visibility & high-precision QPC animation state */
+    bool want_visible = false;
+    bool exiting_dcomp = false;
+    bool animating = false;
+    bool timer_period_active = false;
+    float panel_t = 0.0f; /* 0..1: 0=hidden, 1=open */
+    float exit_u = 0.0f;  /* 0..1: monotonic shrink-to-tray progress */
+    LARGE_INTEGER qpc_freq = {};
+    LARGE_INTEGER last_qpc = {};
+    uint64_t last_show_ms = 0;
+    float refresh_spin_deg = 0.0f;
+    bool refresh_spinning = false;
+    float brand_anim_t = 1.0f;
+
+    /* Interaction & inertial scroll state */
+    int hover_card = -1;
+    int hover_header_btn = 0; /* 0=none, 1=refresh, 2=more */
+    bool mouse_tracked = false;
+    int tooltip_card = -1;
+    float tooltip_t = 0.0f;
+    float scroll_y = 0.0f;
+    float target_scroll_y = 0.0f;
+    float max_scroll_y = 0.0f;
+
+    /* Cached hit rects (DIPs) */
+    D2D1_RECT_F refresh_btn_rc = {};
+    D2D1_RECT_F more_btn_rc = {};
+    D2D1_RECT_F discover_btn_rc = {};
+    D2D1_RECT_F grid_hit_rc = {};
+    D2D1_RECT_F grid_clip_rc = {};
+    D2D1_RECT_F footer_rc = {};
+    D2D1_RECT_F card_rects[MAX_DEVICES] = {};
+
+    /* Per-device smooth ring & hover animations */
+    CardAnim anims[MAX_DEVICES] = {};
+
+    /* D3D11 / DXGI / DirectComposition / Direct2D / DirectWrite resources */
+    ComPtr<ID3D11Device> d3d_device;
+    ComPtr<IDXGIDevice> dxgi_device;
+    ComPtr<IDXGISwapChain1> swap_chain;
+    ComPtr<IDCompositionDevice> dcomp_device;
+    ComPtr<IDCompositionTarget> dcomp_target;
+    ComPtr<IDCompositionVisual> dcomp_visual;
+
+    ComPtr<ID2D1Factory1> d2d_factory;
+    ComPtr<ID2D1Device> d2d_device;
+    ComPtr<ID2D1DeviceContext> d2d_ctx;
+    ComPtr<ID2D1Bitmap1> d2d_target_bmp;
+    ComPtr<ID2D1StrokeStyle> round_stroke;
+
+    ComPtr<IDWriteFactory> dwrite_factory;
+    ComPtr<IDWriteTypography> tabular_typo;
+    ComPtr<IDWriteTextFormat> fmt_title;
+    ComPtr<IDWriteTextFormat> fmt_subtitle;
+    ComPtr<IDWriteTextFormat> fmt_percent;
+    ComPtr<IDWriteTextFormat> fmt_name;
+    ComPtr<IDWriteTextFormat> fmt_sublabel;
+    ComPtr<IDWriteTextFormat> fmt_tooltip;
+    ComPtr<IDWriteTextFormat> fmt_empty;
+};
+
+static PanelContext g_panel;
+
+static D2D1_COLOR_F LerpColor(const D2D1_COLOR_F &a, const D2D1_COLOR_F &b, float t) {
+    t = ClampF(t, 0.0f, 1.0f);
+    return MakeColor(
+        LerpF(a.r, b.r, t),
+        LerpF(a.g, b.g, t),
+        LerpF(a.b, b.b, t),
+        LerpF(a.a, b.a, t)
+    );
+}
+
+static bool PtInD2DRect(const D2D1_RECT_F &r, float x, float y) {
+    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+static UINT GetFrameIntervalMs() {
+    DWM_TIMING_INFO ti = {};
+    ti.cbSize = sizeof(ti);
+    if (SUCCEEDED(DwmGetCompositionTimingInfo(nullptr, &ti)) &&
+        ti.rateRefresh.uiNumerator > 0 && ti.rateRefresh.uiDenominator > 0) {
+        double hz = static_cast<double>(ti.rateRefresh.uiNumerator) /
+                    static_cast<double>(ti.rateRefresh.uiDenominator);
+        if (hz >= 110.0) return 7;  /* ~120-144Hz */
+        if (hz >= 85.0)  return 10; /* ~90-100Hz */
+    }
+    return 15; /* ~60Hz */
+}
+
+static void StartAnimTimer() {
+    if (!g_panel.hwnd) return;
+    if (!g_panel.animating) {
+        g_panel.animating = true;
+        if (g_panel.qpc_freq.QuadPart == 0) {
+            QueryPerformanceFrequency(&g_panel.qpc_freq);
+        }
+        QueryPerformanceCounter(&g_panel.last_qpc);
+        if (!g_panel.timer_period_active) {
+            timeBeginPeriod(1);
+            g_panel.timer_period_active = true;
+        }
+        SetTimer(g_panel.hwnd, TIMER_ANIM, GetFrameIntervalMs(), nullptr);
+    }
+}
+
+static void StopAnimTimer() {
+    if (g_panel.hwnd && g_panel.animating) {
+        KillTimer(g_panel.hwnd, TIMER_ANIM);
+        g_panel.animating = false;
+    }
+    if (g_panel.timer_period_active) {
+        timeEndPeriod(1);
+        g_panel.timer_period_active = false;
+    }
+}
+
+static void ReleaseTargetBitmap() {
+    if (g_panel.d2d_ctx) {
+        g_panel.d2d_ctx->SetTarget(nullptr);
+    }
+    g_panel.d2d_target_bmp.Reset();
+}
+
+static void ReleaseGraphicsResources() {
+    ReleaseTargetBitmap();
+    g_panel.round_stroke.Reset();
+    g_panel.d2d_ctx.Reset();
+    g_panel.d2d_device.Reset();
+    g_panel.dcomp_visual.Reset();
+    g_panel.dcomp_target.Reset();
+    g_panel.dcomp_device.Reset();
+    g_panel.swap_chain.Reset();
+    g_panel.dxgi_device.Reset();
+    g_panel.d3d_device.Reset();
+    g_panel.swap_w = 0;
+    g_panel.swap_h = 0;
+}
+
+static bool EnsureDirectWriteResources() {
+    if (g_panel.dwrite_factory) return true;
+
+    if (FAILED(DWriteCreateFactory(
+            DWRITE_FACTORY_TYPE_SHARED,
+            __uuidof(IDWriteFactory),
+            reinterpret_cast<IUnknown **>(g_panel.dwrite_factory.Put())))) {
+        return false;
+    }
+
+    if (SUCCEEDED(g_panel.dwrite_factory->CreateTypography(g_panel.tabular_typo.Put()))) {
+        DWRITE_FONT_FEATURE feat = {};
+        feat.nameTag = DWRITE_FONT_FEATURE_TAG_TABULAR_FIGURES;
+        feat.parameter = 1;
+        g_panel.tabular_typo->AddFontFeature(feat);
+    }
+
+    auto make_fmt = [](
+        ComPtr<IDWriteTextFormat> &out,
+        DWRITE_FONT_WEIGHT weight,
+        float size,
+        DWRITE_TEXT_ALIGNMENT align,
+        bool ellipsis
+    ) {
+        CreateOctansTextFormat(
+            g_panel.dwrite_factory.Get(),
+            weight,
+            size,
+            align,
+            DWRITE_FONT_STRETCH_NORMAL,
+            ellipsis,
+            out
+        );
+    };
+
+    make_fmt(g_panel.fmt_title,    DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.5f, DWRITE_TEXT_ALIGNMENT_LEADING,  true);
+    make_fmt(g_panel.fmt_subtitle, DWRITE_FONT_WEIGHT_REGULAR,   11.5f, DWRITE_TEXT_ALIGNMENT_LEADING,  true);
+    make_fmt(g_panel.fmt_percent,  DWRITE_FONT_WEIGHT_SEMI_BOLD, 19.5f, DWRITE_TEXT_ALIGNMENT_CENTER,   false);
+    make_fmt(g_panel.fmt_name,     DWRITE_FONT_WEIGHT_MEDIUM,    12.0f, DWRITE_TEXT_ALIGNMENT_CENTER,   true);
+    make_fmt(g_panel.fmt_sublabel, DWRITE_FONT_WEIGHT_REGULAR,   10.2f, DWRITE_TEXT_ALIGNMENT_CENTER,   true);
+    make_fmt(g_panel.fmt_tooltip,  DWRITE_FONT_WEIGHT_REGULAR,   10.5f, DWRITE_TEXT_ALIGNMENT_CENTER,   true);
+    make_fmt(g_panel.fmt_empty,    DWRITE_FONT_WEIGHT_MEDIUM,    12.5f, DWRITE_TEXT_ALIGNMENT_CENTER,   false);
+    return true;
+}
+
+static bool BindSwapChainToD2D() {
+    if (!g_panel.swap_chain || !g_panel.d2d_ctx) return false;
+    ReleaseTargetBitmap();
+
+    ComPtr<IDXGISurface> surface;
+    if (FAILED(g_panel.swap_chain->GetBuffer(0, __uuidof(IDXGISurface), surface.PutVoid()))) {
+        return false;
+    }
+
+    float dpi_f = static_cast<float>(g_panel.dpi);
+    D2D1_BITMAP_PROPERTIES1 props = {};
+    props.pixelFormat.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    props.pixelFormat.alphaMode = D2D1_ALPHA_MODE_PREMULTIPLIED;
+    props.dpiX = dpi_f;
+    props.dpiY = dpi_f;
+    props.bitmapOptions = D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW;
+
+    if (FAILED(g_panel.d2d_ctx->CreateBitmapFromDxgiSurface(
+            surface.Get(), &props, g_panel.d2d_target_bmp.Put()))) {
+        return false;
+    }
+    g_panel.d2d_ctx->SetTarget(g_panel.d2d_target_bmp.Get());
+    g_panel.d2d_ctx->SetDpi(dpi_f, dpi_f);
+    return true;
+}
+
+static bool EnsureGraphicsResources(UINT px_w, UINT px_h) {
+    if (!g_panel.hwnd) return false;
+    if (px_w < 2) px_w = 2;
+    if (px_h < 2) px_h = 2;
+
+    if (!EnsureDirectWriteResources()) return false;
+
+    if (!g_panel.d2d_factory) {
+        D2D1_FACTORY_OPTIONS fopts = {};
+        if (FAILED(D2D1CreateFactory(
+                D2D1_FACTORY_TYPE_SINGLE_THREADED,
+                __uuidof(ID2D1Factory1),
+                &fopts,
+                g_panel.d2d_factory.PutVoid()))) {
+            return false;
+        }
+    }
+
+    if (!g_panel.d3d_device) {
+        UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+        D3D_FEATURE_LEVEL levels[] = {
+            D3D_FEATURE_LEVEL_11_1,
+            D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_10_1,
+            D3D_FEATURE_LEVEL_10_0
+        };
+        HRESULT hr = D3D11CreateDevice(
+            nullptr,
+            D3D_DRIVER_TYPE_HARDWARE,
+            nullptr,
+            flags,
+            levels,
+            4,
+            D3D11_SDK_VERSION,
+            g_panel.d3d_device.Put(),
+            nullptr,
+            nullptr
+        );
+        if (FAILED(hr)) {
+            hr = D3D11CreateDevice(
+                nullptr,
+                D3D_DRIVER_TYPE_WARP,
+                nullptr,
+                flags,
+                levels,
+                4,
+                D3D11_SDK_VERSION,
+                g_panel.d3d_device.Put(),
+                nullptr,
+                nullptr
+            );
+            if (FAILED(hr)) return false;
+        }
+
+        if (FAILED(g_panel.d3d_device->QueryInterface(__uuidof(IDXGIDevice), g_panel.dxgi_device.PutVoid()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        if (FAILED(g_panel.d2d_factory->CreateDevice(g_panel.dxgi_device.Get(), g_panel.d2d_device.Put()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        if (FAILED(g_panel.d2d_device->CreateDeviceContext(
+                D2D1_DEVICE_CONTEXT_OPTIONS_NONE, g_panel.d2d_ctx.Put()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        D2D1_STROKE_STYLE_PROPERTIES sp = {};
+        sp.startCap = D2D1_CAP_STYLE_ROUND;
+        sp.endCap = D2D1_CAP_STYLE_ROUND;
+        sp.dashCap = D2D1_CAP_STYLE_ROUND;
+        sp.lineJoin = D2D1_LINE_JOIN_ROUND;
+        sp.miterLimit = 10.0f;
+        sp.dashStyle = D2D1_DASH_STYLE_SOLID;
+        g_panel.d2d_factory->CreateStrokeStyle(sp, nullptr, 0, g_panel.round_stroke.Put());
+
+        ComPtr<IDXGIAdapter> adapter;
+        ComPtr<IDXGIFactory2> dxgi_factory;
+        if (FAILED(g_panel.dxgi_device->GetAdapter(adapter.Put())) ||
+            FAILED(adapter->GetParent(__uuidof(IDXGIFactory2), dxgi_factory.PutVoid()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        DXGI_SWAP_CHAIN_DESC1 sc_desc = {};
+        sc_desc.Width = px_w;
+        sc_desc.Height = px_h;
+        sc_desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        sc_desc.SampleDesc.Count = 1;
+        sc_desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+        sc_desc.BufferCount = 2;
+        sc_desc.Scaling = DXGI_SCALING_STRETCH;
+        sc_desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+        sc_desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+
+        if (FAILED(dxgi_factory->CreateSwapChainForComposition(
+                g_panel.dxgi_device.Get(), &sc_desc, nullptr, g_panel.swap_chain.Put()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        if (FAILED(DCompositionCreateDevice(
+                g_panel.dxgi_device.Get(),
+                __uuidof(IDCompositionDevice),
+                g_panel.dcomp_device.PutVoid()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        if (FAILED(g_panel.dcomp_device->CreateTargetForHwnd(g_panel.hwnd, TRUE, g_panel.dcomp_target.Put())) ||
+            FAILED(g_panel.dcomp_device->CreateVisual(g_panel.dcomp_visual.Put()))) {
+            ReleaseGraphicsResources();
+            return false;
+        }
+
+        g_panel.dcomp_visual->SetContent(g_panel.swap_chain.Get());
+        g_panel.dcomp_target->SetRoot(g_panel.dcomp_visual.Get());
+        g_panel.dcomp_device->Commit();
+
+        g_panel.swap_w = px_w;
+        g_panel.swap_h = px_h;
+        return BindSwapChainToD2D();
+    }
+
+    if (g_panel.swap_w != px_w || g_panel.swap_h != px_h) {
+        ReleaseTargetBitmap();
+        HRESULT hr = g_panel.swap_chain->ResizeBuffers(
+            0, px_w, px_h, DXGI_FORMAT_UNKNOWN, 0
+        );
+        if (FAILED(hr)) {
+            ReleaseGraphicsResources();
+            return EnsureGraphicsResources(px_w, px_h);
+        }
+        g_panel.swap_w = px_w;
+        g_panel.swap_h = px_h;
+        return BindSwapChainToD2D();
+    }
+
+    return g_panel.d2d_target_bmp.Get() != nullptr;
+}
+
+static void ComputeLayoutMetrics() {
+    const UiState &st = GetState();
+    size_t count = st.device_count;
+
+    float grid_w = 0.0f;
+    float grid_content_h = 0.0f;
+    float grid_view_h = 0.0f;
+    int cols = 2;
+
+    if (count == 0) {
+        cols = 1;
+        g_panel.logical_w = 308.0f;
+        grid_content_h = (st.demo_hooks.on_action != nullptr) ? 116.0f : 154.0f;
+        grid_view_h = grid_content_h;
+    } else if (count == 1) {
+        cols = 1;
+        grid_w = kCardW + 76.0f; /* Comfortable header clearance for brand wordmark + "· 1 台设备" */
+        g_panel.logical_w = kPanelPadX * 2.0f + grid_w;
+        grid_content_h = kCardH;
+        grid_view_h = grid_content_h;
+    } else {
+        cols = 2;
+        grid_w = kCardW * 2.0f + kCardGap;
+        g_panel.logical_w = kPanelPadX * 2.0f + grid_w;
+        int rows = static_cast<int>((count + 1) / 2);
+        grid_content_h = rows * kCardH + (rows - 1) * kCardGap;
+        grid_view_h = (grid_content_h > kMaxGridViewH) ? kMaxGridViewH : grid_content_h;
+    }
+
+    float grid_top = kPanelPadTop + kHeaderH + kHeaderGap;
+    float footer_top = grid_top + grid_view_h + kFooterGap;
+    g_panel.logical_h = footer_top + kFooterH + kPanelPadBottom;
+    g_panel.max_scroll_y = (grid_content_h > grid_view_h) ? (grid_content_h - grid_view_h) : 0.0f;
+    g_panel.target_scroll_y = ClampF(g_panel.target_scroll_y, 0.0f, g_panel.max_scroll_y);
+    g_panel.scroll_y = ClampF(g_panel.scroll_y, 0.0f, g_panel.max_scroll_y);
+
+    float btn_sz = 26.0f;
+    float btn_y = kPanelPadTop + (kHeaderH - btn_sz) * 0.5f;
+    float more_r = g_panel.logical_w - kPanelPadX;
+    g_panel.more_btn_rc = MakeRect(more_r - btn_sz, btn_y, more_r, btn_y + btn_sz);
+    float ref_r = g_panel.more_btn_rc.left - 4.0f;
+    g_panel.refresh_btn_rc = MakeRect(ref_r - btn_sz, btn_y, ref_r, btn_y + btn_sz);
+
+    g_panel.grid_hit_rc = MakeRect(
+        kPanelPadX,
+        grid_top,
+        g_panel.logical_w - kPanelPadX,
+        grid_top + grid_view_h
+    );
+    /* Generous 6dp breathing margin so hover lift/scale (1.022x, -1.8dp) is NEVER clipped! */
+    g_panel.grid_clip_rc = MakeRect(
+        kPanelPadX - 6.0f,
+        grid_top - 6.0f,
+        g_panel.logical_w - kPanelPadX + 6.0f,
+        grid_top + grid_view_h + 6.0f
+    );
+    g_panel.footer_rc = MakeRect(
+        kPanelPadX,
+        footer_top,
+        g_panel.logical_w - kPanelPadX,
+        footer_top + kFooterH
+    );
+
+    if (count == 0 && !(st.demo_hooks.on_action != nullptr)) {
+        float cx = g_panel.logical_w * 0.5f;
+        float btn_w = 156.0f;
+        float btn_h = 34.0f;
+        float btn_top = grid_top + 106.0f;
+        g_panel.discover_btn_rc = MakeRect(cx - btn_w * 0.5f, btn_top, cx + btn_w * 0.5f, btn_top + btn_h);
+    } else {
+        g_panel.discover_btn_rc = MakeRect(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
+    for (size_t i = 0; i < count && i < MAX_DEVICES; ++i) {
+        if (count == 1) {
+            g_panel.card_rects[i] = MakeRect(
+                kPanelPadX,
+                grid_top,
+                g_panel.logical_w - kPanelPadX,
+                grid_top + kCardH
+            );
+        } else {
+            int row = static_cast<int>(i) / cols;
+            int col = static_cast<int>(i) % cols;
+            float x0 = kPanelPadX + col * (kCardW + kCardGap);
+            float y0 = grid_top + row * (kCardH + kCardGap) - g_panel.scroll_y;
+            g_panel.card_rects[i] = MakeRect(x0, y0, x0 + kCardW, y0 + kCardH);
+        }
+    }
+}
+
+static void ComputeTargetPosition(int ax, int ay) {
+    g_panel.anchor_x = ax;
+    g_panel.anchor_y = ay;
+    g_panel.has_anchor = true;
+
+    POINT pt = { ax, ay };
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(mon, &mi);
+
+    /* Query monitor DPI cleanly */
+    UINT dpi = GetWindowDpiSafe(g_panel.hwnd);
+    g_panel.dpi = dpi;
+    float scale = static_cast<float>(dpi) / 96.0f;
+
+    int px_w = static_cast<int>(ceilf(g_panel.logical_w * scale));
+    int px_h = static_cast<int>(ceilf(g_panel.logical_h * scale));
+    int margin = static_cast<int>(ceilf(12.0f * scale));
+
+    int x = ax - px_w / 2;
+    if (x + px_w > mi.rcWork.right - margin) {
+        x = mi.rcWork.right - margin - px_w;
+    }
+    if (x < mi.rcWork.left + margin) {
+        x = mi.rcWork.left + margin;
+    }
+
+    int y = 0;
+    if (ay < mi.rcWork.top + static_cast<int>(64.0f * scale)) {
+        /* Top taskbar */
+        g_panel.anchor_from_top = true;
+        y = mi.rcWork.top + margin;
+    } else {
+        /* Standard bottom taskbar */
+        g_panel.anchor_from_top = false;
+        y = mi.rcWork.bottom - margin - px_h;
+    }
+    if (y < mi.rcWork.top + margin) y = mi.rcWork.top + margin;
+    if (y + px_h > mi.rcWork.bottom - margin) y = mi.rcWork.bottom - margin - px_h;
+
+    g_panel.target_x = x;
+    g_panel.target_y = y;
+}
+
+static void ApplyWindowBoundsForAnim() {
+    if (!g_panel.hwnd) return;
+    float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+    int px_w = static_cast<int>(ceilf(g_panel.logical_w * scale));
+    int px_h = static_cast<int>(ceilf(g_panel.logical_h * scale));
+
+    /* On exit, keep HWND stationary while DirectComposition GPU-shrinks & fades smoothly into tray! */
+    int slide_px = 0;
+    if (g_panel.want_visible) {
+        float ease = EaseOutQuint(g_panel.panel_t);
+        slide_px = static_cast<int>(roundf((1.0f - ease) * 16.0f * scale));
+    }
+    int cur_y = g_panel.anchor_from_top ? (g_panel.target_y - slide_px) : (g_panel.target_y + slide_px);
+
+    SetWindowPos(
+        g_panel.hwnd,
+        HWND_TOPMOST,
+        g_panel.target_x,
+        cur_y,
+        px_w,
+        px_h,
+        SWP_NOACTIVATE
+    );
+}
+
+static const wchar_t *FormatConnShort(octans_conn_kind_t c) {
+    switch (c) {
+        case OCTANS_CONN_DONGLE_24G: return L"2.4G";
+        case OCTANS_CONN_BLUETOOTH:  return L"\u84dd\u7259";
+        case OCTANS_CONN_WIRED:      return L"\u6709\u7ebf";
+        default:                     return L"";
+    }
+}
+
+static void FormatSubLabel(const octans_device_view_t &d, wchar_t *buf, size_t cap, int *semantic_kind) {
+    /* semantic_kind: 0=neutral, 1=low(red), 2=charging/full(green), 3=muted */
+    *semantic_kind = 0;
+    const wchar_t *conn = FormatConnShort(d.conn);
+
+    if (d.power_state == OCTANS_PWR_OFFLINE) {
+        *semantic_kind = 3;
+        _snwprintf(buf, cap - 1, L"\u79bb\u7ebf");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+    if (d.power_state == OCTANS_PWR_SLEEPING) {
+        *semantic_kind = 3;
+        if (conn[0]) _snwprintf(buf, cap - 1, L"%ls \u00b7 \u4f11\u7720", conn);
+        else _snwprintf(buf, cap - 1, L"\u4f11\u7720");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+    if (d.power_state == OCTANS_PWR_CHARGING) {
+        *semantic_kind = 2;
+        if (conn[0]) _snwprintf(buf, cap - 1, L"%ls \u00b7 \u5145\u7535\u4e2d", conn);
+        else _snwprintf(buf, cap - 1, L"\u5145\u7535\u4e2d");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+    if (d.power_state == OCTANS_PWR_FULL) {
+        *semantic_kind = 2;
+        if (conn[0]) _snwprintf(buf, cap - 1, L"%ls \u00b7 \u5df2\u5145\u6ee1", conn);
+        else _snwprintf(buf, cap - 1, L"\u5df2\u5145\u6ee1");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+    if (d.is_low_battery || (d.battery_percent >= 0 && d.battery_percent <= 20)) {
+        *semantic_kind = 1;
+        if (conn[0]) _snwprintf(buf, cap - 1, L"%ls \u00b7 \u4f4e\u7535\u91cf", conn);
+        else _snwprintf(buf, cap - 1, L"\u4f4e\u7535\u91cf");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+    if (d.is_estimated) {
+        if (conn[0]) _snwprintf(buf, cap - 1, L"%ls \u00b7 \u4f30\u7b97", conn);
+        else _snwprintf(buf, cap - 1, L"\u4f30\u7b97");
+        buf[cap - 1] = L'\0';
+        return;
+    }
+
+    if (conn[0]) {
+        wcsncpy(buf, conn, cap - 1);
+        buf[cap - 1] = L'\0';
+    } else {
+        wcsncpy(buf, L"\u5df2\u8fde\u63a5", cap - 1);
+        buf[cap - 1] = L'\0';
+    }
+}
+
+static void FormatTooltipDetail(const octans_device_view_t &d, wchar_t *buf, size_t cap) {
+    buf[0] = L'\0';
+    size_t pos = 0;
+    auto append = [&](const wchar_t *s) {
+        if (!s || !s[0]) return;
+        size_t len = wcslen(s);
+        if (pos + len < cap) {
+            wmemcpy(buf + pos, s, len);
+            pos += len;
+            buf[pos] = L'\0';
+        }
+    };
+
+    if (d.brand[0] && wcsstr(d.name, d.brand) == nullptr) {
+        append(d.brand);
+        append(L" \u00b7 ");
+    }
+    append(d.name[0] ? d.name : L"Device");
+
+    if (d.voltage_mv > 0) {
+        wchar_t vb[32] = {};
+        _snwprintf(vb, 31, L" \u00b7 %.2fV", static_cast<double>(d.voltage_mv) / 1000.0);
+        append(vb);
+    }
+    if (d.signal_percent >= 0) {
+        wchar_t sb[32] = {};
+        _snwprintf(sb, 31, L" \u00b7 \u4fe1\u53f7 %d%%", static_cast<int>(d.signal_percent));
+        append(sb);
+    }
+    if (d.is_estimated) {
+        append(L" \u00b7 \u7535\u538b\u4f30\u7b97");
+    }
+    if (d.updated_ms > 0) {
+        uint64_t now = GetTickCount64();
+        uint64_t age_s = (now > d.updated_ms) ? ((now - d.updated_ms) / 1000ULL) : 0ULL;
+        wchar_t ab[32] = {};
+        if (age_s < 5) {
+            wcscpy(ab, L" \u00b7 \u521a\u521a\u66f4\u65b0");
+        } else if (age_s < 60) {
+            _snwprintf(ab, 31, L" \u00b7 %us \u524d", static_cast<unsigned>(age_s));
+        } else {
+            _snwprintf(ab, 31, L" \u00b7 %um \u524d", static_cast<unsigned>(age_s / 60ULL));
+        }
+        append(ab);
+    }
+}
+
+static void DrawTabularText(
+    ID2D1DeviceContext *ctx,
+    const wchar_t *text,
+    IDWriteTextFormat *fmt,
+    const D2D1_RECT_F &rect,
+    ID2D1Brush *brush
+) {
+    if (!ctx || !text || !fmt || !brush || !g_panel.dwrite_factory) return;
+    UINT32 len = static_cast<UINT32>(wcslen(text));
+    float w = rect.right - rect.left;
+    float h = rect.bottom - rect.top;
+    if (w <= 0.0f || h <= 0.0f) return;
+
+    ComPtr<IDWriteTextLayout> layout;
+    if (FAILED(g_panel.dwrite_factory->CreateTextLayout(text, len, fmt, w, h, layout.Put()))) {
+        ctx->DrawText(text, len, fmt, rect, brush);
+        return;
+    }
+
+    if (g_panel.tabular_typo) {
+        DWRITE_TEXT_RANGE range = { 0, len };
+        layout->SetTypography(g_panel.tabular_typo.Get(), range);
+    }
+    ctx->DrawTextLayout(MakePt(rect.left, rect.top), layout.Get(), brush, D2D1_DRAW_TEXT_OPTIONS_CLIP);
+}
+
+static void RenderPanel() {
+    if (!g_panel.hwnd) return;
+    const UiState &st = GetState();
+    ComputeLayoutMetrics();
+
+    float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+    UINT px_w = static_cast<UINT>(ceilf(g_panel.logical_w * scale));
+    UINT px_h = static_cast<UINT>(ceilf(g_panel.logical_h * scale));
+    if (!EnsureGraphicsResources(px_w, px_h)) return;
+
+    ThemePalette pal = GetThemePalette(st.is_dark);
+    ID2D1DeviceContext *ctx = g_panel.d2d_ctx.Get();
+
+    /* Open mode: panel surface strictly 1:1 with Win11 DWM Acrylic HWND (zero double layer).
+     * Exit mode: DWM Acrylic is disabled -> pure per-pixel transparent DirectComposition card
+     *            accelerating smoothly into the tray icon (shrink + glide + fade to 0.00)! */
+    bool is_exiting = (!g_panel.want_visible && g_panel.exiting_dcomp);
+    float vis_ease = EaseOutQuint(g_panel.panel_t);
+    float exit_p = ClampF(g_panel.exit_u, 0.0f, 1.0f);
+    float exit_accel = exit_p * exit_p; /* True ease-in acceleration into tray: zero stall! */
+
+    /* Keep card & content equally vivid as it accelerates into the tray, dissolving seamlessly to 0.00 */
+    float bg_alpha = is_exiting ? ClampF(1.0f - exit_accel, 0.0f, 1.0f) : 1.0f;
+    float content_alpha = is_exiting ? bg_alpha : ClampF(vis_ease, 0.0f, 1.0f);
+
+    ctx->BeginDraw();
+    if (is_exiting) {
+        /* Compute pivot directly toward the clicked tray icon along the bottom (or top) edge */
+        float pivot_x = g_panel.logical_w * 0.5f;
+        if (g_panel.has_anchor) {
+            float rel_x = static_cast<float>(g_panel.anchor_x - g_panel.target_x) / scale;
+            pivot_x = ClampF(rel_x, 32.0f, g_panel.logical_w - 32.0f);
+        }
+        float pivot_y = g_panel.anchor_from_top ? 0.0f : g_panel.logical_h;
+        float s = LerpF(1.0f, 0.78f, exit_accel);
+        float ty = (g_panel.anchor_from_top ? -1.0f : 1.0f) * (exit_accel * 26.0f);
+        ctx->SetTransform(MatrixScaleTranslate(s, s, pivot_x, pivot_y, 0.0f, ty));
+    } else {
+        ctx->SetTransform(MatrixIdentity());
+    }
+    ctx->SetAntialiasMode(D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    ctx->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE);
+    ctx->Clear(MakeColor(0.0f, 0.0f, 0.0f, 0.0f));
+
+    ComPtr<ID2D1SolidColorBrush> brush;
+    ctx->CreateSolidColorBrush(pal.text_primary, brush.Put());
+    if (!brush) {
+        ctx->EndDraw();
+        return;
+    }
+
+    auto set_bg_col = [&](D2D1_COLOR_F c) {
+        c.a *= bg_alpha;
+        brush->SetColor(c);
+    };
+    auto set_col = [&](D2D1_COLOR_F c, float extra_a = 1.0f) {
+        c.a *= (content_alpha * extra_a);
+        brush->SetColor(c);
+    };
+
+    /* 1. Frosted panel surface (1:1 over Win11 Acrylic while open; crisp frosted card while shrinking into tray) */
+    D2D1_RECT_F full_rc = MakeRect(0.0f, 0.0f, g_panel.logical_w, g_panel.logical_h);
+    D2D1_ROUNDED_RECT panel_rr = MakeRoundedRect(full_rc, kPanelRadius, kPanelRadius);
+    bool use_acrylic_tint = (g_panel.backdrop_supported && !is_exiting);
+    set_bg_col(use_acrylic_tint ? pal.panel_tint : pal.panel_fallback_bg);
+    ctx->FillRoundedRectangle(panel_rr, brush.Get());
+
+    /* Subtle top inner specular highlight + outer hairline */
+    D2D1_RECT_F inner_rc = MakeRect(1.0f, 1.0f, g_panel.logical_w - 1.0f, g_panel.logical_h - 1.0f);
+    set_bg_col(pal.panel_inner_specular);
+    ctx->DrawRoundedRectangle(MakeRoundedRect(inner_rc, kPanelRadius - 1.0f, kPanelRadius - 1.0f), brush.Get(), 1.0f);
+
+    D2D1_RECT_F outer_rc = MakeRect(0.5f, 0.5f, g_panel.logical_w - 0.5f, g_panel.logical_h - 0.5f);
+    set_bg_col(pal.panel_outer_border);
+    ctx->DrawRoundedRectangle(MakeRoundedRect(outer_rc, kPanelRadius - 0.5f, kPanelRadius - 0.5f), brush.Get(), 1.0f);
+
+    /* 2. Minimal Header: Octans Vector Wordmark + "· N 台设备" + Refresh / More icon buttons */
+    float header_top = kPanelPadTop;
+    float header_bot = header_top + kHeaderH;
+
+    D2D1_RECT_F wm_rc = MakeRect(kPanelPadX, header_top + 2.5f, kPanelPadX + 76.0f, header_top + 23.5f);
+    DrawOctansWordmark(
+        g_panel.d2d_factory.Get(),
+        ctx,
+        wm_rc,
+        st.is_dark,
+        g_panel.brand_anim_t,
+        content_alpha
+    );
+
+    wchar_t count_buf[48] = {};
+    if (st.device_count > 0) {
+        _snwprintf(count_buf, 47, L"\u00b7 %u \u53f0\u8bbe\u5907", static_cast<unsigned>(st.device_count));
+    } else {
+        wcscpy(count_buf, L"\u00b7 \u65e0\u8bbe\u5907");
+    }
+    D2D1_RECT_F sub_rc = MakeRect(kPanelPadX + 79.0f, header_top + 3.0f, g_panel.refresh_btn_rc.left - 6.0f, header_bot);
+    set_col(pal.text_secondary);
+    ctx->DrawText(count_buf, static_cast<UINT32>(wcslen(count_buf)), g_panel.fmt_subtitle.Get(), sub_rc, brush.Get());
+
+    /* Refresh button */
+    {
+        bool hov = (g_panel.hover_header_btn == 1);
+        float cx = (g_panel.refresh_btn_rc.left + g_panel.refresh_btn_rc.right) * 0.5f;
+        float cy = (g_panel.refresh_btn_rc.top + g_panel.refresh_btn_rc.bottom) * 0.5f;
+        if (hov) {
+            set_col(pal.btn_hover_bg);
+            ctx->FillEllipse(MakeEllipse(cx, cy, 13.0f, 13.0f), brush.Get());
+        }
+        set_col(hov ? pal.btn_icon_hover : pal.btn_icon);
+        DrawRefreshIcon(
+            g_panel.d2d_factory.Get(),
+            ctx,
+            brush.Get(),
+            g_panel.round_stroke.Get(),
+            cx, cy,
+            5.6f,
+            g_panel.refresh_spin_deg
+        );
+    }
+
+    /* More (...) button */
+    {
+        bool hov = (g_panel.hover_header_btn == 2);
+        float cx = (g_panel.more_btn_rc.left + g_panel.more_btn_rc.right) * 0.5f;
+        float cy = (g_panel.more_btn_rc.top + g_panel.more_btn_rc.bottom) * 0.5f;
+        if (hov) {
+            set_col(pal.btn_hover_bg);
+            ctx->FillEllipse(MakeEllipse(cx, cy, 13.0f, 13.0f), brush.Get());
+        }
+        set_col(hov ? pal.btn_icon_hover : pal.btn_icon);
+        DrawMoreIcon(ctx, brush.Get(), cx, cy, 5.8f);
+    }
+
+    /* 3. Device Grid (2x2 Apple iOS Batteries Cards) or Empty State.
+     *    Only clip when scrollable (>4 devices), with 6dp breathing room so hovered cards never clip! */
+    bool need_grid_clip = (g_panel.max_scroll_y > 0.5f);
+    if (need_grid_clip) {
+        ctx->PushAxisAlignedClip(g_panel.grid_clip_rc, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+    }
+
+    if (st.device_count == 0) {
+        float cx = (g_panel.grid_hit_rc.left + g_panel.grid_hit_rc.right) * 0.5f;
+        float cy = g_panel.grid_hit_rc.top + 36.0f;
+        DrawOctansLogo(
+            g_panel.d2d_factory.Get(),
+            ctx,
+            cx, cy,
+            24.0f,
+            st.is_dark,
+            false,
+            g_panel.brand_anim_t,
+            content_alpha
+        );
+
+        D2D1_RECT_F er = MakeRect(g_panel.grid_hit_rc.left, cy + 30.0f, g_panel.grid_hit_rc.right, cy + 54.0f);
+        set_col(pal.text_secondary);
+        ctx->DrawText(L"\u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 8, g_panel.fmt_empty.Get(), er, brush.Get());
+
+        if (!(st.demo_hooks.on_action != nullptr) && g_panel.discover_btn_rc.right > g_panel.discover_btn_rc.left) {
+            bool hov = (g_panel.hover_header_btn == 3);
+            D2D1_ROUNDED_RECT drr = MakeRoundedRect(g_panel.discover_btn_rc, 17.0f, 17.0f);
+            D2D1_COLOR_F bg = pal.ring_normal;
+            if (hov) {
+                bg.r *= 0.90f;
+                bg.g *= 0.90f;
+                bg.b *= 0.90f;
+            }
+            set_col(bg, hov ? 1.0f : 0.92f);
+            ctx->FillRoundedRectangle(drr, brush.Get());
+
+            set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.22f));
+            ctx->DrawRoundedRectangle(drr, brush.Get(), 1.0f);
+
+            set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.98f));
+            const wchar_t *btn_lbl = L"\u53d1\u73b0 / \u6dfb\u52a0\u8bbe\u5907";
+            ctx->DrawText(btn_lbl, 9, g_panel.fmt_empty.Get(), g_panel.discover_btn_rc, brush.Get());
+        }
+    } else {
+        for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+            const octans_device_view_t &d = st.devices[i];
+            const D2D1_RECT_F &cr = g_panel.card_rects[i];
+            if (need_grid_clip && (cr.bottom < g_panel.grid_clip_rc.top - 4.0f || cr.top > g_panel.grid_clip_rc.bottom + 4.0f)) {
+                continue;
+            }
+
+            bool is_pinned = IsDevicePinned(st, d.id);
+            float ht = g_panel.anims[i].hover_t;
+            float ent = EaseOutQuint(ClampF(g_panel.anims[i].enter_t, 0.0f, 1.0f));
+            float pulse = g_panel.anims[i].pulse_t;
+            bool muted = IsDeviceMuted(d);
+
+            float card_cx = (cr.left + cr.right) * 0.5f;
+            float card_cy = (cr.top + cr.bottom) * 0.5f;
+            /* Tactile card transform: staggered rise + subtle hover lift + click spring bounce */
+            float hover_scale = 1.0f + ht * 0.020f;
+            float press_dip = (pulse > 0.0f) ? (-0.030f * sinf(pulse * 3.14159265f)) : 0.0f;
+            float card_scale = LerpF(0.94f, 1.0f, ent) * (hover_scale + press_dip);
+            float card_ty = (1.0f - ent) * 11.0f - ht * 1.6f;
+
+            D2D1_MATRIX_3X2_F base_xf = {};
+            ctx->GetTransform(&base_xf);
+            D2D1_MATRIX_3X2_F card_xf = MatrixScaleTranslate(card_scale, card_scale, card_cx, card_cy, 0.0f, card_ty);
+            D2D1_MATRIX_3X2_F combined = {};
+            combined._11 = card_xf._11 * base_xf._11;
+            combined._12 = 0.0f;
+            combined._21 = 0.0f;
+            combined._22 = card_xf._22 * base_xf._22;
+            combined._31 = card_xf._31 * base_xf._11 + base_xf._31;
+            combined._32 = card_xf._32 * base_xf._22 + base_xf._32;
+            ctx->SetTransform(combined);
+
+            float card_alpha = ClampF(ent, 0.0f, 1.0f);
+            auto set_card_col = [&](D2D1_COLOR_F c, float extra_a = 1.0f) {
+                c.a *= (content_alpha * card_alpha * extra_a);
+                brush->SetColor(c);
+            };
+
+            /* Card surface & border */
+            D2D1_ROUNDED_RECT crr = MakeRoundedRect(cr, kCardRadius, kCardRadius);
+            set_card_col(LerpColor(pal.card_bg, pal.card_bg_hover, ht));
+            ctx->FillRoundedRectangle(crr, brush.Get());
+
+            D2D1_RECT_F cbr = MakeRect(cr.left + 0.5f, cr.top + 0.5f, cr.right - 0.5f, cr.bottom - 0.5f);
+            set_card_col(is_pinned ? pal.card_border_pinned : pal.card_border);
+            ctx->DrawRoundedRectangle(MakeRoundedRect(cbr, kCardRadius - 0.5f, kCardRadius - 0.5f), brush.Get(), is_pinned ? 1.35f : 1.0f);
+
+            /* Multi-pin badge at top-right: always visible when pinned, subtle outline on hover */
+            if (is_pinned || ht > 0.04f) {
+                float px = cr.right - 14.0f;
+                float py = cr.top + 14.0f;
+                if (is_pinned) {
+                    set_card_col(GetDeviceAccentColor(d, pal), 0.94f);
+                    DrawPinIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), px, py, 5.2f, true);
+                } else {
+                    set_card_col(pal.text_muted, ht * 0.88f);
+                    DrawPinIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), px, py, 5.0f, false);
+                }
+            }
+
+            /* Circular battery ring */
+            float cx = card_cx;
+            float ring_cy = cr.top + 39.0f;
+            float ring_r = 25.5f;
+            float ring_stroke = 5.4f;
+
+            D2D1_COLOR_F accent = GetDeviceAccentColor(d, pal);
+
+            /* Expanding ring halo pulse when clicked/pinned */
+            if (pulse > 0.01f) {
+                float halo_r = ring_r + (1.0f - pulse) * 9.0f;
+                set_card_col(accent, pulse * 0.42f);
+                ctx->DrawEllipse(MakeEllipse(cx, ring_cy, halo_r, halo_r), brush.Get(), 2.2f * pulse);
+            }
+
+            set_card_col(pal.ring_track);
+            ctx->DrawEllipse(MakeEllipse(cx, ring_cy, ring_r, ring_r), brush.Get(), ring_stroke);
+
+            float frac = ClampF(g_panel.anims[i].display_pct / 100.0f, 0.0f, 1.0f);
+            if (d.battery_percent >= 0 && frac > 0.005f) {
+                set_card_col(accent);
+                DrawBatteryRingArc(
+                    g_panel.d2d_factory.Get(),
+                    ctx,
+                    brush.Get(),
+                    g_panel.round_stroke.Get(),
+                    cx, ring_cy,
+                    ring_r,
+                    ring_stroke,
+                    frac,
+                    (d.power_state == OCTANS_PWR_CHARGING)
+                );
+            }
+
+            /* Centered bespoke peripheral vector glyph */
+            set_card_col(muted ? pal.glyph_muted : pal.glyph_active);
+            DrawDeviceGlyph(
+                g_panel.d2d_factory.Get(),
+                ctx,
+                brush.Get(),
+                d.kind,
+                cx, ring_cy,
+                11.2f,
+                false
+            );
+
+            /* Charging lightning bolt badge at 6 o'clock on the ring */
+            if (d.power_state == OCTANS_PWR_CHARGING || d.power_state == OCTANS_PWR_FULL) {
+                float bx = cx;
+                float by = ring_cy + ring_r;
+                float br = 8.2f;
+                set_card_col(pal.bolt_badge_bg);
+                ctx->FillEllipse(MakeEllipse(bx, by, br, br), brush.Get());
+                set_card_col(pal.bolt_color);
+                DrawLightningBolt(g_panel.d2d_factory.Get(), ctx, brush.Get(), bx, by, 5.6f);
+            }
+
+            /* Percentage (20pt SemiBold Tabular Figures) */
+            wchar_t pct_buf[16] = {};
+            if (d.power_state == OCTANS_PWR_OFFLINE || d.battery_percent < 0) {
+                wcscpy(pct_buf, L"--");
+            } else if (d.is_estimated) {
+                _snwprintf(pct_buf, 15, L"~%d%%", static_cast<int>(roundf(g_panel.anims[i].display_pct)));
+            } else {
+                _snwprintf(pct_buf, 15, L"%d%%", static_cast<int>(roundf(g_panel.anims[i].display_pct)));
+            }
+            D2D1_RECT_F pct_rc = MakeRect(cr.left + 8.0f, cr.top + 70.0f, cr.right - 8.0f, cr.top + 95.0f);
+            set_card_col(muted ? pal.text_muted : pal.text_primary);
+            DrawTabularText(ctx, pct_buf, g_panel.fmt_percent.Get(), pct_rc, brush.Get());
+
+            /* Single-line ellipsized device name */
+            const wchar_t *name = d.name[0] ? d.name : L"\u672a\u77e5\u8bbe\u5907";
+            D2D1_RECT_F name_rc = MakeRect(cr.left + 10.0f, cr.top + 95.5f, cr.right - 10.0f, cr.top + 112.5f);
+            set_card_col(muted ? pal.text_secondary : pal.text_primary, muted ? 0.85f : 0.94f);
+            ctx->DrawText(name, static_cast<UINT32>(wcslen(name)), g_panel.fmt_name.Get(), name_rc, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+            /* Refined semantic sub-label */
+            wchar_t sub_lbl[48] = {};
+            int sem_kind = 0;
+            FormatSubLabel(d, sub_lbl, 48, &sem_kind);
+            D2D1_RECT_F sub_lbl_rc = MakeRect(cr.left + 8.0f, cr.top + 112.5f, cr.right - 8.0f, cr.top + 127.5f);
+            if (sem_kind == 1) {
+                set_card_col(pal.ring_low, 0.94f);
+            } else if (sem_kind == 2) {
+                set_card_col(pal.ring_charging, 0.94f);
+            } else if (sem_kind == 3) {
+                set_card_col(pal.text_muted);
+            } else {
+                set_card_col(pal.text_secondary);
+            }
+            ctx->DrawText(sub_lbl, static_cast<UINT32>(wcslen(sub_lbl)), g_panel.fmt_sublabel.Get(), sub_lbl_rc, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+
+            ctx->SetTransform(base_xf);
+        }
+
+        /* Subtle macOS/iOS translucent scroll thumb when >4 devices */
+        if (g_panel.max_scroll_y > 1.0f) {
+            float view_h = g_panel.grid_hit_rc.bottom - g_panel.grid_hit_rc.top;
+            float content_h = view_h + g_panel.max_scroll_y;
+            float thumb_h = ClampF(view_h * (view_h / content_h), 26.0f, view_h - 8.0f);
+            float thumb_y = g_panel.grid_hit_rc.top + (g_panel.scroll_y / g_panel.max_scroll_y) * (view_h - thumb_h);
+            float tx = g_panel.logical_w - 6.0f;
+            D2D1_RECT_F tr = MakeRect(tx - 1.5f, thumb_y, tx + 1.5f, thumb_y + thumb_h);
+            set_col(pal.scroll_thumb);
+            ctx->FillRoundedRectangle(MakeRoundedRect(tr, 1.5f, 1.5f), brush.Get());
+        }
+    }
+
+    if (need_grid_clip) {
+        ctx->PopAxisAlignedClip();
+    }
+
+    /* 4. Zero-Occlusion Integrated Bottom Detail Footer (cleanly below cards, never overlaps!) */
+    {
+        const D2D1_RECT_F &fr = g_panel.footer_rc;
+        set_col(pal.tooltip_bg);
+        ctx->FillRoundedRectangle(MakeRoundedRect(fr, 10.0f, 10.0f), brush.Get());
+        set_col(pal.tooltip_border);
+        ctx->DrawRoundedRectangle(
+            MakeRoundedRect(MakeRect(fr.left + 0.5f, fr.top + 0.5f, fr.right - 0.5f, fr.bottom - 0.5f), 9.5f, 9.5f),
+            brush.Get(), 1.0f
+        );
+
+        D2D1_RECT_F ftr = MakeRect(fr.left + 10.0f, fr.top, fr.right - 10.0f, fr.bottom);
+        bool show_detail = (g_panel.tooltip_card >= 0 &&
+                            static_cast<size_t>(g_panel.tooltip_card) < st.device_count &&
+                            g_panel.tooltip_t > 0.02f);
+
+        if (show_detail) {
+            const octans_device_view_t &td = st.devices[g_panel.tooltip_card];
+            wchar_t tip_text[160] = {};
+            FormatTooltipDetail(td, tip_text, 160);
+            set_col(pal.text_primary, ClampF(g_panel.tooltip_t, 0.0f, 1.0f) * 0.92f);
+            ctx->DrawText(tip_text, static_cast<UINT32>(wcslen(tip_text)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        } else {
+            wchar_t idle_hint[96] = {};
+            if (st.pinned_count > 0) {
+                _snwprintf(idle_hint, 95, L"\u5df2\u56fa\u5b9a %u \u53f0\u5230\u6258\u76d8 \u00b7 \u60ac\u505c\u5361\u7247\u67e5\u770b\u8be6\u60c5", static_cast<unsigned>(st.pinned_count));
+            } else {
+                wcscpy(idle_hint, L"\u70b9\u51fb\u5361\u7247\u56fa\u5b9a\u5230\u6258\u76d8 \u00b7 \u60ac\u505c\u67e5\u770b\u7535\u538b\u8be6\u60c5");
+            }
+            set_col(pal.text_muted, 1.0f - ClampF(g_panel.tooltip_t, 0.0f, 1.0f));
+            ctx->DrawText(idle_hint, static_cast<UINT32>(wcslen(idle_hint)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        }
+    }
+
+    HRESULT hr = ctx->EndDraw();
+    if (hr == D2DERR_RECREATE_TARGET) {
+        ReleaseGraphicsResources();
+        return;
+    }
+
+    hr = g_panel.swap_chain->Present(0, 0);
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        ReleaseGraphicsResources();
+        return;
+    }
+    if (g_panel.dcomp_device) {
+        g_panel.dcomp_device->Commit();
+    }
+}
+
+static void StepAnimations() {
+    LARGE_INTEGER now_qpc = {};
+    QueryPerformanceCounter(&now_qpc);
+    float dt = 0.016f;
+    if (g_panel.qpc_freq.QuadPart > 0 && g_panel.last_qpc.QuadPart > 0 &&
+        now_qpc.QuadPart >= g_panel.last_qpc.QuadPart) {
+        dt = static_cast<float>(static_cast<double>(now_qpc.QuadPart - g_panel.last_qpc.QuadPart) /
+                                static_cast<double>(g_panel.qpc_freq.QuadPart));
+    }
+    if (dt < 0.001f) dt = 0.001f;
+    if (dt > 0.05f)  dt = 0.05f;
+    g_panel.last_qpc = now_qpc;
+
+    bool any_active = false;
+
+    /* 1. Panel open (240ms Apple spring-quint) vs. pure-GPU shrink-to-tray exit (155ms ease-in) */
+    if (!g_panel.want_visible) {
+        g_panel.exit_u += dt * (1.0f / 0.155f);
+        if (g_panel.exit_u >= 1.0f) {
+            g_panel.exit_u = 1.0f;
+            g_panel.panel_t = 0.0f;
+            g_panel.exiting_dcomp = false;
+            ShowWindow(g_panel.hwnd, SW_HIDE);
+            StopAnimTimer();
+            if (g_panel.dxgi_device) {
+                ComPtr<IDXGIDevice3> dxgi3;
+                if (SUCCEEDED(g_panel.dxgi_device->QueryInterface(__uuidof(IDXGIDevice3), dxgi3.PutVoid()))) {
+                    dxgi3->Trim();
+                }
+            }
+            return;
+        }
+        RenderPanel();
+        return;
+    }
+
+    if (fabsf(g_panel.panel_t - 1.0f) > 0.002f) {
+        g_panel.panel_t = ClampF(g_panel.panel_t + dt * (1.0f / 0.24f), 0.0f, 1.0f);
+        ApplyWindowBoundsForAnim();
+        any_active = true;
+    } else {
+        g_panel.panel_t = 1.0f;
+    }
+
+    /* 2. Per-card staggered entrance, bounded ease-out battery ring sweep, hover lift & click pulse */
+    const UiState &st = GetState();
+    float hover_alpha = 1.0f - expf(-dt * 16.0f);
+    for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+        CardAnim &ca = g_panel.anims[i];
+
+        if (ca.enter_t < 1.0f) {
+            ca.enter_t += dt * (1.0f / 0.30f);
+            if (ca.enter_t > 1.0f) ca.enter_t = 1.0f;
+            any_active = true;
+        }
+
+        if (ca.enter_t > 0.02f && ca.pct_t < 1.0f) {
+            float dur = (ca.pct_dur > 0.05f) ? ca.pct_dur : 0.52f;
+            ca.pct_t += dt / dur;
+            if (ca.pct_t >= 1.0f) {
+                ca.pct_t = 1.0f;
+                ca.display_pct = ca.target_pct;
+            } else {
+                ca.display_pct = LerpF(ca.pct_start, ca.target_pct, EaseOutCubic(ca.pct_t));
+                any_active = true;
+            }
+        } else if (ca.enter_t >= 1.0f && ca.pct_t >= 1.0f) {
+            ca.display_pct = ca.target_pct;
+        }
+
+        float ht_target = (static_cast<int>(i) == g_panel.hover_card) ? 1.0f : 0.0f;
+        if (fabsf(ca.hover_t - ht_target) > 0.008f) {
+            ca.hover_t = LerpF(ca.hover_t, ht_target, hover_alpha);
+            any_active = true;
+        } else {
+            ca.hover_t = ht_target;
+        }
+
+        if (ca.pulse_t > 0.005f) {
+            ca.pulse_t -= dt * (1.0f / 0.34f);
+            if (ca.pulse_t < 0.0f) ca.pulse_t = 0.0f;
+            any_active = true;
+        } else {
+            ca.pulse_t = 0.0f;
+        }
+    }
+
+    /* 3. Smooth inertial wheel scrolling */
+    if (fabsf(g_panel.scroll_y - g_panel.target_scroll_y) > 0.25f) {
+        g_panel.scroll_y = LerpF(g_panel.scroll_y, g_panel.target_scroll_y, 1.0f - expf(-dt * 14.0f));
+        any_active = true;
+    } else {
+        g_panel.scroll_y = g_panel.target_scroll_y;
+    }
+
+    /* 4. Tooltip smooth fade */
+    float tip_target = (g_panel.tooltip_card >= 0) ? 1.0f : 0.0f;
+    if (fabsf(g_panel.tooltip_t - tip_target) > 0.01f) {
+        g_panel.tooltip_t = LerpF(g_panel.tooltip_t, tip_target, 1.0f - expf(-dt * 15.0f));
+        any_active = true;
+    } else {
+        g_panel.tooltip_t = tip_target;
+    }
+
+    /* 5. Brand writing entrance + refresh icon spin */
+    if (g_panel.brand_anim_t < 1.0f) {
+        g_panel.brand_anim_t += dt * (1.0f / 0.72f);
+        if (g_panel.brand_anim_t >= 1.0f) {
+            g_panel.brand_anim_t = 1.0f;
+        } else {
+            any_active = true;
+        }
+    }
+    if (g_panel.refresh_spinning) {
+        g_panel.refresh_spin_deg += dt * 720.0f;
+        if (g_panel.refresh_spin_deg >= 360.0f) {
+            g_panel.refresh_spin_deg = 0.0f;
+            g_panel.refresh_spinning = false;
+        } else {
+            any_active = true;
+        }
+    }
+
+    RenderPanel();
+
+    /* Demand-driven idle stop: release high-res timer & drop to ~0% CPU when settled! */
+    if (!any_active) {
+        StopAnimTimer();
+    }
+}
+
+static void HitTestAt(float dip_x, float dip_y, int *out_card, int *out_header_btn) {
+    *out_card = -1;
+    *out_header_btn = 0;
+
+    if (PtInD2DRect(g_panel.refresh_btn_rc, dip_x, dip_y)) {
+        *out_header_btn = 1;
+        return;
+    }
+    if (PtInD2DRect(g_panel.more_btn_rc, dip_x, dip_y)) {
+        *out_header_btn = 2;
+        return;
+    }
+    if (PtInD2DRect(g_panel.grid_hit_rc, dip_x, dip_y)) {
+        const UiState &st = GetState();
+        if (st.device_count == 0 && !(st.demo_hooks.on_action != nullptr) &&
+            PtInD2DRect(g_panel.discover_btn_rc, dip_x, dip_y)) {
+            *out_header_btn = 3;
+            return;
+        }
+        for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+            if (PtInD2DRect(g_panel.card_rects[i], dip_x, dip_y)) {
+                *out_card = static_cast<int>(i);
+                return;
+            }
+        }
+    }
+}
+
+static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    switch (msg) {
+        case WM_TIMER:
+            if (wp == TIMER_ANIM) {
+                StepAnimations();
+                return 0;
+            }
+            if (wp == TIMER_HOVER) {
+                KillTimer(hwnd, TIMER_HOVER);
+                if (g_panel.hover_card >= 0) {
+                    g_panel.tooltip_card = g_panel.hover_card;
+                    StartAnimTimer();
+                }
+                return 0;
+            }
+            break;
+
+        case WM_MOUSEMOVE: {
+            if (!g_panel.mouse_tracked) {
+                TRACKMOUSEEVENT tme = {};
+                tme.cbSize = sizeof(tme);
+                tme.dwFlags = TME_LEAVE;
+                tme.hwndTrack = hwnd;
+                TrackMouseEvent(&tme);
+                g_panel.mouse_tracked = true;
+            }
+            float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+            float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
+            float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
+
+            int new_card = -1;
+            int new_btn = 0;
+            HitTestAt(dx, dy, &new_card, &new_btn);
+
+            if (new_card != g_panel.hover_card || new_btn != g_panel.hover_header_btn) {
+                g_panel.hover_card = new_card;
+                g_panel.hover_header_btn = new_btn;
+
+                SetCursor(LoadCursorW(nullptr, (new_card >= 0 || new_btn != 0) ? IDC_HAND : IDC_ARROW));
+
+                KillTimer(hwnd, TIMER_HOVER);
+                if (new_card >= 0) {
+                    /* Dedicated bottom footer never occludes cards, so update immediately on hover! */
+                    g_panel.tooltip_card = new_card;
+                } else {
+                    g_panel.tooltip_card = -1;
+                }
+                StartAnimTimer();
+            }
+            return 0;
+        }
+
+        case WM_MOUSELEAVE:
+            g_panel.mouse_tracked = false;
+            KillTimer(hwnd, TIMER_HOVER);
+            if (g_panel.hover_card != -1 || g_panel.hover_header_btn != 0 || g_panel.tooltip_card != -1) {
+                g_panel.hover_card = -1;
+                g_panel.hover_header_btn = 0;
+                g_panel.tooltip_card = -1;
+                StartAnimTimer();
+            }
+            return 0;
+
+        case WM_LBUTTONUP: {
+            float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+            float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
+            float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
+
+            int card = -1;
+            int btn = 0;
+            HitTestAt(dx, dy, &card, &btn);
+
+            if (btn == 1) {
+                ActionTriggerRefresh();
+            } else if (btn == 2) {
+                POINT pt = {
+                    static_cast<LONG>(roundf(g_panel.more_btn_rc.right * scale)),
+                    static_cast<LONG>(roundf(g_panel.more_btn_rc.bottom * scale))
+                };
+                ClientToScreen(hwnd, &pt);
+                ActionShowContextMenu(pt.x, pt.y, -1, MENU_MODE_PANEL_GENERAL);
+            } else if (btn == 3) {
+                PanelHide();
+                ActionLaunchDeviceHelper();
+            } else if (card >= 0) {
+                const UiState &st = GetState();
+                if (static_cast<size_t>(card) < st.device_count) {
+                    g_panel.anims[card].pulse_t = 1.0f;
+                    ActionTogglePinDevice(st.devices[card].id);
+                    StartAnimTimer();
+                }
+            }
+            return 0;
+        }
+
+        case WM_RBUTTONUP: {
+            float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+            float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
+            float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
+            int card = -1;
+            int btn = 0;
+            HitTestAt(dx, dy, &card, &btn);
+
+            POINT pt = { static_cast<short>(LOWORD(lp)), static_cast<short>(HIWORD(lp)) };
+            ClientToScreen(hwnd, &pt);
+            MenuMode mode = (card >= 0) ? MENU_MODE_PANEL_DEVICE : MENU_MODE_PANEL_GENERAL;
+            ActionShowContextMenu(pt.x, pt.y, card, mode);
+            return 0;
+        }
+
+        case WM_MOUSEWHEEL: {
+            if (g_panel.max_scroll_y > 0.0f) {
+                short delta = GET_WHEEL_DELTA_WPARAM(wp);
+                g_panel.target_scroll_y = ClampF(
+                    g_panel.target_scroll_y - (static_cast<float>(delta) / 120.0f) * 56.0f,
+                    0.0f,
+                    g_panel.max_scroll_y
+                );
+                StartAnimTimer();
+            }
+            return 0;
+        }
+
+        case WM_KEYDOWN: {
+            if (wp == VK_ESCAPE) {
+                PanelHide();
+                return 0;
+            }
+            if (wp == VK_F5) {
+                ActionTriggerRefresh();
+                return 0;
+            }
+            UiState &st = GetState();
+            if (st.demo_hooks.handle_key && st.demo_hooks.handle_key(wp, st.demo_hooks.user_ctx)) {
+                return 0;
+            }
+            break;
+        }
+
+        case WM_ACTIVATE: {
+            if (LOWORD(wp) == WA_INACTIVE && !GetState().modal_open && g_panel.want_visible) {
+                /* Guard against taskbar focus bounce within 160ms of opening the flyout */
+                if ((GetTickCount64() - g_panel.last_show_ms) >= 160ULL) {
+                    GetState().last_inactive_hide_ms = GetTickCount64();
+                    PanelHide();
+                }
+            }
+            return 0;
+        }
+
+        case WM_DPICHANGED: {
+            g_panel.dpi = HIWORD(wp);
+            if (g_panel.has_anchor) {
+                ComputeTargetPosition(g_panel.anchor_x, g_panel.anchor_y);
+                ApplyWindowBoundsForAnim();
+            }
+            RenderPanel();
+            return 0;
+        }
+
+        case WM_PAINT: {
+            PAINTSTRUCT ps = {};
+            BeginPaint(hwnd, &ps);
+            EndPaint(hwnd, &ps);
+            if (g_panel.panel_t > 0.01f) {
+                RenderPanel();
+            }
+            return 0;
+        }
+
+        default:
+            break;
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+bool PanelInit() {
+    static const wchar_t *kPanelClass = L"OctansFlyoutWnd";
+    HINSTANCE hinst = GetModuleHandleW(nullptr);
+
+    WNDCLASSEXW wc = {};
+    wc.cbSize = sizeof(wc);
+    wc.style = CS_HREDRAW | CS_VREDRAW;
+    wc.lpfnWndProc = PanelWndProc;
+    wc.hInstance = hinst;
+    wc.hIcon = LoadIconW(hinst, MAKEINTRESOURCEW(101));
+    wc.hIconSm = wc.hIcon;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.lpszClassName = kPanelClass;
+    RegisterClassExW(&wc);
+
+    g_panel.hwnd = CreateWindowExW(
+        WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+        kPanelClass,
+        L"Octans",
+        WS_POPUP,
+        0, 0, 342, 338,
+        nullptr,
+        nullptr,
+        hinst,
+        nullptr
+    );
+    if (!g_panel.hwnd) return false;
+
+    g_panel.dpi = GetWindowDpiSafe(g_panel.hwnd);
+    g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, GetState().is_dark);
+    ComputeLayoutMetrics();
+    return true;
+}
+
+void PanelShutdown() {
+    StopAnimTimer();
+    if (g_panel.hwnd) {
+        KillTimer(g_panel.hwnd, TIMER_HOVER);
+    }
+    ReleaseGraphicsResources();
+    g_panel.fmt_empty.Reset();
+    g_panel.fmt_tooltip.Reset();
+    g_panel.fmt_sublabel.Reset();
+    g_panel.fmt_name.Reset();
+    g_panel.fmt_percent.Reset();
+    g_panel.fmt_subtitle.Reset();
+    g_panel.fmt_title.Reset();
+    g_panel.tabular_typo.Reset();
+    g_panel.dwrite_factory.Reset();
+    g_panel.d2d_factory.Reset();
+
+    if (g_panel.hwnd) {
+        DestroyWindow(g_panel.hwnd);
+        g_panel.hwnd = nullptr;
+    }
+}
+
+void PanelShow(int anchor_x, int anchor_y, bool toggle_if_visible) {
+    if (!g_panel.hwnd) return;
+    if (toggle_if_visible && g_panel.want_visible && IsWindowVisible(g_panel.hwnd)) {
+        PanelHide();
+        return;
+    }
+
+    ComputeLayoutMetrics();
+    ComputeTargetPosition(anchor_x, anchor_y);
+    g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, GetState().is_dark);
+
+    bool opening_fresh = !IsWindowVisible(g_panel.hwnd) || !g_panel.want_visible;
+    g_panel.want_visible = true;
+    g_panel.exiting_dcomp = false;
+    g_panel.exit_u = 0.0f;
+    g_panel.last_show_ms = GetTickCount64();
+
+    if (opening_fresh) {
+        g_panel.panel_t = 0.02f;
+        g_panel.brand_anim_t = 0.0f;
+        /* Stagger cards & sweep battery rings crisply from 0% up to target in 520ms (no asymptotic tail) */
+        const UiState &st = GetState();
+        for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+            g_panel.anims[i].enter_t = -0.07f * static_cast<float>(i);
+            g_panel.anims[i].pct_start = 0.0f;
+            g_panel.anims[i].display_pct = 0.0f;
+            g_panel.anims[i].pct_t = 0.0f;
+            g_panel.anims[i].pct_dur = 0.52f;
+            g_panel.anims[i].hover_t = 0.0f;
+            g_panel.anims[i].pulse_t = 0.0f;
+        }
+        ApplyWindowBoundsForAnim();
+        RenderPanel();
+        ShowWindow(g_panel.hwnd, SW_SHOW);
+    } else {
+        ApplyWindowBoundsForAnim();
+    }
+    SetForegroundWindow(g_panel.hwnd);
+    StartAnimTimer();
+}
+
+void PanelHide() {
+    if (!g_panel.hwnd) return;
+    if (!g_panel.want_visible && !IsWindowVisible(g_panel.hwnd)) return;
+    g_panel.want_visible = false;
+    g_panel.exiting_dcomp = true;
+    g_panel.exit_u = 0.0f;
+    g_panel.hover_card = -1;
+    g_panel.hover_header_btn = 0;
+    g_panel.tooltip_card = -1;
+    KillTimer(g_panel.hwnd, TIMER_HOVER);
+
+    /* Release DWM fixed-rect Acrylic right before GPU shrink-to-tray so card shrinks with zero double box! */
+    ClearWin11BackdropForExit(g_panel.hwnd);
+    RenderPanel();
+    StartAnimTimer();
+}
+
+bool PanelIsVisible() {
+    return g_panel.want_visible && g_panel.hwnd && IsWindowVisible(g_panel.hwnd);
+}
+
+void PanelOnDevicesChanged(const octans_device_view_t *devices, size_t count) {
+    if (count > MAX_DEVICES) count = MAX_DEVICES;
+
+    /* Preserve smooth animation progress by matching device IDs across snapshots */
+    CardAnim old_anims[MAX_DEVICES];
+    memcpy(old_anims, g_panel.anims, sizeof(old_anims));
+
+    for (size_t i = 0; i < count; ++i) {
+        CardAnim next = {};
+        strncpy(next.id, devices[i].id, sizeof(next.id) - 1);
+        float tgt = (devices[i].battery_percent >= 0)
+            ? ClampF(static_cast<float>(devices[i].battery_percent), 0.0f, 100.0f)
+            : 0.0f;
+        next.target_pct = tgt;
+        next.pct_start = tgt;
+        next.display_pct = tgt;
+        next.pct_t = 1.0f;
+        next.pct_dur = 0.42f;
+        next.hover_t = 0.0f;
+        next.enter_t = 1.0f;
+        next.pulse_t = 0.0f;
+        next.initialized = true;
+
+        for (size_t j = 0; j < MAX_DEVICES; ++j) {
+            if (old_anims[j].initialized && old_anims[j].id[0] != '\0' &&
+                strcmp(old_anims[j].id, next.id) == 0) {
+                next.display_pct = old_anims[j].display_pct;
+                next.hover_t = old_anims[j].hover_t;
+                next.enter_t = old_anims[j].enter_t;
+                next.pulse_t = old_anims[j].pulse_t;
+                if (fabsf(old_anims[j].target_pct - tgt) > 0.1f) {
+                    next.pct_start = old_anims[j].display_pct;
+                    next.pct_t = 0.0f;
+                    next.pct_dur = 0.42f;
+                } else {
+                    next.pct_start = old_anims[j].pct_start;
+                    next.pct_t = old_anims[j].pct_t;
+                    next.pct_dur = old_anims[j].pct_dur;
+                }
+                break;
+            }
+        }
+        g_panel.anims[i] = next;
+    }
+    for (size_t i = count; i < MAX_DEVICES; ++i) {
+        g_panel.anims[i] = {};
+    }
+
+    float prev_w = g_panel.logical_w;
+    float prev_h = g_panel.logical_h;
+    ComputeLayoutMetrics();
+
+    if (g_panel.want_visible && g_panel.hwnd && IsWindowVisible(g_panel.hwnd)) {
+        if ((fabsf(prev_w - g_panel.logical_w) > 0.5f || fabsf(prev_h - g_panel.logical_h) > 0.5f) &&
+            g_panel.has_anchor) {
+            ComputeTargetPosition(g_panel.anchor_x, g_panel.anchor_y);
+            ApplyWindowBoundsForAnim();
+        }
+        StartAnimTimer();
+    }
+}
+
+void PanelOnPinnedChanged() {
+    if (PanelIsVisible()) {
+        RenderPanel();
+    }
+}
+
+void PanelOnThemeChanged(bool is_dark) {
+    if (!g_panel.hwnd) return;
+    g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, is_dark);
+    if (PanelIsVisible()) {
+        RenderPanel();
+    }
+}
+
+void PanelTriggerRefreshSpin() {
+    g_panel.refresh_spinning = true;
+    g_panel.refresh_spin_deg = 0.0f;
+    if (PanelIsVisible()) {
+        StartAnimTimer();
+    }
+}
+
+HWND PanelGetHwnd() {
+    return g_panel.hwnd;
+}
+
+} /* namespace octans_ui */
