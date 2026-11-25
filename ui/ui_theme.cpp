@@ -45,13 +45,10 @@ ThemePalette GetThemePalette(bool is_dark) {
 
         p.ring_track           = MakeColor(1.0f, 1.0f, 1.0f, 0.14f);
         p.ring_normal          = HexColor(0x30D158, 1.0f);
+        p.ring_mid             = HexColor(0xFF9F0A, 1.0f);
         p.ring_low             = HexColor(0xFF453A, 1.0f);
         p.ring_charging        = HexColor(0x30D158, 1.0f);
         p.ring_muted           = HexColor(0x8E8E93, 0.48f);
-        p.kit_normal           = HexColor(0x34D399, 1.0f);
-        p.kit_mid              = HexColor(0xFBBF24, 1.0f);
-        p.kit_low              = HexColor(0xF87171, 1.0f);
-        p.kit_charging         = HexColor(0x38BDF8, 1.0f);
         p.kit_track            = MakeColor(1.0f, 1.0f, 1.0f, 0.15f);
         p.kit_detail_ink       = HexColor(0x1C1C20, 0.96f);
         p.glyph_active         = HexColor(0xF5F5F7, 0.94f);
@@ -84,13 +81,10 @@ ThemePalette GetThemePalette(bool is_dark) {
 
         p.ring_track           = HexColor(0x787880, 0.16f);
         p.ring_normal          = HexColor(0x34C759, 1.0f);
+        p.ring_mid             = HexColor(0xFF9500, 1.0f);
         p.ring_low             = HexColor(0xFF3B30, 1.0f);
         p.ring_charging        = HexColor(0x34C759, 1.0f);
         p.ring_muted           = HexColor(0x8E8E93, 0.42f);
-        p.kit_normal           = HexColor(0x10B981, 1.0f);
-        p.kit_mid              = HexColor(0xF59E0B, 1.0f);
-        p.kit_low              = HexColor(0xEF4444, 1.0f);
-        p.kit_charging         = HexColor(0x0EA5E9, 1.0f);
         p.kit_track            = HexColor(0x94A3B8, 0.24f);
         p.kit_detail_ink       = HexColor(0xFFFFFF, 0.96f);
         p.glyph_active         = HexColor(0x1C1C1E, 0.88f);
@@ -112,43 +106,37 @@ bool IsDeviceMuted(const octans_device_view_t &dev) {
 }
 
 D2D1_COLOR_F GetDeviceAccentColor(const octans_device_view_t &dev, const ThemePalette &pal, TrayStyle style) {
+    (void)style;
+    /* Unified semantic thresholds across ALL 3 styles (Octans / Nebula / Pulsar):
+     *   Charging / Full : Green (#34C759 / #30D158)
+     *   <= 20%          : Red   (#FF3B30 / #FF453A)
+     *   21% .. 40%      : Orange(#FF9500 / #FF9F0A)
+     *   > 40%           : Green (#34C759 / #30D158) */
     if (IsDeviceMuted(dev) || dev.battery_percent < 0) {
         return pal.ring_muted;
     }
-    if (style == TRAY_STYLE_OCTANS) {
-        /* Scheme 1 (Octans): keep classic ring semantics untouched */
-        if (dev.power_state == OCTANS_PWR_CHARGING || dev.power_state == OCTANS_PWR_FULL) {
-            return pal.ring_charging;
-        }
-        if (dev.is_low_battery || dev.battery_percent <= 20) {
-            return pal.ring_low;
-        }
-        return pal.ring_normal;
-    }
-    /* Scheme 2 (Nebula) & Scheme 3 (Pulsar): 4-tier kit ramp (charging sky / low red / mid amber / normal emerald) */
-    if (dev.power_state == OCTANS_PWR_CHARGING) {
-        return pal.kit_charging;
-    }
-    if (dev.power_state == OCTANS_PWR_FULL) {
-        return pal.kit_normal;
+    if (dev.power_state == OCTANS_PWR_CHARGING || dev.power_state == OCTANS_PWR_FULL) {
+        return pal.ring_charging;
     }
     if (dev.is_low_battery || dev.battery_percent <= 20) {
-        return pal.kit_low;
+        return pal.ring_low;
     }
-    if (dev.battery_percent <= 45) {
-        return pal.kit_mid;
+    if (dev.battery_percent <= 40) {
+        return pal.ring_mid;
     }
-    return pal.kit_normal;
+    return pal.ring_normal;
 }
 
 D2D1_COLOR_F GetDeviceSoftAccentColor(const octans_device_view_t &dev, const ThemePalette &pal) {
     if (IsDeviceMuted(dev) || dev.battery_percent < 0) {
         return pal.ring_muted;
     }
-    if (dev.power_state == OCTANS_PWR_CHARGING) return HexColor(0x7DD3FC, 0.92f);
+    if (dev.power_state == OCTANS_PWR_CHARGING || dev.power_state == OCTANS_PWR_FULL) {
+        return HexColor(0x86EFAC, 0.92f);
+    }
     if (dev.is_low_battery || dev.battery_percent <= 20) return HexColor(0xFCA5A5, 0.92f);
-    if (dev.battery_percent <= 45) return HexColor(0xFCD34D, 0.92f);
-    return HexColor(0x6EE7B7, 0.92f);
+    if (dev.battery_percent <= 40) return HexColor(0xFCD34D, 0.92f);
+    return HexColor(0x86EFAC, 0.92f);
 }
 
 bool ApplyWin11Backdrop(HWND hwnd, bool is_dark) {

@@ -7,18 +7,22 @@
 </p>
 
 <p align="center">
-  <b>v0.4.0</b> · 轻量原生 Windows 无线外设电量托盘工具 · C11 + Win32 + Direct2D / DirectComposition
+  <b>v0.5.0</b> · 轻量原生 Windows 无线外设电量托盘工具 · C11 + Win32 + Direct2D / DirectComposition
 </p>
 
 ---
 
 ## 核心特性
 
-- **极致轻量化**：纯 C11 后端内核 + 原生 Win32 / Direct2D / DirectComposition 界面，无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖；静默驻留托盘时 **0% CPU** 占用，完全离线、零遥测、零网络请求。
+- **极致轻量化**：纯 C11 后端内核 + 原生 Win32 / Direct2D / DirectComposition 界面，无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖；静默驻留托盘时 **0% CPU** 占用，闲置状态零后台网络请求。
 - **三大宇宙显示样式（`Octans` / `Nebula` / `Pulsar`）**：
   - **`Octans`（默认）**：经典圆环电量 + 极简线性外设图标，面板与托盘风格统一。
   - **`Nebula`**：设备实心轮廓内液位填充 + 液面高光，托盘无外环满幅渲染，高辨识度。
-  - **`Pulsar`**：12 刻度精密环形仪表盘（面板）+ 线性外设图标配底部进度条（托盘）。
+  - **`Pulsar`**：12 刻度精密环形仪表盘（面板）+ 线性外设图标配底部彩色电量数字（托盘）。
+  - 三套样式统一以 Octans 电量色阶为准（`>40%` 绿、`21%–40%` 橙、`≤20%` 红、充电/充满绿）。
+- **关于与一键安全升级**：
+  - 菜单内置「关于 Octans」独立弹窗，支持手动触发检查更新（优先走免登录国内 AtomGit 镜像，自动回退 GitHub Releases）。
+  - 支持应用内直接下载新版安装程序、CNG SHA-256 完整性校验与一键静默升级，失败时自动提供发布页下载链接；平时不预加载网络库、零后台联网。
 - **即开即显与南极星光波扫描**：
   - 首次启动自动全盘扫描 2.4G / 蓝牙 / 标准 HID / XInput 设备，空状态展示专属南极星光波探测动效，扫描完成后卡片交错浮现。
   - 零固定设备时任务栏仅显示透明 **Octans Logo**；点击任意设备卡片即可固定到任务栏（Logo 自动切换为设备电量图标），取消最后一个固定设备时自动恢复为 Octans Logo。
@@ -42,7 +46,7 @@
 # 一键编译后端 CLI、单元测试与完整桌面托盘程序 Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 打包为标准 Windows 安装程序（输出 dist\Octans-Setup-v0.4.0.exe）
+# 打包为标准 Windows 安装程序（输出 dist\Octans-Setup-v0.5.0.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 ```
 
@@ -50,7 +54,7 @@ powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 | 文件 | 说明 |
 |---|---|
-| `dist\Octans-Setup-v0.4.0.exe` | 标准 Windows 安装程序（支持开机自启动配置与系统标准卸载） |
+| `dist\Octans-Setup-v0.5.0.exe` | 标准 Windows 安装程序（支持开机自启动配置、一键静默升级与系统标准卸载） |
 | `build\Octans.exe` | 完整桌面托盘主程序（直接运行自动打开面板；支持 `--silent` 静默启动到托盘） |
 | `build\octans-cli.exe` | 独立无头命令行工具（支持 `list --json`、`discover`、`test-rule`、`probe --dump`） |
 | `build\test_engine.exe` | 协议解析、规则引擎与 ABI 单元测试 |

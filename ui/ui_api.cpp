@@ -5,6 +5,7 @@
 #include "ui_panel.h"
 #include "ui_menu.h"
 #include "ui_rename_dlg.h"
+#include "ui_about_dlg.h"
 #include <stdio.h>
 
 namespace octans_ui {
@@ -460,6 +461,21 @@ void ActionToggleAutostart() {
     if (!g_state.ops.set_autostart) return;
     int cur = g_state.ops.get_autostart ? g_state.ops.get_autostart(g_state.backend_ctx) : 0;
     g_state.ops.set_autostart(g_state.backend_ctx, cur ? 0 : 1);
+}
+
+void ActionShowAboutDialog() {
+    HWND owner = PanelIsVisible() ? PanelGetHwnd() : g_state.host_hwnd;
+    g_state.modal_open = true;
+    bool should_quit = ShowAboutDialog(owner, g_state.is_dark);
+    g_state.modal_open = false;
+
+    if (should_quit) {
+        ActionRequestQuit();
+        return;
+    }
+    if (PanelIsVisible()) {
+        SetForegroundWindow(PanelGetHwnd());
+    }
 }
 
 void ActionRunDemoAction(int action_id) {

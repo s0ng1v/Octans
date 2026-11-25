@@ -25,6 +25,7 @@ enum HitZone : int {
     HIT_DEMO_CHARGE,
     HIT_DEMO_THEME,
     HIT_DEMO_COUNT,
+    HIT_ABOUT,
     HIT_QUIT
 };
 
@@ -51,7 +52,7 @@ struct MenuState {
     bool dragging_slider = false;
     bool mouse_tracked = false;
     int hover_zone = HIT_NONE;
-    int pending_post_action = 0; /* 1=rename, 2=quit, 3=full_scan */
+    int pending_post_action = 0; /* 1=rename, 2=quit, 3=full_scan, 4=delete, 5=about */
 
     /* Smooth animations (3-way segmented pill slide + autostart pill switch) */
     bool anim_active = false;
@@ -82,6 +83,7 @@ struct MenuState {
     float demo_label_y = 0.0f;
     D2D1_RECT_F rc_demo[4] = {};
     float div4_y = 0.0f;
+    D2D1_RECT_F rc_about = {};
     D2D1_RECT_F rc_quit = {};
 
     ComPtr<ID2D1Factory> d2d_factory;
@@ -202,6 +204,7 @@ static void LayoutMenu(MenuState &m) {
         m.div3_y = 0.0f;
         for (int i = 0; i < 4; ++i) m.rc_demo[i] = {};
         m.div4_y = 0.0f;
+        m.rc_about = {};
         m.rc_quit = {};
         m.logical_h = y + 6.0f;
         return;
@@ -271,6 +274,9 @@ static void LayoutMenu(MenuState &m) {
     y += 4.0f;
     m.div4_y = y;
     y += 7.0f;
+
+    m.rc_about = MakeRect(pad, y, w - pad, y + row_h);
+    y += row_h + 2.0f;
 
     m.rc_quit = MakeRect(pad, y, w - pad, y + row_h);
     y += row_h + 8.0f;
@@ -584,7 +590,21 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
 
                 draw_div(m.div4_y);
 
-                /* 8. Quit Octans */
+                /* 8. About Octans (version, author, manual update check) */
+                draw_row_bg(m.rc_about, HIT_ABOUT);
+                {
+                    float icx = m.rc_about.left + 16.0f;
+                    float icy = (m.rc_about.top + m.rc_about.bottom) * 0.5f;
+                    b->SetColor(pal.text_secondary);
+                    rt->DrawEllipse(MakeEllipse(icx, icy, 5.4f, 5.4f), b.Get(), 1.25f);
+                    rt->FillEllipse(MakeEllipse(icx, icy - 2.3f, 0.85f, 0.85f), b.Get());
+                    rt->DrawLine(MakePt(icx, icy - 0.3f), MakePt(icx, icy + 2.9f), b.Get(), 1.35f, m.round_stroke.Get());
+                }
+                b->SetColor(pal.text_primary);
+                rt->DrawText(L"\u5173\u4e8e Octans", 9, m.fmt_item.Get(),
+                             MakeRect(m.rc_about.left + 32.0f, m.rc_about.top, m.rc_about.right - 8.0f, m.rc_about.bottom), b.Get());
+
+                /* 9. Quit Octans */
                 draw_row_bg(m.rc_quit, HIT_QUIT, true);
                 b->SetColor(m.hover_zone == HIT_QUIT ? red_col : pal.text_primary);
                 rt->DrawText(L"\u9000\u51fa Octans", 9, m.fmt_item.Get(),
@@ -677,6 +697,7 @@ static int HitTestMenu(const MenuState &m, float dx, float dy) {
             if (PtInR(m.rc_demo[2], dx, dy)) return HIT_DEMO_THEME;
             if (PtInR(m.rc_demo[3], dx, dy)) return HIT_DEMO_COUNT;
         }
+        if (PtInR(m.rc_about, dx, dy)) return HIT_ABOUT;
         if (PtInR(m.rc_quit, dx, dy)) return HIT_QUIT;
     }
     return HIT_NONE;
@@ -856,6 +877,10 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                     }
                     case HIT_DEMO_COUNT:
                         ActionRunDemoAction(4);
+                        break;
+                    case HIT_ABOUT:
+                        m->pending_post_action = 5;
+                        m->done = true;
                         break;
                     case HIT_QUIT:
                         m->pending_post_action = 2;
@@ -1039,6 +1064,8 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
             strncpy(del_id, cur.devices[rename_idx].id, sizeof(del_id) - 1);
             ActionRemoveDevice(del_id);
         }
+    } else if (post_action == 5) {
+        ActionShowAboutDialog();
     }
 }
 

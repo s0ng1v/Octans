@@ -48,7 +48,7 @@ static constexpr UINT WM_APP_THEME_CHANGED    = WM_APP + 14;
 enum TrayStyle : uint8_t {
     TRAY_STYLE_OCTANS = 0, /* Scheme 1 (Default): Circular battery ring + sleek outline icons */
     TRAY_STYLE_NEBULA = 1, /* Scheme 2: Liquid silhouette fill (panel + full-bleed tray) */
-    TRAY_STYLE_PULSAR = 2  /* Scheme 3: 12-segment precision dial (panel) + icon with bottom bar (tray) */
+    TRAY_STYLE_PULSAR = 2  /* Scheme 3: 12-segment precision dial (panel) + sleek icon with bottom digits (tray) */
 };
 
 enum MenuMode : uint8_t {
@@ -298,6 +298,7 @@ void ActionPromptRenameDevice(int device_index);
 void ActionToggleTrayStyle(TrayStyle style);
 void ActionSetTrayScale(float scale);
 void ActionToggleAutostart();
+void ActionShowAboutDialog();
 void ActionRunDemoAction(int action_id);
 void ActionRequestQuit();
 void ActionSetDemoHooks(const DemoMenuHooks *hooks);

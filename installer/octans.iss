@@ -1,5 +1,5 @@
 ﻿#ifndef MyAppVersion
-  #define MyAppVersion "0.4.1"
+  #define MyAppVersion "0.5.0"
 #endif
 
 [Setup]
@@ -37,6 +37,10 @@ UninstallShortcut=卸载 Octans
 [Tasks]
 Name: "autostart"; Description: "{cm:TaskAutostart}"
 Name: "desktopicon"; Description: "{cm:TaskDesktopIcon}"; Flags: unchecked
+
+[InstallDelete]
+Type: files; Name: "{app}\octans-add.exe"
+Type: files; Name: "{autoprograms}\Octans\Octans 添加设备向导.lnk"
 
 [Files]
 Source: "..\build\Octans.exe"; DestDir: "{app}"; Flags: ignoreversion

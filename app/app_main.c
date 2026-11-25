@@ -231,6 +231,11 @@ static void flush_pending_commands_on_worker(octans_app_t *app) {
             app->backend_ops.set_device_alias(app->eng, aliases[i].id, aliases[i].alias);
         }
     }
+    if (alias_n > 0) {
+        octans_device_view_t views[OCTANS_MAX_DEVICES];
+        size_t vn = octans_engine_get_devices(app->eng, views, OCTANS_MAX_DEVICES);
+        octans_ui_on_devices_changed(views, vn);
+    }
 }
 
 static DWORD WINAPI backend_worker_proc(LPVOID param) {

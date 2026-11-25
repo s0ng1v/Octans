@@ -4,21 +4,19 @@
 
 namespace octans_ui {
 
-static constexpr int IDC_RENAME_EDIT = 101;
+static constexpr int IDC_RENAME_EDIT   = 101;
+static constexpr int IDC_RENAME_CANCEL = IDCANCEL;
+static constexpr int IDC_RENAME_SAVE   = IDOK;
 
 struct RenameSheetState {
     bool is_dark = true;
     bool accepted = false;
     bool done = false;
-    bool backdrop_ok = false;
     UINT dpi = 96;
     float logical_w = 336.0f;
     float logical_h = 166.0f;
 
-    int hover_btn = 0;   /* 0=none, 1=cancel, 2=save */
-    int pressed_btn = 0; /* 0=none, 1=cancel, 2=save */
-    bool mouse_tracked = false;
-    uint64_t created_ms = 0;
+    int hover_btn = 0; /* 0=none, 1=cancel, 2=save */
 
     D2D1_RECT_F input_box_rc = {};
     D2D1_RECT_F cancel_btn_rc = {};
@@ -27,7 +25,10 @@ struct RenameSheetState {
     wchar_t result[64] = {};
     HWND hwnd = nullptr;
     HWND edit = nullptr;
-    HFONT font = nullptr;
+    HWND btn_cancel = nullptr;
+    HWND btn_save = nullptr;
+    HFONT font_edit = nullptr;
+    HFONT font_btn = nullptr;
     HBRUSH edit_brush = nullptr;
 
     ComPtr<ID2D1Factory> d2d_factory;
@@ -35,12 +36,7 @@ struct RenameSheetState {
     ComPtr<IDWriteFactory> dwrite;
     ComPtr<IDWriteTextFormat> fmt_title;
     ComPtr<IDWriteTextFormat> fmt_sub;
-    ComPtr<IDWriteTextFormat> fmt_btn;
 };
-
-static bool PtInRc(const D2D1_RECT_F &r, float x, float y) {
-    return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-}
 
 static bool EnsureSheetResources(RenameSheetState &st) {
     if (!st.d2d_factory) {
@@ -65,7 +61,6 @@ static bool EnsureSheetResources(RenameSheetState &st) {
         };
         make_fmt(st.fmt_title, DWRITE_FONT_WEIGHT_SEMI_BOLD, 15.0f, DWRITE_TEXT_ALIGNMENT_LEADING);
         make_fmt(st.fmt_sub,   DWRITE_FONT_WEIGHT_REGULAR,   11.5f, DWRITE_TEXT_ALIGNMENT_LEADING);
-        make_fmt(st.fmt_btn,   DWRITE_FONT_WEIGHT_SEMI_BOLD, 12.5f, DWRITE_TEXT_ALIGNMENT_CENTER);
     }
     if (!st.rt) {
         D2D1_RENDER_TARGET_PROPERTIES rtp = {};
@@ -90,7 +85,6 @@ static void RenderRenameSheetToDC(RenameSheetState &st, HDC target_dc) {
     int ph = crc.bottom - crc.top;
     if (pw < 2 || ph < 2) return;
 
-    /* Double-buffered offscreen DC -> zero flicker with child EDIT control */
     HDC mem_dc = CreateCompatibleDC(target_dc);
     HBITMAP bmp = CreateCompatibleBitmap(target_dc, pw, ph);
     if (!mem_dc || !bmp) {
@@ -114,14 +108,12 @@ static void RenderRenameSheetToDC(RenameSheetState &st, HDC target_dc) {
         ComPtr<ID2D1SolidColorBrush> brush;
         rt->CreateSolidColorBrush(pal.text_primary, brush.Put());
         if (brush) {
-            /* Subtle hairline outer border */
             brush->SetColor(pal.panel_outer_border);
             rt->DrawRoundedRectangle(
                 MakeRoundedRect(MakeRect(0.5f, 0.5f, st.logical_w - 0.5f, st.logical_h - 0.5f), 7.5f, 7.5f),
                 brush.Get(), 1.0f
             );
 
-            /* Title & Subtitle */
             brush->SetColor(pal.text_primary);
             rt->DrawText(
                 L"\u91cd\u547d\u540d\u8bbe\u5907", 5,
@@ -138,7 +130,6 @@ static void RenderRenameSheetToDC(RenameSheetState &st, HDC target_dc) {
                 brush.Get()
             );
 
-            /* Modern Apple-style rounded input box with green focus accent ring */
             D2D1_ROUNDED_RECT inp_rr = MakeRoundedRect(st.input_box_rc, 10.0f, 10.0f);
             brush->SetColor(st.is_dark ? HexColor(0x2E2E33, 1.0f) : HexColor(0xFFFFFF, 1.0f));
             rt->FillRoundedRectangle(inp_rr, brush.Get());
@@ -152,43 +143,6 @@ static void RenderRenameSheetToDC(RenameSheetState &st, HDC target_dc) {
                 ),
                 brush.Get(), 1.5f
             );
-
-            /* Cancel button (soft frosted pill) */
-            {
-                D2D1_COLOR_F bg = st.is_dark
-                    ? (st.pressed_btn == 1 ? MakeColor(1, 1, 1, 0.16f) : (st.hover_btn == 1 ? MakeColor(1, 1, 1, 0.12f) : MakeColor(1, 1, 1, 0.08f)))
-                    : (st.pressed_btn == 1 ? MakeColor(0, 0, 0, 0.12f) : (st.hover_btn == 1 ? MakeColor(0, 0, 0, 0.08f) : MakeColor(0, 0, 0, 0.05f)));
-                brush->SetColor(bg);
-                rt->FillRoundedRectangle(MakeRoundedRect(st.cancel_btn_rc, 10.0f, 10.0f), brush.Get());
-
-                brush->SetColor(pal.card_border);
-                rt->DrawRoundedRectangle(
-                    MakeRoundedRect(
-                        MakeRect(st.cancel_btn_rc.left + 0.5f, st.cancel_btn_rc.top + 0.5f,
-                                 st.cancel_btn_rc.right - 0.5f, st.cancel_btn_rc.bottom - 0.5f),
-                        9.5f, 9.5f
-                    ),
-                    brush.Get(), 1.0f
-                );
-
-                brush->SetColor(pal.text_primary);
-                rt->DrawText(L"\u53d6\u6d88", 2, st.fmt_btn.Get(), st.cancel_btn_rc, brush.Get());
-            }
-
-            /* Save primary button (Apple green pill) */
-            {
-                D2D1_COLOR_F base = st.is_dark ? HexColor(0x30D158, 1.0f) : HexColor(0x34C759, 1.0f);
-                if (st.pressed_btn == 2) {
-                    base = st.is_dark ? HexColor(0x26AE48, 1.0f) : HexColor(0x29A84A, 1.0f);
-                } else if (st.hover_btn == 2) {
-                    base = st.is_dark ? HexColor(0x3BE066, 1.0f) : HexColor(0x3BD662, 1.0f);
-                }
-                brush->SetColor(base);
-                rt->FillRoundedRectangle(MakeRoundedRect(st.save_btn_rc, 10.0f, 10.0f), brush.Get());
-
-                brush->SetColor(MakeColor(1.0f, 1.0f, 1.0f, 0.99f));
-                rt->DrawText(L"\u4fdd\u5b58", 2, st.fmt_btn.Get(), st.save_btn_rc, brush.Get());
-            }
         }
 
         HRESULT hr = rt->EndDraw();
@@ -203,33 +157,111 @@ static void RenderRenameSheetToDC(RenameSheetState &st, HDC target_dc) {
     DeleteDC(mem_dc);
 }
 
-static void RenderRenameSheet(RenameSheetState &st) {
-    if (st.hwnd) {
-        InvalidateRect(st.hwnd, nullptr, FALSE);
-        UpdateWindow(st.hwnd);
+static void DrawOwnerDrawPillButton(const RenameSheetState &st, const DRAWITEMSTRUCT *dis) {
+    if (!dis) return;
+    bool is_save = (dis->CtlID == IDC_RENAME_SAVE);
+    bool pressed = (dis->itemState & ODS_SELECTED) != 0;
+    bool hovered = (st.hover_btn == (is_save ? 2 : 1));
+    RECT rc = dis->rcItem;
+    int w = rc.right - rc.left;
+    int h = rc.bottom - rc.top;
+    if (w <= 0 || h <= 0) return;
+
+    HDC hdc = dis->hDC;
+    COLORREF bg_parent = st.is_dark ? RGB(34, 34, 38) : RGB(248, 248, 250);
+    HBRUSH pb = CreateSolidBrush(bg_parent);
+    FillRect(hdc, &rc, pb);
+    DeleteObject(pb);
+
+    COLORREF fill_col;
+    COLORREF border_col;
+    COLORREF txt_col;
+    if (is_save) {
+        if (pressed) fill_col = st.is_dark ? RGB(38, 174, 72) : RGB(41, 168, 74);
+        else if (hovered) fill_col = st.is_dark ? RGB(59, 224, 102) : RGB(59, 214, 98);
+        else fill_col = st.is_dark ? RGB(48, 209, 88) : RGB(52, 199, 89);
+        border_col = fill_col;
+        txt_col = RGB(255, 255, 255);
+    } else {
+        if (pressed) fill_col = st.is_dark ? RGB(66, 66, 72) : RGB(218, 218, 224);
+        else if (hovered) fill_col = st.is_dark ? RGB(58, 58, 64) : RGB(228, 228, 234);
+        else fill_col = st.is_dark ? RGB(48, 48, 54) : RGB(236, 236, 241);
+        border_col = st.is_dark ? RGB(72, 72, 78) : RGB(214, 214, 220);
+        txt_col = st.is_dark ? RGB(245, 245, 247) : RGB(28, 28, 30);
     }
+
+    int rad = static_cast<int>(roundf(10.0f * static_cast<float>(st.dpi) / 96.0f));
+    HBRUSH fb = CreateSolidBrush(fill_col);
+    HPEN fp = CreatePen(PS_SOLID, 1, border_col);
+    HGDIOBJ old_b = SelectObject(hdc, fb);
+    HGDIOBJ old_p = SelectObject(hdc, fp);
+    RoundRect(hdc, rc.left, rc.top, rc.right, rc.bottom, rad * 2, rad * 2);
+    SelectObject(hdc, old_b);
+    SelectObject(hdc, old_p);
+    DeleteObject(fb);
+    DeleteObject(fp);
+
+    SetBkMode(hdc, TRANSPARENT);
+    SetTextColor(hdc, txt_col);
+    HGDIOBJ old_f = st.font_btn ? SelectObject(hdc, st.font_btn) : nullptr;
+    const wchar_t *label = is_save ? L"\u4fdd\u5b58" : L"\u53d6\u6d88";
+    DrawTextW(hdc, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+    if (old_f) SelectObject(hdc, old_f);
 }
 
 static void ConfirmSheet(RenameSheetState &st) {
-    GetWindowTextW(st.edit, st.result, 64);
+    if (st.edit) {
+        GetWindowTextW(st.edit, st.result, 64);
+    }
     st.accepted = true;
     st.done = true;
+}
+
+static LRESULT CALLBACK RenameBtnSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
+    auto orig = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
+    HWND parent = GetParent(hwnd);
+    auto *st = parent ? reinterpret_cast<RenameSheetState *>(GetWindowLongPtrW(parent, GWLP_USERDATA)) : nullptr;
+    int id = GetDlgCtrlID(hwnd);
+
+    if (msg == WM_SETCURSOR) {
+        SetCursor(LoadCursorW(nullptr, IDC_HAND));
+        return TRUE;
+    }
+    if (msg == WM_MOUSEMOVE && st) {
+        int want = (id == IDC_RENAME_SAVE) ? 2 : 1;
+        if (st->hover_btn != want) {
+            st->hover_btn = want;
+            TRACKMOUSEEVENT tme = {};
+            tme.cbSize = sizeof(tme);
+            tme.dwFlags = TME_LEAVE;
+            tme.hwndTrack = hwnd;
+            TrackMouseEvent(&tme);
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+    } else if (msg == WM_MOUSELEAVE && st) {
+        int want = (id == IDC_RENAME_SAVE) ? 2 : 1;
+        if (st->hover_btn == want) {
+            st->hover_btn = 0;
+            InvalidateRect(hwnd, nullptr, FALSE);
+        }
+    }
+    return orig ? CallWindowProcW(orig, hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
 }
 
 static LRESULT CALLBACK RenameEditSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     auto orig = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     if (msg == WM_KEYDOWN) {
         if (wp == VK_RETURN) {
-            SendMessageW(GetParent(hwnd), WM_APP + 1, 1, 0);
+            SendMessageW(GetParent(hwnd), WM_COMMAND, MAKEWPARAM(IDC_RENAME_SAVE, BN_CLICKED), 0);
             return 0;
         }
         if (wp == VK_ESCAPE) {
-            SendMessageW(GetParent(hwnd), WM_APP + 1, 0, 0);
+            SendMessageW(GetParent(hwnd), WM_COMMAND, MAKEWPARAM(IDC_RENAME_CANCEL, BN_CLICKED), 0);
             return 0;
         }
     }
     if (msg == WM_CHAR && (wp == L'\r' || wp == 27)) {
-        return 0; /* Suppress default edit control beep on Enter / Escape */
+        return 0;
     }
     return orig ? CallWindowProcW(orig, hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
 }
@@ -243,37 +275,28 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
             return DefWindowProcW(hwnd, msg, wp, lp);
         }
-        case WM_SETCURSOR:
-            if (st && LOWORD(lp) == HTCLIENT) {
-                if (st->hover_btn != 0 || st->pressed_btn != 0) {
-                    SetCursor(LoadCursorW(nullptr, IDC_HAND));
-                    return TRUE;
+
+        case WM_COMMAND:
+            if (st) {
+                int ctl = LOWORD(wp);
+                if (ctl == IDC_RENAME_SAVE) {
+                    ConfirmSheet(*st);
+                    return 0;
                 }
-                POINT cp = {};
-                if (GetCursorPos(&cp) && ScreenToClient(hwnd, &cp)) {
-                    float scale = static_cast<float>(st->dpi) / 96.0f;
-                    float dx = static_cast<float>(cp.x) / scale;
-                    float dy = static_cast<float>(cp.y) / scale;
-                    if (PtInRc(st->cancel_btn_rc, dx, dy) || PtInRc(st->save_btn_rc, dx, dy)) {
-                        SetCursor(LoadCursorW(nullptr, IDC_HAND));
-                        return TRUE;
-                    }
-                    if (PtInRc(st->input_box_rc, dx, dy)) {
-                        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
-                        return TRUE;
-                    }
+                if (ctl == IDC_RENAME_CANCEL) {
+                    st->accepted = false;
+                    st->done = true;
+                    return 0;
                 }
-                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
-                return TRUE;
             }
             break;
 
-        case WM_APP + 1:
+        case WM_DRAWITEM:
             if (st) {
-                if (wp == 1) ConfirmSheet(*st);
-                else { st->accepted = false; st->done = true; }
+                DrawOwnerDrawPillButton(*st, reinterpret_cast<const DRAWITEMSTRUCT *>(lp));
+                return TRUE;
             }
-            return 0;
+            break;
 
         case WM_CTLCOLOREDIT:
             if (st) {
@@ -284,96 +307,16 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             }
             break;
 
-        case WM_MOUSEMOVE:
-            if (st) {
-                if (!st->mouse_tracked) {
-                    TRACKMOUSEEVENT tme = {};
-                    tme.cbSize = sizeof(tme);
-                    tme.dwFlags = TME_LEAVE;
-                    tme.hwndTrack = hwnd;
-                    TrackMouseEvent(&tme);
-                    st->mouse_tracked = true;
-                }
-                float scale = static_cast<float>(st->dpi) / 96.0f;
-                float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
-                float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
-                int nh = 0;
-                if (PtInRc(st->cancel_btn_rc, dx, dy)) nh = 1;
-                else if (PtInRc(st->save_btn_rc, dx, dy)) nh = 2;
-                if (nh != st->hover_btn) {
-                    st->hover_btn = nh;
-                    SetCursor(LoadCursorW(nullptr, nh ? IDC_HAND : IDC_ARROW));
-                    RenderRenameSheet(*st);
-                }
-            }
-            return 0;
-
-        case WM_MOUSELEAVE:
-            if (st) {
-                st->mouse_tracked = false;
-                /* Never clear pressed_btn while mouse is captured! */
-                if (GetCapture() != hwnd && st->hover_btn != 0) {
-                    st->hover_btn = 0;
-                    RenderRenameSheet(*st);
-                }
-            }
-            return 0;
-
-        case WM_CAPTURECHANGED:
-            if (st && st->pressed_btn != 0) {
-                st->pressed_btn = 0;
-                RenderRenameSheet(*st);
-            }
-            return 0;
-
         case WM_LBUTTONDOWN:
             if (st) {
                 float scale = static_cast<float>(st->dpi) / 96.0f;
                 float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
                 float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
-                if (PtInRc(st->cancel_btn_rc, dx, dy)) {
-                    st->pressed_btn = 1;
-                    SetCapture(hwnd);
-                    RenderRenameSheet(*st);
-                } else if (PtInRc(st->save_btn_rc, dx, dy)) {
-                    st->pressed_btn = 2;
-                    SetCapture(hwnd);
-                    RenderRenameSheet(*st);
-                } else if (PtInRc(st->input_box_rc, dx, dy)) {
+                if (dx >= st->input_box_rc.left && dx <= st->input_box_rc.right &&
+                    dy >= st->input_box_rc.top && dy <= st->input_box_rc.bottom) {
                     SetFocus(st->edit);
                 } else {
-                    ReleaseCapture();
                     SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
-                }
-            }
-            return 0;
-
-        case WM_LBUTTONUP:
-            if (st) {
-                int p = st->pressed_btn;
-                st->pressed_btn = 0;
-                if (GetCapture() == hwnd) {
-                    ReleaseCapture();
-                }
-                float scale = static_cast<float>(st->dpi) / 96.0f;
-                float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
-                float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
-                if ((p == 1 || p == 0) && PtInRc(st->cancel_btn_rc, dx, dy)) {
-                    st->accepted = false;
-                    st->done = true;
-                } else if ((p == 2 || p == 0) && PtInRc(st->save_btn_rc, dx, dy)) {
-                    ConfirmSheet(*st);
-                } else {
-                    RenderRenameSheet(*st);
-                }
-            }
-            return 0;
-
-        case WM_ACTIVATE:
-            if (st && LOWORD(wp) == WA_INACTIVE) {
-                if ((GetTickCount64() - st->created_ms) >= 180ULL) {
-                    st->accepted = false;
-                    st->done = true;
                 }
             }
             return 0;
@@ -438,7 +381,6 @@ bool ShowRenameAliasDialog(
     int px_w = static_cast<int>(ceilf(st.logical_w * scale));
     int px_h = static_cast<int>(ceilf(st.logical_h * scale));
 
-    /* Center neatly over the flyout panel (or active monitor work area) */
     RECT anchor_rc = {};
     int x = 0, y = 0;
     if (owner && IsWindowVisible(owner) && GetWindowRect(owner, &anchor_rc)) {
@@ -474,7 +416,6 @@ bool ShowRenameAliasDialog(
     }
     st.hwnd = hwnd;
 
-    /* Native Win11 rounded corners + shadow + immersive dark mode */
     BOOL dark_val = is_dark ? TRUE : FALSE;
     DwmSetWindowAttribute(hwnd, 20, &dark_val, sizeof(dark_val));
     DWORD corner = 2; /* DWMWCP_ROUND */
@@ -482,19 +423,24 @@ bool ShowRenameAliasDialog(
 
     auto sc = [scale](float dp) { return static_cast<int>(roundf(dp * scale)); };
 
-    st.font = CreateFontW(
+    st.font_edit = CreateFontW(
         -sc(14.5f), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_ROMAN,
         GetEditControlFontFamily()
     );
+    st.font_btn = CreateFontW(
+        -sc(13.0f), 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_ROMAN,
+        GetEditControlFontFamily()
+    );
 
-    /* Borderless native EDIT nested inside our Direct2D rounded input pill */
     st.edit = CreateWindowExW(
         0,
         L"EDIT",
         current_name ? current_name : L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | WS_TABSTOP,
         sc(st.input_box_rc.left + 12.0f),
         sc(st.input_box_rc.top + 9.0f),
         sc((st.input_box_rc.right - st.input_box_rc.left) - 24.0f),
@@ -504,18 +450,49 @@ bool ShowRenameAliasDialog(
         hinst,
         nullptr
     );
-
-    SendMessageW(st.edit, WM_SETFONT, reinterpret_cast<WPARAM>(st.font), TRUE);
+    SendMessageW(st.edit, WM_SETFONT, reinterpret_cast<WPARAM>(st.font_edit), TRUE);
     SendMessageW(st.edit, EM_SETLIMITTEXT, 63, 0);
 
     WNDPROC old_edit = reinterpret_cast<WNDPROC>(
         SetWindowLongPtrW(st.edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(RenameEditSubclassProc)));
     SetWindowLongPtrW(st.edit, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(old_edit));
 
-    st.created_ms = GetTickCount64();
+    /* Real native Win32 owner-draw BUTTON controls -> unbreakable clicks + zero IME/focus cancellation! */
+    st.btn_cancel = CreateWindowExW(
+        0, L"BUTTON", L"\u53d6\u6d88",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
+        sc(st.cancel_btn_rc.left), sc(st.cancel_btn_rc.top),
+        sc(st.cancel_btn_rc.right - st.cancel_btn_rc.left),
+        sc(st.cancel_btn_rc.bottom - st.cancel_btn_rc.top),
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RENAME_CANCEL)),
+        hinst, nullptr
+    );
+    st.btn_save = CreateWindowExW(
+        0, L"BUTTON", L"\u4fdd\u5b58",
+        WS_CHILD | WS_VISIBLE | BS_OWNERDRAW | WS_TABSTOP,
+        sc(st.save_btn_rc.left), sc(st.save_btn_rc.top),
+        sc(st.save_btn_rc.right - st.save_btn_rc.left),
+        sc(st.save_btn_rc.bottom - st.save_btn_rc.top),
+        hwnd,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_RENAME_SAVE)),
+        hinst, nullptr
+    );
+    if (st.btn_cancel) {
+        WNDPROC ob = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(st.btn_cancel, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(RenameBtnSubclassProc)));
+        SetWindowLongPtrW(st.btn_cancel, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ob));
+    }
+    if (st.btn_save) {
+        WNDPROC ob = reinterpret_cast<WNDPROC>(
+            SetWindowLongPtrW(st.btn_save, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(RenameBtnSubclassProc)));
+        SetWindowLongPtrW(st.btn_save, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(ob));
+    }
+
     ShowWindow(hwnd, SW_SHOW);
     SetForegroundWindow(hwnd);
-    RenderRenameSheet(st);
+    InvalidateRect(hwnd, nullptr, FALSE);
+    UpdateWindow(hwnd);
     SetFocus(st.edit);
     SendMessageW(st.edit, EM_SETSEL, 0, -1);
 
@@ -531,13 +508,13 @@ bool ShowRenameAliasDialog(
     }
 
     st.rt.Reset();
-    st.fmt_btn.Reset();
     st.fmt_sub.Reset();
     st.fmt_title.Reset();
     st.dwrite.Reset();
     st.d2d_factory.Reset();
     DestroyWindow(hwnd);
-    if (st.font) DeleteObject(st.font);
+    if (st.font_edit) DeleteObject(st.font_edit);
+    if (st.font_btn) DeleteObject(st.font_btn);
     if (st.edit_brush) DeleteObject(st.edit_brush);
 
     if (st.accepted) {

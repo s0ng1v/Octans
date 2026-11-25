@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include "family_request.h"
+#include "proto_obf.h"
 #include "../core/hid_dev.h"
 
 #include <stdio.h>
@@ -74,7 +75,13 @@ int octans_proto_parse_razer_pa(const uint8_t *buf, size_t len, uint8_t cmd_id, 
 }
 
 int octans_proto_parse_razer_bsv2_2020(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
-    static const uint8_t prefix[9] = {0xFF, 0x0F, 0x05, 0xFE, 0x12, 0x04, 0x1F, 0x08, 0x05};
+    static const uint8_t enc_prefix[9] = {
+        OCTANS_ENC8(0xFF, 20), OCTANS_ENC8(0x0F, 21), OCTANS_ENC8(0x05, 22),
+        OCTANS_ENC8(0xFE, 23), OCTANS_ENC8(0x12, 24), OCTANS_ENC8(0x04, 25),
+        OCTANS_ENC8(0x1F, 26), OCTANS_ENC8(0x08, 27), OCTANS_ENC8(0x05, 28)
+    };
+    uint8_t prefix[9];
+    octans_dec_bytes(prefix, enc_prefix, sizeof(prefix), 20u);
     if (!buf || len < 15u || !out) return 0;
     if (memcmp(buf, prefix, sizeof(prefix)) != 0) return 0;
     uint8_t state = buf[11];
@@ -1083,10 +1090,14 @@ int octans_proto_parse_indep(const uint8_t *buf,
 
 int octans_proto_matches_iface(const proto_entry_t *e, const octans_hid_info_t *info) {
     if (!e || !info) return 0;
-    if (e->vid != 0xFFFFu && e->vid != info->vid) return 0;
-    if (e->pid != 0xFFFFu && e->pid != info->pid) return 0;
-    if (e->usage_page != 0u && e->usage_page != info->usage_page) return 0;
-    if (e->usage != 0u && e->usage != info->usage) return 0;
+    uint16_t vid = octans_dec16(e->vid, 1u);
+    uint16_t pid = octans_dec16(e->pid, 2u);
+    uint16_t up  = octans_dec16(e->usage_page, 3u);
+    uint16_t u   = octans_dec16(e->usage, 4u);
+    if (vid != 0xFFFFu && vid != info->vid) return 0;
+    if (pid != 0xFFFFu && pid != info->pid) return 0;
+    if (up != 0u && up != info->usage_page) return 0;
+    if (u != 0u && u != info->usage) return 0;
     if (e->interface_num >= 0 && e->interface_num != info->interface_num) return 0;
     return 1;
 }
@@ -1264,7 +1275,11 @@ static int wrap_parse_indep(const uint8_t *b, size_t l, void *c, octans_proto_re
 }
 
 static int run_razer_bsv2_live(const octans_hid_info_t *info, octans_proto_reading_t *out) {
-    static const uint8_t req_hdr[9] = {0xFF, 0x0A, 0x00, 0xFD, 0x04, 0x12, 0xF1, 0x02, 0x05};
+    static const uint8_t enc_req_hdr[9] = {
+        OCTANS_ENC8(0xFF, 30), OCTANS_ENC8(0x0A, 31), OCTANS_ENC8(0x00, 32),
+        OCTANS_ENC8(0xFD, 33), OCTANS_ENC8(0x04, 34), OCTANS_ENC8(0x12, 35),
+        OCTANS_ENC8(0xF1, 36), OCTANS_ENC8(0x02, 37), OCTANS_ENC8(0x05, 38)
+    };
     octans_hid_dev_t dev;
     if (octans_hid_open(info->path, 1, 0, &dev) < 0 || dev.feature_len < 64) {
         octans_hid_close(&dev);
@@ -1272,7 +1287,7 @@ static int run_razer_bsv2_live(const octans_hid_info_t *info, octans_proto_readi
     }
     uint8_t req[64], resp[64];
     memset(req, 0, sizeof(req));
-    memcpy(req, req_hdr, sizeof(req_hdr));
+    octans_dec_bytes(req, enc_req_hdr, sizeof(enc_req_hdr), 30u);
     int ok = 0;
     if (octans_hid_set_feature(&dev, req, 64u) == 0) {
         Sleep(20);
@@ -1375,7 +1390,7 @@ static int run_feature_or_output_live(const proto_entry_t *e,
         }
     } else if (e->family == FAM_ASUS && dev.output_len >= 64) {
         size_t rlen = 64u;
-        octans_proto_build_rog_1207(e->report_id, req, &rlen);
+        octans_proto_build_rog_1207(octans_dec8(e->report_id, 5u), req, &rlen);
         if (var == VAR_ROG_OMNI_KB) req[2] = 0x01u;
         if (rlen > dev.output_len) rlen = dev.output_len;
         ok = send_and_read_loop(&dev, 0, req, rlen, 4, 120u, wrap_parse_rog, &var, out);
@@ -1613,9 +1628,13 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             req[0] = 0x00u; req[1] = 0x0Eu; req[2] = 0xA1u;
             ok = send_and_read_loop(&dev, 1, req, 65u, 4, 120u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_MCHOSE_G7 && dev.output_len >= 64u && dev.can_read) {
-            static const uint8_t g7_hdr[9] = {0x00,0x55,0x30,0xA5,0x0B,0x2E,0x01,0x01,0x01};
+            static const uint8_t enc_g7[9] = {
+                OCTANS_ENC8(0x00, 40), OCTANS_ENC8(0x55, 41), OCTANS_ENC8(0x30, 42),
+                OCTANS_ENC8(0xA5, 43), OCTANS_ENC8(0x0B, 44), OCTANS_ENC8(0x2E, 45),
+                OCTANS_ENC8(0x01, 46), OCTANS_ENC8(0x01, 47), OCTANS_ENC8(0x01, 48)
+            };
             size_t olen = dev.output_len >= 65u ? 65u : 64u;
-            memcpy(req, g7_hdr, sizeof(g7_hdr));
+            octans_dec_bytes(req, enc_g7, sizeof(enc_g7), 40u);
             if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
                 for (int a = 0; a < 5; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
@@ -1626,17 +1645,25 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (e->variant == VAR_INDEP_AUDEZE && dev.output_len >= 64) {
-            static const uint8_t aud[6] = {0x05,0x5D,0x04,0x00,0xD6,0x0C};
-            memcpy(req, aud, sizeof(aud));
+            static const uint8_t enc_aud[6] = {
+                OCTANS_ENC8(0x05, 50), OCTANS_ENC8(0x5D, 51), OCTANS_ENC8(0x04, 52),
+                OCTANS_ENC8(0x00, 53), OCTANS_ENC8(0xD6, 54), OCTANS_ENC8(0x0C, 55)
+            };
+            octans_dec_bytes(req, enc_aud, sizeof(enc_aud), 50u);
             ok = send_and_read_loop(&dev, 0, req, 64u, 3, 120u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_MCHOSE_V9 && dev.output_len >= 64u && dev.can_read) {
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             memset(req, 0, olen);
-            req[0] = 0x55u; req[1] = 0x65u; req[2] = 0x01u;
+            req[0] = octans_dec8(OCTANS_ENC8(0x55u, 58), 58u);
+            req[1] = octans_dec8(OCTANS_ENC8(0x65u, 59), 59u);
+            req[2] = 0x01u;
             int wrc = octans_hid_write_output_intr(&dev, req, olen);
             if (wrc != 0 && olen >= 65u) {
                 memset(req, 0, olen);
-                req[0] = 0x00u; req[1] = 0x55u; req[2] = 0x65u; req[3] = 0x01u;
+                req[0] = 0x00u;
+                req[1] = octans_dec8(OCTANS_ENC8(0x55u, 58), 58u);
+                req[2] = octans_dec8(OCTANS_ENC8(0x65u, 59), 59u);
+                req[3] = 0x01u;
                 wrc = octans_hid_write_output_intr(&dev, req, olen);
             }
             if (wrc == 0) {
@@ -1649,10 +1676,14 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (e->variant == VAR_INDEP_MCHOSE_AUDIO_MC && dev.output_len >= 64u && dev.can_read) {
-            static const uint8_t mc_hdr[9] = {0x55,0xAA,0x01,0x00,0x01,0x00,0x01,0x0B,0x00};
+            static const uint8_t enc_mc[9] = {
+                OCTANS_ENC8(0x55, 60), OCTANS_ENC8(0xAA, 61), OCTANS_ENC8(0x01, 62),
+                OCTANS_ENC8(0x00, 63), OCTANS_ENC8(0x01, 64), OCTANS_ENC8(0x00, 65),
+                OCTANS_ENC8(0x01, 66), OCTANS_ENC8(0x0B, 67), OCTANS_ENC8(0x00, 68)
+            };
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             memset(req, 0, olen);
-            memcpy(req, mc_hdr, sizeof(mc_hdr));
+            octans_dec_bytes(req, enc_mc, sizeof(enc_mc), 60u);
             if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
                 for (int a = 0; a < 5; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 260u);
@@ -1663,8 +1694,11 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (e->variant == VAR_INDEP_LOGI_ASTRO && dev.output_len >= 64) {
-            static const uint8_t astro[6] = {0x02, 0x0C, 0x03, 0x00, 0x06, 0x0C};
-            memcpy(req, astro, sizeof(astro));
+            static const uint8_t enc_astro[6] = {
+                OCTANS_ENC8(0x02, 70), OCTANS_ENC8(0x0C, 71), OCTANS_ENC8(0x03, 72),
+                OCTANS_ENC8(0x00, 73), OCTANS_ENC8(0x06, 74), OCTANS_ENC8(0x0C, 75)
+            };
+            octans_dec_bytes(req, enc_astro, sizeof(enc_astro), 70u);
             ok = send_and_read_loop(&dev, 0, req, 64u, 6, 200u, wrap_parse_indep, &var, out);
         }
     }

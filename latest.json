@@ -1,0 +1,9 @@
+{
+  "version": "0.5.0",
+  "notes": "修复重命名保存；统一三套样式电量颜色阈值；Pulsar 托盘回归电量数字；新增关于页与内置 SHA256 自动升级。",
+  "sha256": "55C68404E35F1C63D8EBD6ACC80D73CF8379CB743D85B6DAD93B65AF8473DF55",
+  "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
+  "page_cn": "https://atomgit.com/s0ng1v/Octans/releases",
+  "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
+}

@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include "hidpp.h"
+#include "proto_obf.h"
 #include "../core/hid_dev.h"
 
 #include <stdio.h>
@@ -23,15 +24,18 @@ static int wcs_contains_ci(const wchar_t *hay, const wchar_t *needle) {
 
 int octans_hidpp_is_receiver_pid(uint16_t pid, const wchar_t *product) {
     static const uint16_t rx_pids[] = {
-        0xC548,                                                 /* Bolt */
-        0xC52B, 0xC532,                                         /* Unifying */
-        0xC52F, 0xC518, 0xC51A, 0xC51B, 0xC521, 0xC525, 0xC526, /* Nano */
-        0xC52E, 0xC531, 0xC534, 0xC535, 0xC537,
-        0xC539, 0xC53A, 0xC53D, 0xC53F, 0xC541, 0xC543, 0xC545, /* Lightspeed */
-        0xC547, 0xC54B, 0xC54D, 0xC54E, 0xC54F, 0xC550
+        OCTANS_ENC16(0xC548, 11),                                                                                                   /* Bolt */
+        OCTANS_ENC16(0xC52B, 11), OCTANS_ENC16(0xC532, 11),                                                                         /* Unifying */
+        OCTANS_ENC16(0xC52F, 11), OCTANS_ENC16(0xC518, 11), OCTANS_ENC16(0xC51A, 11), OCTANS_ENC16(0xC51B, 11),
+        OCTANS_ENC16(0xC521, 11), OCTANS_ENC16(0xC525, 11), OCTANS_ENC16(0xC526, 11),                                               /* Nano */
+        OCTANS_ENC16(0xC52E, 11), OCTANS_ENC16(0xC531, 11), OCTANS_ENC16(0xC534, 11), OCTANS_ENC16(0xC535, 11), OCTANS_ENC16(0xC537, 11),
+        OCTANS_ENC16(0xC539, 11), OCTANS_ENC16(0xC53A, 11), OCTANS_ENC16(0xC53D, 11), OCTANS_ENC16(0xC53F, 11),
+        OCTANS_ENC16(0xC541, 11), OCTANS_ENC16(0xC543, 11), OCTANS_ENC16(0xC545, 11),                                               /* Lightspeed */
+        OCTANS_ENC16(0xC547, 11), OCTANS_ENC16(0xC54B, 11), OCTANS_ENC16(0xC54D, 11),
+        OCTANS_ENC16(0xC54E, 11), OCTANS_ENC16(0xC54F, 11), OCTANS_ENC16(0xC550, 11)
     };
     for (size_t i = 0; i < sizeof(rx_pids) / sizeof(rx_pids[0]); ++i) {
-        if (pid == rx_pids[i]) return 1;
+        if (pid == octans_dec16(rx_pids[i], 11u)) return 1;
     }
     if (product && product[0]) {
         if (wcs_contains_ci(product, L"receiver") ||
@@ -49,27 +53,27 @@ static int is_headset_pid(uint16_t pid, wchar_t *out_name, size_t out_chars) {
         uint16_t pid;
         const wchar_t *name;
     } headsets[] = {
-        {0x0A66, L"Logitech G533"},
-        {0x0AC4, L"Logitech G535"},
-        {0x0A5C, L"Logitech G633"},
-        {0x0A89, L"Logitech G635"},
-        {0x0A5B, L"Logitech G933"},
-        {0x0A87, L"Logitech G935"},
-        {0x0AB5, L"Logitech G733"},
-        {0x0AFE, L"Logitech G733"},
-        {0x0B1F, L"Logitech G733"},
-        {0x0ADF, L"Logitech G435"},
-        {0x0B08, L"Logitech G735"},
-        {0x0AA7, L"Logitech G PRO"},
-        {0x0AAA, L"Logitech G PRO X"},
-        {0x0ABA, L"Logitech G PRO X"},
-        {0x0AFB, L"Logitech G PRO X 2"},
-        {0x0AFC, L"Logitech G PRO X 2"},
-        {0x0AED, L"Logitech Zone Vibe"},
-        {0x0AEF, L"Logitech Zone Wireless"},
+        {OCTANS_ENC16(0x0A66, 12), L"Logitech G533"},
+        {OCTANS_ENC16(0x0AC4, 12), L"Logitech G535"},
+        {OCTANS_ENC16(0x0A5C, 12), L"Logitech G633"},
+        {OCTANS_ENC16(0x0A89, 12), L"Logitech G635"},
+        {OCTANS_ENC16(0x0A5B, 12), L"Logitech G933"},
+        {OCTANS_ENC16(0x0A87, 12), L"Logitech G935"},
+        {OCTANS_ENC16(0x0AB5, 12), L"Logitech G733"},
+        {OCTANS_ENC16(0x0AFE, 12), L"Logitech G733"},
+        {OCTANS_ENC16(0x0B1F, 12), L"Logitech G733"},
+        {OCTANS_ENC16(0x0ADF, 12), L"Logitech G435"},
+        {OCTANS_ENC16(0x0B08, 12), L"Logitech G735"},
+        {OCTANS_ENC16(0x0AA7, 12), L"Logitech G PRO"},
+        {OCTANS_ENC16(0x0AAA, 12), L"Logitech G PRO X"},
+        {OCTANS_ENC16(0x0ABA, 12), L"Logitech G PRO X"},
+        {OCTANS_ENC16(0x0AFB, 12), L"Logitech G PRO X 2"},
+        {OCTANS_ENC16(0x0AFC, 12), L"Logitech G PRO X 2"},
+        {OCTANS_ENC16(0x0AED, 12), L"Logitech Zone Vibe"},
+        {OCTANS_ENC16(0x0AEF, 12), L"Logitech Zone Wireless"},
     };
     for (size_t i = 0; i < sizeof(headsets) / sizeof(headsets[0]); ++i) {
-        if (pid == headsets[i].pid) {
+        if (pid == octans_dec16(headsets[i].pid, 12u)) {
             if (out_name && out_chars > 0) {
                 wcsncpy(out_name, headsets[i].name, out_chars - 1);
                 out_name[out_chars - 1] = L'\0';

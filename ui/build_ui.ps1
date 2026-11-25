@@ -85,6 +85,8 @@ $LibSources = @(
     "ui_glyphs.cpp",
     "ui_tray.cpp",
     "ui_rename_dlg.cpp",
+    "ui_updater.cpp",
+    "ui_about_dlg.cpp",
     "ui_menu.cpp",
     "ui_panel.cpp",
     "ui_api.cpp"

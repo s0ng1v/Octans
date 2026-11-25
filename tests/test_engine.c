@@ -841,6 +841,71 @@ static void test_mchose_v2_suite(void) {
     ASSERT_EQ_INT(OCTANS_PWR_SLEEPING, r.power_state);
 }
 
+static void test_proto_obf_and_table_match(void) {
+    /* Round-trip 16-bit, 8-bit, and byte-array compile-time obfuscation */
+    ASSERT_EQ_INT(0x1532, octans_dec16(OCTANS_ENC16(0x1532u, 1u), 1u));
+    ASSERT_EQ_INT(0xFFFF, octans_dec16(OCTANS_ENC16(0xFFFFu, 2u), 2u));
+    ASSERT_EQ_INT(0x0000, octans_dec16(OCTANS_ENC16(0x0000u, 3u), 3u));
+    ASSERT_EQ_INT(0x4D, octans_dec8(OCTANS_ENC8(0x4Du, 5u), 5u));
+
+    static const uint8_t enc_seq[5] = {
+        OCTANS_ENC8(0x55, 60), OCTANS_ENC8(0xAA, 61), OCTANS_ENC8(0x01, 62),
+        OCTANS_ENC8(0x00, 63), OCTANS_ENC8(0x0B, 64)
+    };
+    uint8_t dec_seq[5] = {0};
+    octans_dec_bytes(dec_seq, enc_seq, sizeof(dec_seq), 60u);
+    ASSERT_EQ_INT(0x55, dec_seq[0]);
+    ASSERT_EQ_INT(0xAA, dec_seq[1]);
+    ASSERT_EQ_INT(0x01, dec_seq[2]);
+    ASSERT_EQ_INT(0x00, dec_seq[3]);
+    ASSERT_EQ_INT(0x0B, dec_seq[4]);
+
+    /* Verify obfuscated g_protocols[] still matches real HID interfaces accurately */
+    octans_hid_info_t info;
+    memset(&info, 0, sizeof(info));
+    info.vid = 0x3837u;
+    info.pid = 0x1234u;
+    info.usage_page = 0xFF01u;
+    info.usage = 0x0000u;
+    info.interface_num = 1;
+    int matched_mchose = 0;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info) &&
+            g_protocols[i].variant == VAR_INDEP_MCHOSE_HID4D) {
+            matched_mchose = 1;
+            break;
+        }
+    }
+    ASSERT_EQ_INT(1, matched_mchose);
+
+    memset(&info, 0, sizeof(info));
+    info.vid = 0x3554u;
+    info.pid = 0xF5D5u;
+    info.usage_page = 0xFF02u;
+    info.usage = 0x0002u;
+    info.interface_num = 2;
+    int matched_compx = 0;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info) &&
+            g_protocols[i].family == FAM_COMPX) {
+            matched_compx = 1;
+            break;
+        }
+    }
+    ASSERT_EQ_INT(1, matched_compx);
+
+    /* Ensure non-matching VID is rejected */
+    info.vid = 0x1234u;
+    int matched_bogus = 0;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) {
+            matched_bogus = 1;
+            break;
+        }
+    }
+    ASSERT_EQ_INT(0, matched_bogus);
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -852,6 +917,7 @@ int main(void) {
     test_merge_json_and_abi();
     test_user_rules_and_broad();
     test_mchose_v2_suite();
+    test_proto_obf_and_table_match();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

@@ -58,6 +58,8 @@ $uiSources = @(
     "ui\ui_glyphs.cpp",
     "ui\ui_tray.cpp",
     "ui\ui_rename_dlg.cpp",
+    "ui\ui_updater.cpp",
+    "ui\ui_about_dlg.cpp",
     "ui\ui_menu.cpp",
     "ui\ui_panel.cpp",
     "ui\ui_api.cpp"

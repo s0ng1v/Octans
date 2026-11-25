@@ -267,81 +267,111 @@ static HICON RenderTrayIcon(
                     if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
                     if (bolt_b) DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), bolt_b.Get(), bx, by, br * 0.88f);
                 }
-            } else if (style == TRAY_STYLE_PULSAR) {
+            } else if (style == TRAY_STYLE_PULSAR && g_tray.dwrite_factory) {
                 /* =====================================================================
-                 * SCHEME 3 (Pulsar): Clean outline device icon + bottom horizontal bar
-                 * Calibrated so previous 100% scale is now the 50% default, with generous
-                 * vertical separation so tall icons (Mouse) never crowd the bottom bar!
+                 * SCHEME 3 (Pulsar): Crisp outline device icon + bottom colored digits
+                 * Calibrated optically: slightly larger & shifted down for balanced
+                 * top/bottom presence while keeping a clean non-overlapping gap above digits!
                  * ===================================================================== */
                 D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
                     ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
                     : (tb_dark ? HexColor(0xFFFFFF, 0.98f) : HexColor(0x141416, 0.96f));
-                D2D1_COLOR_F bar_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_PULSAR);
-                D2D1_COLOR_F bar_trk = tb_dark
-                    ? MakeColor(1.0f, 1.0f, 1.0f, 0.24f)
-                    : MakeColor(0.0f, 0.0f, 0.0f, 0.16f);
+                D2D1_COLOR_F num_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_PULSAR);
+                if (!tb_dark && !IsDeviceMuted(*dev) && dev->battery_percent >= 0) {
+                    /* Slightly deepen text ink on bright light taskbars for crisp legibility */
+                    if (dev->power_state == OCTANS_PWR_CHARGING || dev->power_state == OCTANS_PWR_FULL || dev->battery_percent > 40) {
+                        num_col = HexColor(0x149B38, 1.0f);
+                    } else if (dev->is_low_battery || dev->battery_percent <= 20) {
+                        num_col = HexColor(0xDC2620, 1.0f);
+                    } else {
+                        num_col = HexColor(0xD97706, 1.0f);
+                    }
+                }
 
-                ComPtr<ID2D1SolidColorBrush> ink_brush, bar_brush, trk_brush;
+                ComPtr<ID2D1SolidColorBrush> ink_brush, num_brush;
                 rt->CreateSolidColorBrush(glyph_ink, ink_brush.Put());
-                rt->CreateSolidColorBrush(bar_col, bar_brush.Put());
-                rt->CreateSolidColorBrush(bar_trk, trk_brush.Put());
+                rt->CreateSolidColorBrush(num_col, num_brush.Put());
 
-                /* Bottom horizontal pill bar: sit flush near bottom edge to maximize gap */
-                float bar_w = (s <= 0.50f)
-                    ? (sz * LerpF(0.76f, 0.90f, s * 2.0f))
-                    : (sz * LerpF(0.90f, 0.96f, (s - 0.50f) * 2.0f));
-                float bar_h = (s <= 0.50f)
-                    ? (sz * LerpF(0.115f, 0.135f, s * 2.0f))
-                    : (sz * LerpF(0.135f, 0.155f, (s - 0.50f) * 2.0f));
-                if (bar_h < 3.0f) bar_h = 3.0f;
-                float bar_l = cx - bar_w * 0.5f;
-                float bar_t = sz - bar_h - sz * 0.025f;
-                float bar_r = bar_h * 0.5f;
-
-                /* Upper icon with guaranteed >= 14% vertical breathing gap above bar_t */
                 bool is_tall = (dev->kind == OCTANS_DEV_MOUSE ||
                                 dev->kind == OCTANS_DEV_SPEAKER ||
                                 dev->kind == OCTANS_DEV_STYLUS ||
                                 dev->kind == OCTANS_DEV_EARBUDS);
+                bool is_headset = (dev->kind == OCTANS_DEV_HEADSET);
                 float g_half;
+                float visual_half_h;
                 if (is_tall) {
+                    /* Tall vertical glyphs (Mouse etc.): enlarged slightly and lowered optically */
                     g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.255f, 0.305f, s * 2.0f))
-                        : (sz * LerpF(0.305f, 0.325f, (s - 0.50f) * 2.0f));
+                        ? (sz * LerpF(0.220f, 0.258f, s * 2.0f))
+                        : (sz * LerpF(0.258f, 0.272f, (s - 0.50f) * 2.0f));
+                    visual_half_h = g_half * 1.04f;
+                } else if (is_headset) {
+                    /* Headset earcups extend lower than wide icons (~0.92 * g_half) */
+                    g_half = (s <= 0.50f)
+                        ? (sz * LerpF(0.245f, 0.292f, s * 2.0f))
+                        : (sz * LerpF(0.292f, 0.308f, (s - 0.50f) * 2.0f));
+                    visual_half_h = g_half * 0.92f;
                 } else {
+                    /* Wide horizontal glyphs (Keyboard, Gamepad) */
                     g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.300f, 0.365f, s * 2.0f))
-                        : (sz * LerpF(0.365f, 0.400f, (s - 0.50f) * 2.0f));
+                        ? (sz * LerpF(0.285f, 0.345f, s * 2.0f))
+                        : (sz * LerpF(0.345f, 0.368f, (s - 0.50f) * 2.0f));
+                    visual_half_h = g_half * 0.72f;
                 }
-                float g_cy = is_tall ? (sz * 0.340f) : (sz * 0.360f);
+
+                float top_pad = is_tall
+                    ? (sz * LerpF(0.068f, 0.048f, s))
+                    : (is_headset ? (sz * LerpF(0.068f, 0.048f, s))
+                                  : (sz * LerpF(0.115f, 0.095f, s)));
+                float g_cy = visual_half_h + top_pad;
+                float icon_bottom = g_cy + visual_half_h;
 
                 if (ink_brush) {
                     DrawDeviceGlyph(g_tray.d2d_factory.Get(), rt.Get(), ink_brush.Get(), dev->kind, cx, g_cy, g_half, true);
                 }
 
-                if (trk_brush) {
-                    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(bar_l, bar_t, bar_l + bar_w, bar_t + bar_h), bar_r, bar_r), trk_brush.Get());
-                }
-                float pct = (dev->battery_percent >= 0)
-                    ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
-                    : 0.0f;
-                if (bar_brush && pct > 0.01f) {
-                    float fw = bar_w * pct;
-                    if (fw < bar_h) fw = bar_h;
-                    rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(bar_l, bar_t, bar_l + fw, bar_t + bar_h), bar_r, bar_r), bar_brush.Get());
-                }
-
-                if (dev->power_state == OCTANS_PWR_CHARGING && bar_brush) {
-                    float br = sz * 0.16f;
-                    float bx = sz - br - 0.5f;
-                    float by = br + 0.5f;
+                if (dev->power_state == OCTANS_PWR_CHARGING && num_brush) {
+                    float br = sz * 0.155f;
+                    float bx = sz - br - 0.35f;
+                    float by = g_cy + visual_half_h * 0.28f;
                     ComPtr<ID2D1SolidColorBrush> bg_b;
                     rt->CreateSolidColorBrush(
                         tb_dark ? HexColor(0x18181A, 0.96f) : HexColor(0xFFFFFF, 0.96f),
                         bg_b.Put()
                     );
                     if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
-                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), bar_brush.Get(), bx, by, br * 0.88f);
+                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.88f);
+                }
+
+                wchar_t num_buf[8] = {};
+                if (dev->power_state == OCTANS_PWR_OFFLINE || dev->battery_percent < 0) {
+                    wcscpy(num_buf, L"--");
+                } else {
+                    _snwprintf(num_buf, 7, L"%d", static_cast<int>(dev->battery_percent));
+                }
+
+                float base_ratio = (s <= 0.50f)
+                    ? LerpF(0.365f, 0.415f, s * 2.0f)
+                    : LerpF(0.415f, 0.440f, (s - 0.50f) * 2.0f);
+                float font_ratio = (dev->battery_percent >= 100) ? (base_ratio * 0.82f) : base_ratio;
+                float font_sz = sz * font_ratio;
+                if (font_sz < 9.0f) font_sz = 9.0f;
+
+                ComPtr<IDWriteTextFormat> fmt;
+                if (num_brush && CreateOctansDigitFormat(g_tray.dwrite_factory.Get(), DWRITE_FONT_WEIGHT_EXTRA_BOLD, font_sz, fmt)) {
+                    float gap_px = sz * LerpF(0.060f, 0.045f, s);
+                    float top_num_y = icon_bottom + gap_px;
+                    if (top_num_y < sz * 0.59f) top_num_y = sz * 0.59f;
+                    if (top_num_y > sz * 0.67f) top_num_y = sz * 0.67f;
+                    D2D1_RECT_F tr = MakeRect(-2.0f, top_num_y, sz + 2.0f, sz + 0.5f);
+                    rt->DrawText(
+                        num_buf,
+                        static_cast<UINT32>(wcslen(num_buf)),
+                        fmt.Get(),
+                        tr,
+                        num_brush.Get(),
+                        D2D1_DRAW_TEXT_OPTIONS_NONE
+                    );
                 }
             } else {
                 /* =====================================================================

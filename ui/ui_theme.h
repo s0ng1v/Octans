@@ -30,16 +30,13 @@ struct ThemePalette {
     D2D1_COLOR_F text_secondary;
     D2D1_COLOR_F text_muted;
 
-    /* Battery ring semantic tokens (Scheme 1 Octans classic + Kit 4-tier Nebula/Pulsar) */
+    /* Unified battery semantic tokens shared across Octans / Nebula / Pulsar */
     D2D1_COLOR_F ring_track;
-    D2D1_COLOR_F ring_normal;       /* >20%: #34C759 / #30D158 */
+    D2D1_COLOR_F ring_normal;       /* >40%:  #34C759 / #30D158 */
+    D2D1_COLOR_F ring_mid;          /* 21-40%: #FF9500 / #FF9F0A */
     D2D1_COLOR_F ring_low;          /* <=20%: #FF3B30 / #FF453A */
     D2D1_COLOR_F ring_charging;     /* Green + lightning bolt */
     D2D1_COLOR_F ring_muted;        /* Sleeping / Offline */
-    D2D1_COLOR_F kit_normal;        /* >45%: #10B981 / #34D399 */
-    D2D1_COLOR_F kit_mid;           /* 21-45%: #F59E0B / #FBBF24 */
-    D2D1_COLOR_F kit_low;           /* <=20%: #EF4444 / #F87171 */
-    D2D1_COLOR_F kit_charging;      /* Charging: #0EA5E9 / #38BDF8 */
     D2D1_COLOR_F kit_track;         /* Liquid / dial inactive track */
     D2D1_COLOR_F kit_detail_ink;    /* Inner detail cutout color for liquid fill */
     D2D1_COLOR_F glyph_active;
