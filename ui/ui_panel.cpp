@@ -430,13 +430,13 @@ static void ComputeLayoutMetrics() {
     if (count == 0) {
         cols = 1;
         g_panel.logical_w = 308.0f;
-        grid_content_h = (st.demo_hooks.on_action != nullptr) ? 116.0f : 154.0f;
+        grid_content_h = (st.demo_hooks.on_action != nullptr) ? 116.0f : 168.0f;
         grid_view_h = grid_content_h;
     } else if (count == 1) {
         cols = 1;
         grid_w = kCardW + 76.0f; /* Comfortable header clearance for brand wordmark + "· 1 台设备" */
         g_panel.logical_w = kPanelPadX * 2.0f + grid_w;
-        grid_content_h = kCardH;
+        grid_content_h = (st.scan_phase != SCAN_IDLE) ? 156.0f : kCardH;
         grid_view_h = grid_content_h;
     } else {
         cols = 2;
@@ -483,9 +483,9 @@ static void ComputeLayoutMetrics() {
 
     if (count == 0 && !st.is_scanning && !(st.demo_hooks.on_action != nullptr)) {
         float cx = g_panel.logical_w * 0.5f;
-        float btn_w = 136.0f;
-        float btn_h = 34.0f;
-        float btn_top = grid_top + 106.0f;
+        float btn_w = 108.0f;
+        float btn_h = 30.0f;
+        float btn_top = grid_top + 114.0f;
         g_panel.discover_btn_rc = MakeRect(cx - btn_w * 0.5f, btn_top, cx + btn_w * 0.5f, btn_top + btn_h);
     } else {
         g_panel.discover_btn_rc = MakeRect(0.0f, 0.0f, 0.0f, 0.0f);
@@ -917,50 +917,73 @@ static void RenderPanel() {
         ctx->PushAxisAlignedClip(g_panel.grid_clip_rc, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
     }
 
+    float cards_vis = 1.0f - EaseOutCubic(ClampF(g_panel.scan_overlay_t, 0.0f, 1.0f));
+
     if (st.device_count == 0) {
-        if (g_panel.scan_overlay_t < 0.96f) {
-            float empty_a = 1.0f - EaseOutCubic(g_panel.scan_overlay_t);
+        if (cards_vis > 0.01f) {
+            float empty_a = cards_vis;
             float cx = (g_panel.grid_hit_rc.left + g_panel.grid_hit_rc.right) * 0.5f;
-            float cy = g_panel.grid_hit_rc.top + 36.0f;
+            float cy = g_panel.grid_hit_rc.top + 46.0f;
             DrawOctansLogo(
                 g_panel.d2d_factory.Get(),
                 ctx,
                 cx, cy,
-                24.0f,
+                22.0f,
                 st.is_dark,
                 false,
                 g_panel.brand_anim_t,
                 content_alpha * empty_a
             );
 
-            D2D1_RECT_F er = MakeRect(g_panel.grid_hit_rc.left, cy + 30.0f, g_panel.grid_hit_rc.right, cy + 54.0f);
+            D2D1_RECT_F er = MakeRect(g_panel.grid_hit_rc.left, cy + 32.0f, g_panel.grid_hit_rc.right, cy + 54.0f);
             set_col(pal.text_secondary, empty_a);
-            ctx->DrawText(L"\u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 8, g_panel.fmt_empty.Get(), er, brush.Get());
+            ctx->DrawText(L"\u672a\u68c0\u6d4b\u5230\u65e0\u7ebf\u5916\u8bbe", 8, g_panel.fmt_name.Get(), er, brush.Get());
 
             if (!(st.demo_hooks.on_action != nullptr) && g_panel.discover_btn_rc.right > g_panel.discover_btn_rc.left) {
                 bool hov = (g_panel.hover_header_btn == 3);
-                D2D1_ROUNDED_RECT drr = MakeRoundedRect(g_panel.discover_btn_rc, 17.0f, 17.0f);
-                D2D1_COLOR_F bg = pal.ring_normal;
-                if (hov) {
-                    bg.r *= 0.90f;
-                    bg.g *= 0.90f;
-                    bg.b *= 0.90f;
+                D2D1_RECT_F br = g_panel.discover_btn_rc;
+                D2D1_ROUNDED_RECT drr = MakeRoundedRect(br, 15.0f, 15.0f);
+
+                /* Refined Apple/Octans frosted tinted pill (light & airy, never heavy) */
+                D2D1_COLOR_F accent = st.is_dark ? HexColor(0x34D399, 1.0f) : HexColor(0x059669, 1.0f);
+                D2D1_COLOR_F bg = st.is_dark
+                    ? (hov ? HexColor(0x34D399, 0.18f) : MakeColor(1.0f, 1.0f, 1.0f, 0.085f))
+                    : (hov ? HexColor(0x10B981, 0.13f) : MakeColor(1.0f, 1.0f, 1.0f, 0.92f));
+                D2D1_COLOR_F bd = st.is_dark
+                    ? (hov ? HexColor(0x34D399, 0.55f) : MakeColor(1.0f, 1.0f, 1.0f, 0.14f))
+                    : (hov ? HexColor(0x10B981, 0.45f) : MakeColor(0.0f, 0.0f, 0.0f, 0.09f));
+                D2D1_COLOR_F fg = hov ? accent : pal.text_primary;
+
+                if (!st.is_dark) {
+                    /* Soft ambient shadow under light pill */
+                    set_col(MakeColor(0.0f, 0.0f, 0.0f, 0.045f), empty_a);
+                    ctx->FillRoundedRectangle(
+                        MakeRoundedRect(MakeRect(br.left, br.top + 1.0f, br.right, br.bottom + 1.5f), 15.0f, 15.0f),
+                        brush.Get()
+                    );
                 }
-                set_col(bg, (hov ? 1.0f : 0.92f) * empty_a);
+
+                set_col(bg, empty_a);
                 ctx->FillRoundedRectangle(drr, brush.Get());
 
-                set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.22f), empty_a);
-                ctx->DrawRoundedRectangle(drr, brush.Get(), 1.0f);
+                set_col(bd, empty_a);
+                ctx->DrawRoundedRectangle(
+                    MakeRoundedRect(MakeRect(br.left + 0.5f, br.top + 0.5f, br.right - 0.5f, br.bottom - 0.5f), 14.5f, 14.5f),
+                    brush.Get(), 1.0f
+                );
 
-                set_col(MakeColor(1.0f, 1.0f, 1.0f, 0.98f), empty_a);
-                float bcy = (g_panel.discover_btn_rc.top + g_panel.discover_btn_rc.bottom) * 0.5f;
-                float icon_x = g_panel.discover_btn_rc.left + 26.0f;
-                DrawScanRadarIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), g_panel.round_stroke.Get(), icon_x, bcy, 6.2f);
-                D2D1_RECT_F tr = MakeRect(g_panel.discover_btn_rc.left + 20.0f, g_panel.discover_btn_rc.top, g_panel.discover_btn_rc.right - 6.0f, g_panel.discover_btn_rc.bottom);
-                ctx->DrawText(L"\u626b\u63cf\u8bbe\u5907", 4, g_panel.fmt_empty.Get(), tr, brush.Get());
+                /* Optically centered radar icon + "扫描设备" label */
+                float bcx = (br.left + br.right) * 0.5f;
+                float bcy = (br.top + br.bottom) * 0.5f;
+                set_col(hov ? accent : pal.text_secondary, empty_a);
+                DrawScanRadarIcon(g_panel.d2d_factory.Get(), ctx, brush.Get(), g_panel.round_stroke.Get(), bcx - 27.0f, bcy, 5.4f);
+
+                set_col(fg, empty_a * 0.94f);
+                D2D1_RECT_F tr = MakeRect(bcx - 16.0f, br.top, br.right - 8.0f, br.bottom);
+                ctx->DrawText(L"\u626b\u63cf\u8bbe\u5907", 4, g_panel.fmt_name.Get(), tr, brush.Get());
             }
         }
-    } else {
+    } else if (cards_vis > 0.01f) {
         for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
             const octans_device_view_t &d = st.devices[i];
             const D2D1_RECT_F &cr = g_panel.card_rects[i];
@@ -994,7 +1017,7 @@ static void RenderPanel() {
             combined._32 = card_xf._32 * base_xf._22 + base_xf._32;
             ctx->SetTransform(combined);
 
-            float card_alpha = ClampF(ent, 0.0f, 1.0f);
+            float card_alpha = ClampF(ent, 0.0f, 1.0f) * cards_vis;
             auto set_card_col = [&](D2D1_COLOR_F c, float extra_a = 1.0f) {
                 c.a *= (content_alpha * card_alpha * extra_a);
                 brush->SetColor(c);
@@ -1206,31 +1229,14 @@ static void RenderPanel() {
         ctx->PopAxisAlignedClip();
     }
 
-    /* 3b. Unified Frosted Scan Overlay (covers both initial scan & manual rescan over live cards!) */
+    /* 3b. Clean Exclusive Scanning & Scan-Complete Stage (cards smoothly cross-fade out so zero overlap!) */
     if (g_panel.scan_overlay_t > 0.01f) {
         float ov_a = EaseOutCubic(ClampF(g_panel.scan_overlay_t, 0.0f, 1.0f));
-        D2D1_RECT_F vr = MakeRect(
-            g_panel.grid_hit_rc.left - 2.0f,
-            g_panel.grid_hit_rc.top - 2.0f,
-            g_panel.grid_hit_rc.right + 2.0f,
-            g_panel.grid_hit_rc.bottom + 2.0f
-        );
-        D2D1_ROUNDED_RECT vrr = MakeRoundedRect(vr, kCardRadius, kCardRadius);
-
-        /* Multi-pass soft frosted glass veil so devices appearing behind stay softly diffused */
-        D2D1_COLOR_F veil_bg = st.is_dark
-            ? HexColor(0x1A1A20, 0.78f)
-            : HexColor(0xF8F9FC, 0.82f);
-        set_col(veil_bg, ov_a);
-        ctx->FillRoundedRectangle(vrr, brush.Get());
-
-        /* Delicate inner glass specular border */
-        set_col(st.is_dark ? MakeColor(1, 1, 1, 0.12f) : MakeColor(1, 1, 1, 0.90f), ov_a);
-        ctx->DrawRoundedRectangle(vrr, brush.Get(), 1.0f);
+        const D2D1_RECT_F &vr = g_panel.grid_hit_rc;
 
         float vcx = (vr.left + vr.right) * 0.5f;
         float vcy = (vr.top + vr.bottom) * 0.5f - 14.0f;
-        D2D1_RECT_F msg_rc = MakeRect(vr.left + 10.0f, vcy + 42.0f, vr.right - 10.0f, vcy + 66.0f);
+        D2D1_RECT_F msg_rc = MakeRect(vr.left + 8.0f, vcy + 44.0f, vr.right - 8.0f, vcy + 68.0f);
 
         if (st.scan_phase == SCAN_COMPLETE || g_panel.scan_done_sec > 0.001f) {
             DrawScanCompleteAnim(
@@ -1238,7 +1244,7 @@ static void RenderPanel() {
                 ctx,
                 g_panel.round_stroke.Get(),
                 vcx, vcy,
-                21.0f,
+                22.0f,
                 st.is_dark,
                 g_panel.scan_done_sec / 0.75f,
                 content_alpha * ov_a
@@ -1259,13 +1265,13 @@ static void RenderPanel() {
                 ctx,
                 g_panel.round_stroke.Get(),
                 vcx, vcy,
-                20.0f,
+                21.0f,
                 st.is_dark,
                 g_panel.scan_elapsed_sec,
                 content_alpha * ov_a
             );
 
-            /* 5 rotating reassuring phrases with left-to-right progressive text reveal (no "..." dots!) */
+            /* 5 rotating reassuring phrases: 0.72s left-to-right reveal + 3.00s steady hold + 0.38s fade */
             static const wchar_t *kScanPhrases[5] = {
                 L"\u6b63\u5728\u63a2\u6d4b\u9644\u8fd1\u7684 2.4G \u4e0e\u84dd\u7259\u8bbe\u5907",
                 L"\u5168\u76d8\u534f\u8bae\u5339\u914d\u4e2d\uff0c\u8bf7\u7a0d\u5019\u7247\u523b",
@@ -1273,16 +1279,16 @@ static void RenderPanel() {
                 L"\u6b63\u5728\u5524\u9192\u5e76\u8bfb\u53d6\u5916\u8bbe\u7535\u91cf\u901a\u9053",
                 L"\u6b63\u5728\u6821\u9a8c\u591a\u901a\u9053\u65e0\u7ebf\u5916\u8bbe\u4fe1\u53f7"
             };
-            static constexpr float kPhrasePeriod = 2.70f;
+            static constexpr float kPhrasePeriod = 4.10f;
             int p_idx = static_cast<int>(g_panel.scan_elapsed_sec / kPhrasePeriod) % 5;
             float local_t = fmodf(g_panel.scan_elapsed_sec, kPhrasePeriod);
-            float reveal_f = EaseOutCubic(ClampF(local_t / 0.85f, 0.0f, 1.0f));
-            float fade_a = (local_t > 2.28f)
-                ? ClampF(1.0f - (local_t - 2.28f) / 0.42f, 0.0f, 1.0f)
+            float reveal_f = EaseOutCubic(ClampF(local_t / 0.72f, 0.0f, 1.0f));
+            float fade_a = (local_t > 3.72f)
+                ? ClampF(1.0f - (local_t - 3.72f) / 0.38f, 0.0f, 1.0f)
                 : ClampF(0.35f + 0.65f * reveal_f, 0.0f, 1.0f);
 
-            set_col(pal.text_primary, ov_a * fade_a * 0.90f);
-            DrawProgressiveRevealText(ctx, kScanPhrases[p_idx], g_panel.fmt_empty.Get(), msg_rc, brush.Get(), reveal_f);
+            set_col(pal.text_secondary, ov_a * fade_a * 0.96f);
+            DrawProgressiveRevealText(ctx, kScanPhrases[p_idx], g_panel.fmt_name.Get(), msg_rc, brush.Get(), reveal_f);
         }
     }
 
@@ -1317,7 +1323,7 @@ static void RenderPanel() {
             } else if (st.scan_phase == SCAN_COMPLETE) {
                 wcscpy(idle_hint, L"\u626b\u63cf\u5b8c\u6210 \u00b7 \u5373\u5c06\u5448\u73b0\u5b9e\u65f6\u7535\u91cf");
             } else if (st.device_count == 0) {
-                wcscpy(idle_hint, L"\u672a\u68c0\u6d4b\u5230\u8bbe\u5907 \u00b7 \u70b9\u51fb\u626b\u63cf\u8bbe\u5907\u91cd\u65b0\u641c\u7d22");
+                wcscpy(idle_hint, L"\u652f\u6301 2.4G \u63a5\u6536\u5668 \u00b7 \u84dd\u7259\u5916\u8bbe \u00b7 \u6807\u51c6 HID \u8bbe\u5907");
             } else if (active_pins > 0) {
                 _snwprintf(idle_hint, 95, L"\u5df2\u56fa\u5b9a %u \u53f0\u5230\u4efb\u52a1\u680f \u00b7 \u60ac\u505c\u5361\u7247\u67e5\u770b\u8be6\u60c5", static_cast<unsigned>(active_pins));
             } else {
@@ -1962,9 +1968,21 @@ void PanelOnScanStateChanged() {
         g_panel.hover_header_btn = 0;
     } else if (st.scan_phase == SCAN_COMPLETE) {
         g_panel.scan_done_sec = 0.0f;
+    } else if (st.scan_phase == SCAN_IDLE && st.device_count > 0) {
+        /* Staggered card rise as scan completion fades cleanly into the live cards */
+        for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
+            g_panel.anims[i].enter_t = -0.07f * static_cast<float>(i);
+        }
     }
+    float prev_w = g_panel.logical_w;
+    float prev_h = g_panel.logical_h;
     ComputeLayoutMetrics();
     if (PanelIsVisible()) {
+        if ((fabsf(prev_w - g_panel.logical_w) > 0.5f || fabsf(prev_h - g_panel.logical_h) > 0.5f) &&
+            g_panel.has_anchor) {
+            ComputeTargetPosition(g_panel.anchor_x, g_panel.anchor_y);
+            ApplyWindowBoundsForAnim();
+        }
         StartAnimTimer();
     }
 }
