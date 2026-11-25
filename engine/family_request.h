@@ -91,6 +91,19 @@ int octans_proto_parse_mchose_audio_mc(const uint8_t *buf, size_t len, octans_pr
 int octans_proto_parse_dareu_tg(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_iqunix_texthex(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
+int octans_proto_parse_wob_rainy75v2(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_wob_zen65(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_rongyuan_f7(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_machenike_iton(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_incott(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_beken_push(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_bloody_8k(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_lenovo_voip(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_sony_inzone_buds(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_sony_pulse3d(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_epos_h3pro(int is_wired, uint8_t out107[107]);
+int octans_proto_parse_epos_h3pro(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out);
+
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,

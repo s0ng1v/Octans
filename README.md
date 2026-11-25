@@ -6,24 +6,26 @@
   </picture>
 </p>
 
-<h3 align="center">轻量原生、极低消耗的 Windows 2.4G 外设托盘电量工具</h3>
+<h3 align="center">轻量原生、极低消耗的 Windows 2.4G 外设托盘电量显示工具</h3>
 
 <p align="center">
   把 2.4G 无线鼠标、键盘、耳机、手柄的实时电量直接放进 Windows 任务栏右下角——常驻 <b>0% CPU</b>、<b>&lt; 5 MB 内存</b>，告别臃肿官方驱动。
 </p>
 
 <p align="center">
-  <a href="https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe"><b>国内高速直链下载 (v0.6.1)</b></a>
+  <b>简体中文</b>
+  ·
+  <a href="README_EN.md">English</a>
+  ·
+  <a href="https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><b>国内高速下载</b></a>
   ·
   <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
-  ·
-  <a href="#功能亮点">功能亮点</a>
   ·
   <a href="#支持的品牌与外设">支持外设</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v0.6.1-2563EB?style=flat-square"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v1.0.0-2563EB?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-16A34A?style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0891B2?style=flat-square">
   <img alt="Idle CPU" src="https://img.shields.io/badge/常驻%20CPU-0%25-10B981?style=flat-square">
@@ -51,12 +53,12 @@
 
 ## 下载与安装
 
-推荐直接下载安装程序 **`Octans-Setup-v0.6.1.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
+推荐直接下载安装程序 **`Octans-Setup-v1.0.0.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内高速直链（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v0.6.1.exe](https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe) · [全部版本](https://atomgit.com/s0ng1v/Octans/releases) |
-| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v0.6.1.exe](https://github.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
+| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.0.0.exe](https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [全部版本](https://atomgit.com/s0ng1v/Octans/releases) |
+| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.0.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
 > 1. 首次安装运行后，若任务栏图标被系统折叠进右下角 `^` 箭头内，直接将其拖出到任务栏即可永久常驻显示。
@@ -66,23 +68,24 @@
 
 ## 支持的品牌与外设
 
-内置 13+ 主流外设厂商私有 2.4G 无线协议、Windows 原生蓝牙电量（`DEVPKEY_Bluetooth_Battery`）、XInput 手柄电量以及标准 HID 电池协议：
+支持 20+ 主流品牌的 2.4G 无线外设、蓝牙设备与无线手柄，涵盖鼠标、键盘、耳机与手柄，即插即用：
 
-| 品牌 / 生态 | 覆盖范围 |
+| 品牌 | 支持设备与常见型号 |
 |---|---|
-| **罗技 Logitech** | HID++ 2.0（`0x1004` / `0x1000` / `0x1001` / `0x1F20` / `0x0104`）、HID++ 1.0 与蓝牙直连，覆盖 G PRO / GPW / G502 / G903 / G304 / MX 全系鼠键与 G435 / G533 / G535 / G733 / G935 / PRO X 等无线耳机、Astro A50 |
-| **迈从 MCHOSE** | 完整 9 通道无线协议，覆盖 A7 / M7 / L7 / G3 / G7 / G7 MAX 等鼠标、BY / CZ 磁轴与机械键盘、V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
-| **雷蛇 Razer** | 90 字节通用无线鼠键协议及 BlackShark V2 Pro / V3、Barracuda 系列无线耳机 |
-| **狼蛛 AULA** | 2.4G 接收器鼠标、0xAA 主协议三模/磁轴键盘与通用 64B 设备 |
-| **ATK / VXE / VGN** | Compx 方案、MouseInfo 平台、Nordic 54L15 / nRF52840 无线鼠标及 HFD 键盘 |
-| **雷柏 Rapoo** | Vision AP（Telink3228C）、CH315 主动查询与 VT 鼠键被动上报 |
-| **黑爵 AJAZZ / 前行者 EWEADN** | `mkbms`（`55 AA 80`）、`0x10` / `0x05` / `0x30` 鼠标及 AK820 系列无线键盘 |
-| **达尔优 Dareu** | JM / Compx 方案及 TG / HS Feature Report 无线外设 |
-| **海盗船 Corsair / 赛睿 SteelSeries / HyperX** | Bragi / Legacy NXP / Void Elite、Rival / Aerox / Arctis Nova 系列、Cloud II / III / Alpha 与 Airoha HID 系列 |
-| **华硕 ROG / 杜伽 DURGOD / IQUNIX / Keychron** | ROG OMNI / Harpe II / Direct、杜伽 FEA-3123、IQUNIX 无线设备、Keychron / Lofree / VIA 键盘 |
-| **手柄与通用外设** | Xbox（XInput）、索尼 DualSense / DualShock 4、任天堂 Switch Pro / Joy-Con、八位堂 8BitDo、Steam Controller 及标准 HID / 蓝牙电池设备 |
+| **罗技 Logitech** | G PRO / GPW 全系、G502 / G903 / G304、MX 办公鼠键；G915 / MX Keys 等键盘；G435 / G533 / G535 / G733 / G935 / PRO X、Astro A50 等无线耳机 |
+| **迈从 MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 等无线鼠标；BY / CZ 等磁轴与机械键盘；V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
+| **WOB / 艾酷 Akko / 魔极客 MonsGeek** | WOB Rainy75 V2、Zen65 键盘与 Rainy S1 鼠标；艾酷 Akko / 魔极客 MonsGeek 三模键盘（含 FUN60 Pro 等系列） |
+| **机械师 Machenike / 雷神 ThundeRobot** | 机械师 L8 MAX、雷神 ML9 mini、X7s Pro / Pro Max / Ultra 等无线鼠标与无线手柄 |
+| **因科特 INCOTT / 攻击鲨 Attack Shark / 血手幽灵 Bloody** | 因科特 G23 / G24 / Ghero / Zero 系列；攻击鲨 X11 / X3 / X6 / R1 系列；双飞燕血手幽灵 SG5 Pro 等 8K 无线鼠标 |
+| **雷蛇 Razer** | 炼狱蝰蛇 V3/V4 Pro、毒蝰 V2/V3/V4 Pro、巴塞利斯蛇等鼠标；黑寡妇 / 噬魂金蝎无线键盘；旋风黑鲨 V2 Pro / V3、梭鱼系列无线耳机 |
+| **狼蛛 AULA / 黑爵 AJAZZ / 前行者 EWEADN / 达尔优 Dareu** | 狼蛛无线鼠键全系（含 F75 / F87 / F99 等）；黑爵 AJ179、AK820 等无线鼠键；前行者 S9 / H2；达尔优 A950 / A900 等 |
+| **ATK / VXE / VGN / 兰族 LAMZU / 忍者 Ninjutso / Pulsar / 影魔 WLmouse** | ATK / VXE 蜻蜓 R1、F1、A9、X1 等鼠标；兰族 Maya X / Inca / Atlantis；忍者 Sora V2；Pulsar X2 / Xlite；影魔 Beast X；扎品 Z1 Pro / Z2 等主流轻量化鼠标 |
+| **雷柏 Rapoo** | VT7 / VT9 / VT1 等 VT 系列无线鼠键及无线接收器外设 |
+| **海盗船 / 赛睿 / HyperX / 索尼 / 联想 / 音珀 EPOS / 斐风 FIFINE** | 海盗船无线鼠键耳机；赛睿 Aerox 鼠标、Arctis 1 / Nova / GameBuds 耳机；HyperX 飓风 Cloud II / III / Alpha / Flight 耳机与脉冲星鼠标；索尼 INZONE Buds / PULSE 3D；联想无线耳机；音珀 H3PRO；斐风 HT6 |
+| **华硕 ROG / 杜伽 DURGOD / 铝厂 IQUNIX / Keychron / 洛斐** | 华硕 ROG 龙鳞 / 月刃 / 战刃等无线鼠键；杜伽无线键盘；IQUNIX 无线键鼠；Keychron、洛斐等主流三模机械键盘 |
+| **无线手柄与通用蓝牙外设** | Xbox 无线手柄、飞智 / 盖世小鸡 / 北通 / 八位堂等主流无线手柄；索尼 DualSense / DualShock 4；任天堂 Switch Pro / Joy-Con；以及绝大多数蓝牙鼠标、蓝牙键盘与蓝牙耳机 |
 
-详细型号清单与实机验证记录见 [docs/06-当前已支持外设清单.md](docs/06-当前已支持外设清单.md)。
+详细型号清单与实机验证记录见 [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md)。
 
 ---
 
@@ -93,7 +96,7 @@
 ### 技术实现与极致轻量设计
 
 - **纯原生零依赖**：后端协议引擎采用纯 C11，界面采用 Win32 + Direct2D / DirectWrite 轻量软件渲染（彻底避免常驻加载 D3D11 / GPU 驱动模块，同时对非输入窗口解绑 IME 防止输入法 DLL 注入）；无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖。
-- **超小体积**：桌面主程序 `Octans.exe` 仅约 **330 KB**，独立命令行工具 `octans-cli.exe` 约 **122 KB**。
+- **超小体积**：桌面主程序 `Octans.exe` 仅约 **345 KB**，独立命令行工具 `octans-cli.exe` 约 **141 KB**。
 - **按需释放与零静态网络导入**：面板关闭后自动释放离屏缓冲并触发工作集回收；PE 导入表零网络 DLL 静态依赖，仅在用户手动点击检查更新时按需动态加载 `winhttp.dll` 与 `bcrypt.dll`。
 
 ### 目录结构
@@ -107,7 +110,7 @@ cli/        独立无头命令行工具（支持 list --json、test-rule、probe
 include/    后端与 UI 稳定 C ABI 头文件与版本定义
 assets/     Octans 品牌视觉资产与多分辨率图标
 installer/  Inno Setup 安装脚本与一键打包脚本
-tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（374 项断言）
+tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（462 项断言）
 ```
 
 ### 从源码构建
@@ -115,10 +118,10 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 需要 Windows 10/11 与 LLVM-MinGW (UCRT) 工具链（打包安装程序需 Inno Setup 6）：
 
 ```powershell
-# 一键编译命令行工具、运行 374 项单元测试并构建 build\Octans.exe
+# 一键编译命令行工具、运行 462 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v0.6.1.exe）
+# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.0.0.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # 单独编译并预览无硬件 UI Demo

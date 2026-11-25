@@ -1159,6 +1159,248 @@ static void test_dedup_logitech_and_bt(void) {
     ASSERT_EQ_INT(2, n);
 }
 
+static void test_new_vendor_protocols(void) {
+    octans_proto_reading_t r;
+    octans_hid_info_t info;
+
+    /* 1. WOB Rainy75 V2: 6B / prefixed 6B / 10B / 14B + table priority over VIA */
+    const uint8_t r75_6[6] = {0xBE, 0xBB, 6, 88, 2, 0xED};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_wob_rainy75v2(r75_6, sizeof(r75_6), &r));
+    ASSERT_EQ_INT(88, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t r75_full[6] = {0xBE, 0xBB, 0, 100, 1, 0xED};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_wob_rainy75v2(r75_full, sizeof(r75_full), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    const uint8_t r75_pre[8] = {0x00, 0xBE, 0xBB, 6, 66, 0, 0xED, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_wob_rainy75v2(r75_pre, sizeof(r75_pre), &r));
+    ASSERT_EQ_INT(66, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t r75_14[14] = {0xBE, 0xBB, 14, 73, 0, 0,0,0,0,0,0,0,0, 0xED};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_keyboard(r75_14, sizeof(r75_14), VAR_KB_WOB_RAINY75V2, 0u, &r));
+    ASSERT_EQ_INT(73, r.battery_percent);
+
+    const uint8_t r75_bad[6] = {0xBE, 0xBB, 6, 50, 0, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_wob_rainy75v2(r75_bad, sizeof(r75_bad), &r));
+
+    memset(&info, 0, sizeof(info));
+    info.vid = 0x36B0u; info.pid = 0x3071u; info.usage_page = 0xFF60u; info.usage = 0x0061u; info.interface_num = 1;
+    int first_r75_var = -1;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) {
+            first_r75_var = (int)g_protocols[i].variant;
+            break;
+        }
+    }
+    ASSERT_EQ_INT((int)VAR_KB_WOB_RAINY75V2, first_r75_var);
+
+    /* 2. WOB Zen65 RGB */
+    const uint8_t z65_ok[12] = {0x00, 0xAA, 0x30, 0x00, 0x00, 0x18, 0, 0, 0x55, 75, 1, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_wob_zen65(z65_ok, sizeof(z65_ok), &r));
+    ASSERT_EQ_INT(75, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t z65_fail[12] = {0x00, 0xAA, 0x30, 0x00, 0x00, 0x18, 0, 0, 0x0F, 75, 0, 0};
+    ASSERT_EQ_INT(0, octans_proto_parse_wob_zen65(z65_fail, sizeof(z65_fail), &r));
+
+    /* 3. Akko / MonsGeek / WOB Rainy S1 RongYuan 0xF7 */
+    uint8_t ry65[65] = {0};
+    ry65[0] = 0x00; ry65[1] = 0x01; ry65[2] = 82; ry65[4] = 1; ry65[5] = 0x01; ry65[7] = 0x01;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rongyuan_f7(ry65, sizeof(ry65), &r));
+    ASSERT_EQ_INT(82, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t ry64[64] = {0};
+    ry64[0] = 0x01; ry64[1] = 59; ry64[3] = 0; ry64[4] = 0x01; ry64[6] = 0x01;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_keyboard(ry64, sizeof(ry64), VAR_KB_RONGYUAN_F7, 0u, &r));
+    ASSERT_EQ_INT(59, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    uint8_t ry_uninit[64] = {0};
+    ry_uninit[4] = 0x01; ry_uninit[6] = 0x01;
+    ASSERT_EQ_INT(0, octans_proto_parse_rongyuan_f7(ry_uninit, sizeof(ry_uninit), &r));
+
+    /* 4. Machenike / ThundeRobot Direct Iton & Sinowealth split */
+    const uint8_t mch_dis[4] = {0xA1, 0x02, 0x25, 78};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_machenike_iton(mch_dis, sizeof(mch_dis), &r));
+    ASSERT_EQ_INT(78, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t mch_chg[4] = {0xA1, 0x02, 0x25, 0xBC};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_machenike_iton(mch_chg, sizeof(mch_chg), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t mch_bad[4] = {0xA1, 0x02, 0x26, 50};
+    ASSERT_EQ_INT(0, octans_proto_parse_machenike_iton(mch_bad, sizeof(mch_bad), &r));
+
+    memset(&info, 0, sizeof(info));
+    info.vid = 0x3973u; info.pid = 0x0210u; info.usage_page = 0xFFA0u; info.usage = 0x0002u; info.interface_num = 1;
+    int var_x7s_pro = -1, var_x7s_max = -1;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) { var_x7s_pro = (int)g_protocols[i].variant; break; }
+    }
+    info.pid = 0x0212u;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) { var_x7s_max = (int)g_protocols[i].variant; break; }
+    }
+    ASSERT_EQ_INT((int)VAR_SINO_65B, var_x7s_pro);
+    ASSERT_EQ_INT((int)VAR_INDEP_MACHENIKE_ITON, var_x7s_max);
+
+    /* 5. INCOTT 0x09 */
+    const uint8_t inc_dis[9] = {0x09, 75, 0x10};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_incott(inc_dis, sizeof(inc_dis), &r));
+    ASSERT_EQ_INT(75, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t inc_chg[9] = {0x09, (uint8_t)(128u + 72u), 0x10};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_incott(inc_chg, sizeof(inc_chg), &r));
+    ASSERT_EQ_INT(72, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t inc_echo[9] = {0x09, 0x89, 0x00, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_incott(inc_echo, sizeof(inc_echo), &r));
+
+    /* 6. Attack Shark Beken push (X11 direct % & X6 step-10 & model refinement) */
+    const uint8_t as_x11[8] = {0x03, 0x55, 0x40, 0x01, 80, 0, 0, 0};
+    octans_reading_init(&r);
+    wcscpy(r.name, L"Attack Shark Wireless Mouse");
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(as_x11, sizeof(as_x11), VAR_INDEP_BEKEN_PUSH, &r));
+    ASSERT_EQ_INT(80, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+    ASSERT_EQ_INT(0, wcscmp(r.name, L"Attack Shark X11"));
+
+    const uint8_t as_x6[8] = {0x03, 0x85, 0x40, 0x03, 7, 0, 0, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_beken_push(as_x6, sizeof(as_x6), &r));
+    ASSERT_EQ_INT(70, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 7. Bloody 8K */
+    const uint8_t bld_dis[8] = {0x06, 0x56, 85, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_bloody_8k(bld_dis, sizeof(bld_dis), &r));
+    ASSERT_EQ_INT(85, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t bld_off[8] = {0x06, 0x56, 0xFF, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_bloody_8k(bld_off, sizeof(bld_off), &r));
+    ASSERT_EQ_INT(1, r.offline);
+
+    /* 8. Ninjutso Sora V2 (VAR_INDEP_NORDIC_GEN upgrade) */
+    uint8_t sora[32] = {0};
+    sora[9] = 64; sora[10] = 1; sora[11] = 0; sora[12] = 1;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(sora, sizeof(sora), VAR_INDEP_NORDIC_GEN, &r));
+    ASSERT_EQ_INT(64, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    sora[9] = 100; sora[10] = 1; sora[11] = 1; sora[12] = 1;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(sora, sizeof(sora), VAR_INDEP_NORDIC_GEN, &r));
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    sora[12] = 0;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(sora, sizeof(sora), VAR_INDEP_NORDIC_GEN, &r));
+    ASSERT_EQ_INT(1, r.asleep);
+
+    /* 9. Lenovo Wireless VoIP Headset */
+    uint8_t lnv[61] = {0};
+    lnv[0] = 0x27; lnv[1] = 0x01; lnv[2] = 0x00; lnv[7] = 65;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_lenovo_voip(lnv, sizeof(lnv), &r));
+    ASSERT_EQ_INT(65, r.battery_percent);
+    lnv[2] = 0x01;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_lenovo_voip(lnv, sizeof(lnv), &r));
+    ASSERT_EQ_INT(1, r.offline);
+
+    /* 10. Sony INZONE Buds & PULSE 3D */
+    uint8_t buds[64] = {0};
+    buds[0] = 0x02; buds[1] = 0x12; buds[2] = 0x04;
+    buds[14] = 80; buds[16] = 65; buds[19] = (uint8_t)(80u + 65u + 117u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_sony_inzone_buds(buds, sizeof(buds), &r));
+    ASSERT_EQ_INT(65, r.battery_percent);
+    buds[19] ^= 1u;
+    ASSERT_EQ_INT(0, octans_proto_parse_sony_inzone_buds(buds, sizeof(buds), &r));
+
+    const uint8_t p3d[8] = {0xB0, 0, 0, 70, 0x08};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_sony_pulse3d(p3d, sizeof(p3d), &r));
+    ASSERT_EQ_INT(70, r.battery_percent);
+    const uint8_t p3d_chg[8] = {0xB0, 0, 0, 0x80, 0x08};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_sony_pulse3d(p3d_chg, sizeof(p3d_chg), &r));
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 11. SteelSeries Arctis 1 & GameBuds (priority before Nova 7 wildcard) */
+    const uint8_t a1[8] = {0x06, 0x12, 0x00, 74};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_steelseries(a1, sizeof(a1), VAR_SS_ARCTIS1, &r));
+    ASSERT_EQ_INT(74, r.battery_percent);
+
+    const uint8_t gb[8] = {0xB0, 0, 0, 0x03, 0x03, 85, 62};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_steelseries(gb, sizeof(gb), VAR_SS_GAMEBUDS, &r));
+    ASSERT_EQ_INT(62, r.battery_percent);
+
+    memset(&info, 0, sizeof(info));
+    info.vid = 0x1038u; info.pid = 0x230Au; info.usage_page = 0xFFC0u; info.usage = 0x0001u; info.interface_num = 3;
+    int var_gb = -1;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) { var_gb = (int)g_protocols[i].variant; break; }
+    }
+    ASSERT_EQ_INT((int)VAR_SS_GAMEBUDS, var_gb);
+
+    /* 12. HyperX Cloud Flight */
+    uint8_t hxf[20] = {0x21, 0xFF, 0x05, 0x0E, 0xD8}; /* 3800 mV -> 50% */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hyperx(hxf, sizeof(hxf), VAR_HX_FLIGHT, &r));
+    ASSERT_EQ_INT(50, r.battery_percent);
+    ASSERT_EQ_INT(3800, r.voltage_mv);
+
+    /* 13. EPOS H3PRO Hybrid */
+    uint8_t epos_req[107];
+    octans_proto_build_epos_h3pro(0, epos_req);
+    ASSERT_EQ_INT(0x01, epos_req[0]);
+    ASSERT_EQ_INT(0xEB, epos_req[1]);
+    ASSERT_EQ_INT(0xFE, epos_req[2]);
+    ASSERT_EQ_INT(0x05, epos_req[7]);
+
+    uint8_t epos_rep[32] = {0x01, 0xEB, 0xFE, 0x01, 0x00, 0x04, 0x00, 0x04, 0x00, 0x06, 0x00, 0, 0,
+                            0x12, 0x00, 0x03, 0x00, 80, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_epos_h3pro(epos_rep, sizeof(epos_rep), 0, &r));
+    ASSERT_EQ_INT(80, r.battery_percent);
+
+    epos_rep[7] = 0x01; /* headset off */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_epos_h3pro(epos_rep, sizeof(epos_rep), 0, &r));
+    ASSERT_EQ_INT(1, r.offline);
+
+    epos_rep[7] = 0x00; epos_rep[17] = 60; /* wired reply */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_epos_h3pro(epos_rep, sizeof(epos_rep), 1, &r));
+    ASSERT_EQ_INT(60, r.battery_percent);
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -1173,6 +1415,7 @@ int main(void) {
     test_proto_obf_and_table_match();
     test_protocol_all_v1_suite();
     test_dedup_logitech_and_bt();
+    test_new_vendor_protocols();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);
