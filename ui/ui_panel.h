@@ -32,8 +32,9 @@ void PanelOnScanStateChanged();
 /* Update light/dark theme and DWM backdrop immediately. */
 void PanelOnThemeChanged(bool is_dark);
 
-/* Trigger header refresh icon spin animation. */
+/* Trigger header refresh icon spin animation & subtle completion feedback. */
 void PanelTriggerRefreshSpin();
+void PanelOnRefreshCompleted();
 
 HWND PanelGetHwnd();
 

@@ -15,6 +15,7 @@ enum HitZone : int {
     HIT_SCAN_DEVICES,
     HIT_PIN_DEVICE,
     HIT_RENAME_DEVICE,
+    HIT_DELETE_DEVICE,
     HIT_SEG_OCTANS,
     HIT_SEG_NEBULA,
     HIT_SEG_PULSAR,
@@ -40,6 +41,7 @@ struct MenuState {
     bool has_scan_devices = false;
     bool has_device_pin = false;
     bool has_rename = false;
+    bool has_delete_device = false;
     bool has_general = false;
     bool has_demo = false;
 
@@ -65,6 +67,8 @@ struct MenuState {
     D2D1_RECT_F rc_scan_devices = {};
     D2D1_RECT_F rc_pin = {};
     D2D1_RECT_F rc_rename = {};
+    float div_dev_del_y = 0.0f;
+    D2D1_RECT_F rc_delete = {};
     float div1_y = 0.0f;
     float style_label_y = 0.0f;
     D2D1_RECT_F rc_seg_wrap = {};
@@ -110,30 +114,33 @@ static void LayoutMenu(MenuState &m) {
     bool valid_dev = (m.device_index >= 0 && static_cast<size_t>(m.device_index) < st.device_count);
 
     if (m.mode == MENU_MODE_PANEL_DEVICE) {
-        m.logical_w        = 200.0f;
-        m.has_refresh      = false;
-        m.has_scan_devices = false;
-        m.has_device_pin   = valid_dev;
-        m.has_rename       = valid_dev;
-        m.has_general      = false;
-        m.has_demo         = false;
+        m.logical_w         = 200.0f;
+        m.has_refresh       = false;
+        m.has_scan_devices  = false;
+        m.has_device_pin    = valid_dev;
+        m.has_rename        = valid_dev;
+        m.has_delete_device = valid_dev;
+        m.has_general       = false;
+        m.has_demo          = false;
     } else if (m.mode == MENU_MODE_PANEL_GENERAL) {
-        m.logical_w        = 256.0f;
-        m.has_refresh      = true;
-        m.has_scan_devices = (st.demo_hooks.on_action == nullptr);
-        m.has_device_pin   = false;
-        m.has_rename       = false;
-        m.has_general      = true;
-        m.has_demo         = (st.demo_hooks.on_action != nullptr);
+        m.logical_w         = 256.0f;
+        m.has_refresh       = true;
+        m.has_scan_devices  = (st.demo_hooks.on_action == nullptr);
+        m.has_device_pin    = false;
+        m.has_rename        = false;
+        m.has_delete_device = false;
+        m.has_general       = true;
+        m.has_demo          = (st.demo_hooks.on_action != nullptr);
     } else {
         /* MENU_MODE_TRAY */
-        m.logical_w        = 256.0f;
-        m.has_refresh      = true;
-        m.has_scan_devices = (st.demo_hooks.on_action == nullptr);
-        m.has_device_pin   = valid_dev;
-        m.has_rename       = (st.device_count > 0);
-        m.has_general      = true;
-        m.has_demo         = (st.demo_hooks.on_action != nullptr);
+        m.logical_w         = 256.0f;
+        m.has_refresh       = true;
+        m.has_scan_devices  = (st.demo_hooks.on_action == nullptr);
+        m.has_device_pin    = valid_dev;
+        m.has_rename        = (st.device_count > 0);
+        m.has_delete_device = valid_dev;
+        m.has_general       = true;
+        m.has_demo          = (st.demo_hooks.on_action != nullptr);
     }
 
     float pad = 8.0f;
@@ -167,6 +174,21 @@ static void LayoutMenu(MenuState &m) {
         y += row_h + 2.0f;
     } else {
         m.rc_rename = {};
+    }
+
+    if (m.has_delete_device) {
+        if (!m.has_general) {
+            y += 3.0f;
+            m.div_dev_del_y = y;
+            y += 6.0f;
+        } else {
+            m.div_dev_del_y = 0.0f;
+        }
+        m.rc_delete = MakeRect(pad, y, w - pad, y + row_h);
+        y += row_h + 2.0f;
+    } else {
+        m.div_dev_del_y = 0.0f;
+        m.rc_delete = {};
     }
 
     if (!m.has_general) {
@@ -421,6 +443,21 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                              MakeRect(m.rc_rename.left + 32.0f, m.rc_rename.top, m.rc_rename.right - 8.0f, m.rc_rename.bottom), b.Get());
             }
 
+            /* 3b. Delete / Remove Device row */
+            if (m.has_delete_device) {
+                if (m.div_dev_del_y > 0.0f) {
+                    draw_div(m.div_dev_del_y);
+                }
+                draw_row_bg(m.rc_delete, HIT_DELETE_DEVICE, true);
+                bool del_hov = (m.hover_zone == HIT_DELETE_DEVICE);
+                b->SetColor(del_hov ? red_col : pal.text_secondary);
+                DrawTrashIcon(rt, b.Get(), m.round_stroke.Get(),
+                              m.rc_delete.left + 16.0f, (m.rc_delete.top + m.rc_delete.bottom) * 0.5f, 5.4f);
+                b->SetColor(del_hov ? red_col : pal.text_primary);
+                rt->DrawText(L"\u5220\u9664\u6b64\u8bbe\u5907", 5, m.fmt_item.Get(),
+                             MakeRect(m.rc_delete.left + 32.0f, m.rc_delete.top, m.rc_delete.right - 8.0f, m.rc_delete.bottom), b.Get());
+            }
+
             if (m.has_general) {
                 draw_div(m.div1_y);
 
@@ -627,6 +664,7 @@ static int HitTestMenu(const MenuState &m, float dx, float dy) {
     if (m.has_scan_devices && PtInR(m.rc_scan_devices, dx, dy)) return HIT_SCAN_DEVICES;
     if (m.has_device_pin && PtInR(m.rc_pin, dx, dy)) return HIT_PIN_DEVICE;
     if (m.has_rename && PtInR(m.rc_rename, dx, dy)) return HIT_RENAME_DEVICE;
+    if (m.has_delete_device && PtInR(m.rc_delete, dx, dy)) return HIT_DELETE_DEVICE;
     if (m.has_general) {
         if (PtInR(m.rc_seg[0], dx, dy)) return HIT_SEG_OCTANS;
         if (PtInR(m.rc_seg[1], dx, dy)) return HIT_SEG_NEBULA;
@@ -774,6 +812,10 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                     }
                     case HIT_RENAME_DEVICE:
                         m->pending_post_action = 1;
+                        m->done = true;
+                        break;
+                    case HIT_DELETE_DEVICE:
+                        m->pending_post_action = 4;
                         m->done = true;
                         break;
                     case HIT_SEG_OCTANS:
@@ -990,6 +1032,13 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
         ActionRequestQuit();
     } else if (post_action == 3) {
         ActionTriggerFullScan();
+    } else if (post_action == 4) {
+        const UiState &cur = GetState();
+        if (rename_idx >= 0 && static_cast<size_t>(rename_idx) < cur.device_count) {
+            char del_id[64] = {};
+            strncpy(del_id, cur.devices[rename_idx].id, sizeof(del_id) - 1);
+            ActionRemoveDevice(del_id);
+        }
     }
 }
 

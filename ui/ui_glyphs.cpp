@@ -770,6 +770,87 @@ void DrawCelestialScanAnim(
     DrawOctansLogo(factory, rt, cx, cy, logo_r, is_dark, false, 1.0f, alpha);
 }
 
+void DrawScanCompleteAnim(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float radius,
+    bool is_dark,
+    float progress,
+    float alpha
+) {
+    if (!factory || !rt || alpha <= 0.01f) return;
+    float p = ClampF(progress, 0.0f, 1.0f);
+
+    D2D1_COLOR_F accent = is_dark ? HexColor(0x34D399, 1.0f) : HexColor(0x10B981, 1.0f);
+    ComPtr<ID2D1SolidColorBrush> br;
+    if (FAILED(rt->CreateSolidColorBrush(accent, br.Put()))) return;
+
+    /* 1. Soft expanding confirmation halo */
+    float halo_p = EaseOutCubic(ClampF(p * 1.35f, 0.0f, 1.0f));
+    float halo_r = LerpF(radius * 0.90f, radius * 1.95f, halo_p);
+    D2D1_COLOR_F hc = accent;
+    hc.a = (1.0f - halo_p) * (is_dark ? 0.42f : 0.34f) * alpha;
+    br->SetColor(hc);
+    rt->DrawEllipse(MakeEllipse(cx, cy, halo_r, halo_r), br.Get(), LerpF(2.2f, 0.8f, halo_p));
+
+    /* 2. Soft filled badge disc with spring overshoot */
+    float pop = EaseOutCubic(ClampF(p / 0.36f, 0.0f, 1.0f));
+    float spring = pop + sinf(pop * kPi) * 0.08f;
+    float disc_r = radius * spring;
+
+    D2D1_COLOR_F bg = accent;
+    bg.a = (is_dark ? 0.16f : 0.13f) * alpha;
+    br->SetColor(bg);
+    rt->FillEllipse(MakeEllipse(cx, cy, disc_r, disc_r), br.Get());
+
+    /* 3. Crisp circular ring sweep */
+    float ring_f = EaseOutCubic(ClampF(p / 0.45f, 0.0f, 1.0f));
+    D2D1_COLOR_F rc = accent;
+    rc.a = 0.94f * alpha;
+    br->SetColor(rc);
+    DrawBatteryRingArc(factory, rt, br.Get(), round_cap_style, cx, cy, disc_r, 2.2f, ring_f, false);
+
+    /* 4. Animated two-stroke checkmark drawing smoothly left-to-right */
+    float ck_t = ClampF((p - 0.18f) / 0.42f, 0.0f, 1.0f);
+    if (ck_t > 0.01f) {
+        D2D1_POINT_2F p0 = MakePt(cx - disc_r * 0.36f, cy + disc_r * 0.02f);
+        D2D1_POINT_2F p1 = MakePt(cx - disc_r * 0.08f, cy + disc_r * 0.30f);
+        D2D1_POINT_2F p2 = MakePt(cx + disc_r * 0.40f, cy - disc_r * 0.26f);
+
+        float leg1 = EaseOutCubic(ClampF(ck_t / 0.42f, 0.0f, 1.0f));
+        D2D1_POINT_2F m1 = MakePt(LerpF(p0.x, p1.x, leg1), LerpF(p0.y, p1.y, leg1));
+        rt->DrawLine(p0, m1, br.Get(), 2.4f, round_cap_style);
+
+        if (ck_t > 0.40f) {
+            float leg2 = EaseOutCubic(ClampF((ck_t - 0.40f) / 0.60f, 0.0f, 1.0f));
+            D2D1_POINT_2F m2 = MakePt(LerpF(p1.x, p2.x, leg2), LerpF(p1.y, p2.y, leg2));
+            rt->DrawLine(p1, m2, br.Get(), 2.4f, round_cap_style);
+        }
+    }
+}
+
+void DrawTrashIcon(
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float s
+) {
+    if (!rt || !brush || s <= 1.0f) return;
+    float stroke = 1.35f;
+    /* Top lid line + handle */
+    rt->DrawLine(MakePt(cx - s * 0.80f, cy - s * 0.48f), MakePt(cx + s * 0.80f, cy - s * 0.48f), brush, stroke, round_cap_style);
+    rt->DrawLine(MakePt(cx - s * 0.30f, cy - s * 0.78f), MakePt(cx + s * 0.30f, cy - s * 0.78f), brush, stroke, round_cap_style);
+    /* Can body */
+    D2D1_RECT_F body = MakeRect(cx - s * 0.58f, cy - s * 0.46f, cx + s * 0.58f, cy + s * 0.82f);
+    rt->DrawRoundedRectangle(MakeRoundedRect(body, s * 0.18f, s * 0.18f), brush, stroke);
+    /* Two subtle vertical ribs */
+    rt->DrawLine(MakePt(cx - s * 0.20f, cy - s * 0.12f), MakePt(cx - s * 0.20f, cy + s * 0.48f), brush, stroke * 0.85f, round_cap_style);
+    rt->DrawLine(MakePt(cx + s * 0.20f, cy - s * 0.12f), MakePt(cx + s * 0.20f, cy + s * 0.48f), brush, stroke * 0.85f, round_cap_style);
+}
+
 void DrawLightningBolt(
     ID2D1Factory *factory,
     ID2D1RenderTarget *rt,

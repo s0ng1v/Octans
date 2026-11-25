@@ -18,6 +18,7 @@ struct RenameSheetState {
     int hover_btn = 0;   /* 0=none, 1=cancel, 2=save */
     int pressed_btn = 0; /* 0=none, 1=cancel, 2=save */
     bool mouse_tracked = false;
+    uint64_t created_ms = 0;
 
     D2D1_RECT_F input_box_rc = {};
     D2D1_RECT_F cancel_btn_rc = {};
@@ -227,6 +228,9 @@ static LRESULT CALLBACK RenameEditSubclassProc(HWND hwnd, UINT msg, WPARAM wp, L
             return 0;
         }
     }
+    if (msg == WM_CHAR && (wp == L'\r' || wp == 27)) {
+        return 0; /* Suppress default edit control beep on Enter / Escape */
+    }
     return orig ? CallWindowProcW(orig, hwnd, msg, wp, lp) : DefWindowProcW(hwnd, msg, wp, lp);
 }
 
@@ -237,8 +241,33 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         case WM_NCCREATE: {
             auto *cs = reinterpret_cast<CREATESTRUCTW *>(lp);
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(cs->lpCreateParams));
-            return TRUE;
+            return DefWindowProcW(hwnd, msg, wp, lp);
         }
+        case WM_SETCURSOR:
+            if (st && LOWORD(lp) == HTCLIENT) {
+                if (st->hover_btn != 0 || st->pressed_btn != 0) {
+                    SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                    return TRUE;
+                }
+                POINT cp = {};
+                if (GetCursorPos(&cp) && ScreenToClient(hwnd, &cp)) {
+                    float scale = static_cast<float>(st->dpi) / 96.0f;
+                    float dx = static_cast<float>(cp.x) / scale;
+                    float dy = static_cast<float>(cp.y) / scale;
+                    if (PtInRc(st->cancel_btn_rc, dx, dy) || PtInRc(st->save_btn_rc, dx, dy)) {
+                        SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                        return TRUE;
+                    }
+                    if (PtInRc(st->input_box_rc, dx, dy)) {
+                        SetCursor(LoadCursorW(nullptr, IDC_IBEAM));
+                        return TRUE;
+                    }
+                }
+                SetCursor(LoadCursorW(nullptr, IDC_ARROW));
+                return TRUE;
+            }
+            break;
+
         case WM_APP + 1:
             if (st) {
                 if (wp == 1) ConfirmSheet(*st);
@@ -282,11 +311,18 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
         case WM_MOUSELEAVE:
             if (st) {
                 st->mouse_tracked = false;
-                if (st->hover_btn != 0 || st->pressed_btn != 0) {
+                /* Never clear pressed_btn while mouse is captured! */
+                if (GetCapture() != hwnd && st->hover_btn != 0) {
                     st->hover_btn = 0;
-                    st->pressed_btn = 0;
                     RenderRenameSheet(*st);
                 }
+            }
+            return 0;
+
+        case WM_CAPTURECHANGED:
+            if (st && st->pressed_btn != 0) {
+                st->pressed_btn = 0;
+                RenderRenameSheet(*st);
             }
             return 0;
 
@@ -306,7 +342,6 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 } else if (PtInRc(st->input_box_rc, dx, dy)) {
                     SetFocus(st->edit);
                 } else {
-                    /* Drag smoothly by header/background */
                     ReleaseCapture();
                     SendMessageW(hwnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
                 }
@@ -314,27 +349,32 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             return 0;
 
         case WM_LBUTTONUP:
-            if (st && st->pressed_btn != 0) {
+            if (st) {
                 int p = st->pressed_btn;
                 st->pressed_btn = 0;
-                ReleaseCapture();
+                if (GetCapture() == hwnd) {
+                    ReleaseCapture();
+                }
                 float scale = static_cast<float>(st->dpi) / 96.0f;
                 float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
                 float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
-                RenderRenameSheet(*st);
-                if (p == 1 && PtInRc(st->cancel_btn_rc, dx, dy)) {
+                if ((p == 1 || p == 0) && PtInRc(st->cancel_btn_rc, dx, dy)) {
                     st->accepted = false;
                     st->done = true;
-                } else if (p == 2 && PtInRc(st->save_btn_rc, dx, dy)) {
+                } else if ((p == 2 || p == 0) && PtInRc(st->save_btn_rc, dx, dy)) {
                     ConfirmSheet(*st);
+                } else {
+                    RenderRenameSheet(*st);
                 }
             }
             return 0;
 
         case WM_ACTIVATE:
             if (st && LOWORD(wp) == WA_INACTIVE) {
-                st->accepted = false;
-                st->done = true;
+                if ((GetTickCount64() - st->created_ms) >= 180ULL) {
+                    st->accepted = false;
+                    st->done = true;
+                }
             }
             return 0;
 
@@ -472,6 +512,7 @@ bool ShowRenameAliasDialog(
         SetWindowLongPtrW(st.edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(RenameEditSubclassProc)));
     SetWindowLongPtrW(st.edit, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(old_edit));
 
+    st.created_ms = GetTickCount64();
     ShowWindow(hwnd, SW_SHOW);
     SetForegroundWindow(hwnd);
     RenderRenameSheet(st);

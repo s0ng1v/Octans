@@ -486,11 +486,65 @@ static int ops_set_pinned_device(void *ctx, const char *device_id) {
     return 0;
 }
 
+/* Ensure config.ini uses UTF-16LE BOM so WritePrivateProfileStringW preserves Chinese aliases. */
+static void ensure_ini_utf16le(const wchar_t *path) {
+    if (!path || !path[0]) return;
+    HANDLE h = CreateFileW(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                           OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD sz = GetFileSize(h, NULL);
+    if (sz == INVALID_FILE_SIZE) {
+        CloseHandle(h);
+        return;
+    }
+    if (sz == 0) {
+        const uint8_t bom[2] = {0xFFu, 0xFEu};
+        DWORD wr = 0;
+        WriteFile(h, bom, 2, &wr, NULL);
+        CloseHandle(h);
+        return;
+    }
+    uint8_t head[2] = {0, 0};
+    DWORD rd = 0;
+    if (ReadFile(h, head, 2, &rd, NULL) && rd == 2 && head[0] == 0xFFu && head[1] == 0xFEu) {
+        CloseHandle(h);
+        return; /* Already UTF-16LE */
+    }
+    if (sz > 65536u) {
+        CloseHandle(h);
+        return;
+    }
+    SetFilePointer(h, 0, NULL, FILE_BEGIN);
+    char *ansi = (char *)malloc((size_t)sz + 1u);
+    if (ansi) {
+        if (ReadFile(h, ansi, sz, &rd, NULL) && rd == sz) {
+            ansi[sz] = '\0';
+            int wlen = MultiByteToWideChar(CP_ACP, 0, ansi, (int)sz, NULL, 0);
+            if (wlen > 0) {
+                wchar_t *wbuf = (wchar_t *)malloc((size_t)wlen * sizeof(wchar_t));
+                if (wbuf) {
+                    MultiByteToWideChar(CP_ACP, 0, ansi, (int)sz, wbuf, wlen);
+                    SetFilePointer(h, 0, NULL, FILE_BEGIN);
+                    SetEndOfFile(h);
+                    const uint8_t bom[2] = {0xFFu, 0xFEu};
+                    DWORD wr = 0;
+                    WriteFile(h, bom, 2, &wr, NULL);
+                    WriteFile(h, wbuf, (DWORD)((size_t)wlen * sizeof(wchar_t)), &wr, NULL);
+                    free(wbuf);
+                }
+            }
+        }
+        free(ansi);
+    }
+    CloseHandle(h);
+}
+
 static int ops_set_device_alias(void *ctx, const char *device_id, const wchar_t *alias) {
     octans_engine_t *eng = (octans_engine_t *)ctx;
     if (!eng || !device_id || !device_id[0]) return -1;
     int rc = octans_merge_set_alias(&eng->merge, device_id, alias);
     if (rc == 0) {
+        ensure_ini_utf16le(eng->ini_path);
         wchar_t w_id[64];
         w_id[0] = L'\0';
         MultiByteToWideChar(CP_UTF8, 0, device_id, -1, w_id, 64);

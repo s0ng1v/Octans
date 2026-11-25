@@ -11,7 +11,8 @@ namespace octans_ui {
 
 static UiState g_state;
 static UINT g_msg_taskbar_created = 0;
-static constexpr UINT_PTR TIMER_SCAN_SETTLE = 2;
+static constexpr UINT_PTR TIMER_SCAN_SETTLE    = 2;
+static constexpr UINT_PTR TIMER_SCAN_DONE_FADE = 3;
 static octans_device_view_t g_deferred_devices[MAX_DEVICES] = {};
 static size_t g_deferred_count = 0;
 static bool g_has_deferred = false;
@@ -65,6 +66,29 @@ static void LoadUiConfig() {
             p = comma + 1;
         }
     }
+
+    wchar_t hid_w[1024] = {};
+    GetPrivateProfileStringW(L"UI", L"HiddenIds", L"", hid_w, 1024, ini);
+    g_state.hidden_count = 0;
+    for (size_t i = 0; i < MAX_DEVICES; ++i) g_state.hidden_ids[i][0] = '\0';
+
+    if (hid_w[0] != L'\0') {
+        char hid_u8[1024] = {};
+        WideCharToMultiByte(CP_UTF8, 0, hid_w, -1, hid_u8, sizeof(hid_u8), nullptr, nullptr);
+        const char *p = hid_u8;
+        while (*p && g_state.hidden_count < MAX_DEVICES) {
+            const char *comma = strchr(p, ',');
+            size_t len = comma ? static_cast<size_t>(comma - p) : strlen(p);
+            if (len > 0) {
+                if (len >= sizeof(g_state.hidden_ids[0])) len = sizeof(g_state.hidden_ids[0]) - 1;
+                memcpy(g_state.hidden_ids[g_state.hidden_count], p, len);
+                g_state.hidden_ids[g_state.hidden_count][len] = '\0';
+                g_state.hidden_count++;
+            }
+            if (!comma) break;
+            p = comma + 1;
+        }
+    }
 }
 
 static void SaveUiConfig() {
@@ -100,6 +124,24 @@ static void SaveUiConfig() {
         MultiByteToWideChar(CP_UTF8, 0, pins_u8, -1, pins_w, 1024);
     }
     WritePrivateProfileStringW(L"UI", L"PinnedIds", pins_w, ini);
+
+    char hid_u8[1024] = {};
+    size_t hpos = 0;
+    for (size_t i = 0; i < g_state.hidden_count && i < MAX_DEVICES; ++i) {
+        if (!g_state.hidden_ids[i][0]) continue;
+        size_t len = strlen(g_state.hidden_ids[i]);
+        if (hpos + len + 2 >= sizeof(hid_u8)) break;
+        if (hpos > 0) hid_u8[hpos++] = ',';
+        memcpy(hid_u8 + hpos, g_state.hidden_ids[i], len);
+        hpos += len;
+    }
+    hid_u8[hpos] = '\0';
+
+    wchar_t hid_w[1024] = {};
+    if (hpos > 0) {
+        MultiByteToWideChar(CP_UTF8, 0, hid_u8, -1, hid_w, 1024);
+    }
+    WritePrivateProfileStringW(L"UI", L"HiddenIds", hid_w, ini);
 }
 
 UiState &GetState() {
@@ -110,6 +152,16 @@ bool IsDevicePinned(const UiState &st, const char *device_id) {
     if (!device_id || !device_id[0]) return false;
     for (size_t i = 0; i < st.pinned_count && i < MAX_DEVICES; ++i) {
         if (strcmp(st.pinned_ids[i], device_id) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsDeviceHidden(const UiState &st, const char *device_id) {
+    if (!device_id || !device_id[0]) return false;
+    for (size_t i = 0; i < st.hidden_count && i < MAX_DEVICES; ++i) {
+        if (strcmp(st.hidden_ids[i], device_id) == 0) {
             return true;
         }
     }
@@ -153,37 +205,77 @@ int SelectFallbackTrayDeviceIndex(const octans_device_view_t *devices, size_t co
     return 0;
 }
 
-static void CommitDeviceSnapshotNow(const octans_device_view_t *devices, size_t count) {
+static void FilterAndStoreDevices(const octans_device_view_t *devices, size_t count) {
     if (count > MAX_DEVICES) count = MAX_DEVICES;
-    if (devices && count > 0) {
-        memcpy(g_state.devices, devices, count * sizeof(octans_device_view_t));
+    size_t out_n = 0;
+    if (devices) {
+        for (size_t i = 0; i < count && out_n < MAX_DEVICES; ++i) {
+            if (IsDeviceHidden(g_state, devices[i].id)) continue;
+            g_state.devices[out_n++] = devices[i];
+        }
     }
-    g_state.device_count = count;
+    g_state.device_count = out_n;
+}
+
+static void CompleteScanTransition() {
+    if (g_state.host_hwnd) {
+        KillTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE);
+    }
     g_state.is_scanning = false;
     g_state.initial_scan_done = true;
 
+    if (PanelIsVisible() && g_state.demo_hooks.on_action == nullptr && g_state.host_hwnd) {
+        g_state.scan_phase = SCAN_COMPLETE;
+        g_state.scan_completed_ms = GetTickCount64();
+        PanelOnScanStateChanged();
+        SetTimer(g_state.host_hwnd, TIMER_SCAN_DONE_FADE, 1150, nullptr);
+    } else {
+        g_state.scan_phase = SCAN_IDLE;
+        PanelOnScanStateChanged();
+    }
+}
+
+static void CommitDeviceSnapshotNow(const octans_device_view_t *devices, size_t count) {
+    bool was_scanning = (g_state.scan_phase == SCAN_ACTIVE || g_state.is_scanning);
+    bool was_refreshing = g_state.refresh_pending;
+    g_state.refresh_pending = false;
+
+    FilterAndStoreDevices(devices, count);
     PanelOnDevicesChanged(g_state.devices, g_state.device_count);
     TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
+
+    if (was_scanning) {
+        CompleteScanTransition();
+    } else if (was_refreshing) {
+        PanelOnRefreshCompleted();
+    }
 }
 
 static void ApplyDeviceSnapshotOnUiThread(const octans_device_view_t *devices, size_t count) {
     if (count > MAX_DEVICES) count = MAX_DEVICES;
 
-    /* If we're actively displaying the celestial scan animation with 0 devices, let it play
-     * for at least 900ms so the transition feels smooth and deliberate instead of flashing. */
-    if (g_state.is_scanning && g_state.device_count == 0 && PanelIsVisible() && g_state.host_hwnd &&
+    /* During active scan while panel is visible: immediately reflect discovered devices behind
+     * the frosted scan veil so the user sees them appearing live, while keeping the scan overlay
+     * active for at least 1150ms before smoothly playing the "扫描完成" confirmation bloom. */
+    if (g_state.scan_phase == SCAN_ACTIVE && PanelIsVisible() && g_state.host_hwnd &&
         g_state.demo_hooks.on_action == nullptr) {
+        FilterAndStoreDevices(devices, count);
+        PanelOnDevicesChanged(g_state.devices, g_state.device_count);
+        TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
+
         uint64_t now = GetTickCount64();
-        uint64_t elapsed = (now >= g_state.scan_started_ms) ? (now - g_state.scan_started_ms) : 900ULL;
-        if (elapsed < 900ULL) {
+        uint64_t elapsed = (now >= g_state.scan_started_ms) ? (now - g_state.scan_started_ms) : 1150ULL;
+        if (elapsed < 1150ULL) {
             if (devices && count > 0) {
                 memcpy(g_deferred_devices, devices, count * sizeof(octans_device_view_t));
             }
             g_deferred_count = count;
             g_has_deferred = true;
-            SetTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE, static_cast<UINT>(900ULL - elapsed), nullptr);
+            SetTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE, static_cast<UINT>(1150ULL - elapsed), nullptr);
             return;
         }
+        CompleteScanTransition();
+        return;
     }
 
     if (g_state.host_hwnd) {
@@ -194,6 +286,7 @@ static void ApplyDeviceSnapshotOnUiThread(const octans_device_view_t *devices, s
 }
 
 void ActionTriggerRefresh() {
+    g_state.refresh_pending = true;
     PanelTriggerRefreshSpin();
     if (g_state.ops.request_refresh) {
         g_state.ops.request_refresh(g_state.backend_ctx);
@@ -201,9 +294,23 @@ void ActionTriggerRefresh() {
 }
 
 void ActionTriggerFullScan() {
+    /* Full scan clears hidden device exclusions so previously deleted devices can be rediscovered. */
+    if (g_state.hidden_count > 0) {
+        g_state.hidden_count = 0;
+        for (size_t i = 0; i < MAX_DEVICES; ++i) g_state.hidden_ids[i][0] = '\0';
+        SaveUiConfig();
+    }
+    if (g_state.host_hwnd) {
+        KillTimer(g_state.host_hwnd, TIMER_SCAN_SETTLE);
+        KillTimer(g_state.host_hwnd, TIMER_SCAN_DONE_FADE);
+    }
+    g_has_deferred = false;
     g_state.is_scanning = true;
+    g_state.scan_phase = SCAN_ACTIVE;
     g_state.scan_started_ms = GetTickCount64();
-    if (g_state.device_count == 0 && !PanelIsVisible() && g_state.host_hwnd) {
+    g_state.refresh_pending = false;
+
+    if (!PanelIsVisible() && g_state.host_hwnd) {
         PostMessageW(g_state.host_hwnd, WM_APP_SHOW_PANEL, static_cast<WPARAM>(-1), static_cast<LPARAM>(-1));
     }
     PanelTriggerRefreshSpin();
@@ -211,6 +318,51 @@ void ActionTriggerFullScan() {
     if (g_state.ops.request_refresh) {
         g_state.ops.request_refresh(g_state.backend_ctx);
     }
+}
+
+void ActionRemoveDevice(const char *device_id) {
+    if (!device_id || !device_id[0]) return;
+
+    /* Record in hidden list so routine background polls do not resurrect it until full scan */
+    if (!IsDeviceHidden(g_state, device_id) && g_state.hidden_count < MAX_DEVICES) {
+        strncpy(g_state.hidden_ids[g_state.hidden_count], device_id, 63);
+        g_state.hidden_ids[g_state.hidden_count][63] = '\0';
+        g_state.hidden_count++;
+    }
+
+    /* Unpin if currently pinned */
+    for (size_t i = 0; i < g_state.pinned_count && i < MAX_DEVICES; ++i) {
+        if (strcmp(g_state.pinned_ids[i], device_id) == 0) {
+            for (size_t j = i; j + 1 < g_state.pinned_count; ++j) {
+                memcpy(g_state.pinned_ids[j], g_state.pinned_ids[j + 1], sizeof(g_state.pinned_ids[j]));
+            }
+            g_state.pinned_count--;
+            g_state.pinned_ids[g_state.pinned_count][0] = '\0';
+            if (g_state.ops.set_pinned_device) {
+                g_state.ops.set_pinned_device(
+                    g_state.backend_ctx,
+                    (g_state.pinned_count > 0) ? g_state.pinned_ids[0] : ""
+                );
+            }
+            break;
+        }
+    }
+
+    /* Remove immediately from live devices list */
+    for (size_t i = 0; i < g_state.device_count; ++i) {
+        if (strcmp(g_state.devices[i].id, device_id) == 0) {
+            for (size_t j = i; j + 1 < g_state.device_count; ++j) {
+                g_state.devices[j] = g_state.devices[j + 1];
+            }
+            g_state.device_count--;
+            break;
+        }
+    }
+
+    SaveUiConfig();
+    PanelOnDevicesChanged(g_state.devices, g_state.device_count);
+    PanelOnPinnedChanged();
+    TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
 }
 
 void ActionTogglePinDevice(const char *device_id) {
@@ -278,7 +430,11 @@ void ActionPromptRenameDevice(int device_index) {
             }
         }
         PanelOnDevicesChanged(g_state.devices, g_state.device_count);
+        PanelOnPinnedChanged(); /* Synchronous immediate repaint */
         TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
+    }
+    if (PanelIsVisible()) {
+        SetForegroundWindow(PanelGetHwnd());
     }
 }
 
@@ -325,11 +481,16 @@ void ActionSetDemoHooks(const DemoMenuHooks *hooks) {
     if (hooks) {
         g_state.demo_hooks = *hooks;
         g_state.is_scanning = false;
+        g_state.scan_phase = SCAN_IDLE;
         g_state.initial_scan_done = true;
         g_state.tray_style = TRAY_STYLE_OCTANS;
         g_state.tray_scale = kDefaultTrayScale;
         g_state.pinned_count = 0;
-        for (size_t i = 0; i < MAX_DEVICES; ++i) g_state.pinned_ids[i][0] = '\0';
+        g_state.hidden_count = 0;
+        for (size_t i = 0; i < MAX_DEVICES; ++i) {
+            g_state.pinned_ids[i][0] = '\0';
+            g_state.hidden_ids[i][0] = '\0';
+        }
         TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
     } else {
         g_state.demo_hooks = {};
@@ -380,10 +541,17 @@ static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 KillTimer(hwnd, TIMER_SCAN_SETTLE);
                 if (g_has_deferred) {
                     g_has_deferred = false;
-                    CommitDeviceSnapshotNow(g_deferred_devices, g_deferred_count);
-                } else if (g_state.is_scanning) {
-                    g_state.is_scanning = false;
-                    g_state.initial_scan_done = true;
+                    FilterAndStoreDevices(g_deferred_devices, g_deferred_count);
+                    PanelOnDevicesChanged(g_state.devices, g_state.device_count);
+                    TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
+                }
+                CompleteScanTransition();
+                return 0;
+            }
+            if (wp == TIMER_SCAN_DONE_FADE) {
+                KillTimer(hwnd, TIMER_SCAN_DONE_FADE);
+                if (g_state.scan_phase == SCAN_COMPLETE) {
+                    g_state.scan_phase = SCAN_IDLE;
                     PanelOnScanStateChanged();
                 }
                 return 0;
@@ -506,8 +674,13 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
     for (size_t i = 0; i < MAX_DEVICES; ++i) st.pinned_ids[i][0] = '\0';
     st.modal_open = false;
     st.is_scanning = true;
+    st.scan_phase = SCAN_ACTIVE;
     st.initial_scan_done = false;
     st.scan_started_ms = GetTickCount64();
+    st.scan_completed_ms = 0;
+    st.refresh_pending = false;
+    st.hidden_count = 0;
+    for (size_t i = 0; i < MAX_DEVICES; ++i) st.hidden_ids[i][0] = '\0';
     st.last_inactive_hide_ms = 0;
     g_has_deferred = false;
     LoadUiConfig();

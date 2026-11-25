@@ -234,6 +234,12 @@ struct DemoMenuHooks {
     void *user_ctx;
 };
 
+enum ScanPhase : uint8_t {
+    SCAN_IDLE     = 0,
+    SCAN_ACTIVE   = 1,
+    SCAN_COMPLETE = 2
+};
+
 /* Global UI state owned by ui_api.cpp and shared with ui_panel/ui_tray. */
 struct UiState {
     DWORD ui_thread_id = 0;
@@ -243,7 +249,10 @@ struct UiState {
     bool modal_open = false;
     bool is_scanning = false;
     bool initial_scan_done = false;
+    ScanPhase scan_phase = SCAN_IDLE;
     uint64_t scan_started_ms = 0;
+    uint64_t scan_completed_ms = 0;
+    bool refresh_pending = false;
     uint64_t last_inactive_hide_ms = 0;
     TrayStyle tray_style = TRAY_STYLE_OCTANS;
     float tray_scale = kDefaultTrayScale;
@@ -265,19 +274,25 @@ struct UiState {
     char pinned_ids[MAX_DEVICES][64] = {};
     size_t pinned_count = 0;
 
+    /* User-removed devices (hidden until user clicks "扫描设备"). */
+    char hidden_ids[MAX_DEVICES][64] = {};
+    size_t hidden_count = 0;
+
     DemoMenuHooks demo_hooks = {};
 };
 
 UiState &GetState();
 
-/* Multi-pin helpers */
+/* Multi-pin & hidden helpers */
 bool IsDevicePinned(const UiState &st, const char *device_id);
+bool IsDeviceHidden(const UiState &st, const char *device_id);
 size_t CountActivePinnedDevices(const UiState &st);
 
 /* Shared controller actions called by panel & tray. */
 void ActionTriggerRefresh();
 void ActionTriggerFullScan();
 void ActionTogglePinDevice(const char *device_id);
+void ActionRemoveDevice(const char *device_id);
 void ActionShowContextMenu(int screen_x, int screen_y, int clicked_device_index, MenuMode mode);
 void ActionPromptRenameDevice(int device_index);
 void ActionToggleTrayStyle(TrayStyle style);

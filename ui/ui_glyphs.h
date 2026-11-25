@@ -111,6 +111,27 @@ void DrawCelestialScanAnim(
     float alpha
 );
 
+/* Draw animated scan-complete emerald checkmark bloom (progress in [0..1]). */
+void DrawScanCompleteAnim(
+    ID2D1Factory *factory,
+    ID2D1RenderTarget *rt,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float radius,
+    bool is_dark,
+    float progress,
+    float alpha
+);
+
+/* Draw minimalist trash/delete icon for context menu. */
+void DrawTrashIcon(
+    ID2D1RenderTarget *rt,
+    ID2D1Brush *brush,
+    ID2D1StrokeStyle *round_cap_style,
+    float cx, float cy,
+    float half_size
+);
+
 /* Draw three horizontal ellipsis dots ("..."). */
 void DrawMoreIcon(
     ID2D1RenderTarget *rt,

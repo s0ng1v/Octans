@@ -217,6 +217,8 @@ static HICON RenderTrayIcon(
             } else if (style == TRAY_STYLE_NEBULA) {
                 /* =====================================================================
                  * SCHEME 2 (Nebula): Full-bleed Liquid Silhouette Fill (no outer ring!)
+                 * Calibrated so 50% default renders ~1.5x bolder (cropping 48x48 internal
+                 * margin so the actual silhouette fills ~90% of the taskbar icon canvas).
                  * ===================================================================== */
                 float pct = (dev->battery_percent >= 0)
                     ? ClampF(static_cast<float>(dev->battery_percent) / 100.0f, 0.0f, 1.0f)
@@ -224,13 +226,20 @@ static HICON RenderTrayIcon(
                 D2D1_COLOR_F fill_col = GetDeviceAccentColor(*dev, pal, TRAY_STYLE_NEBULA);
                 D2D1_COLOR_F soft_col = GetDeviceSoftAccentColor(*dev, pal);
                 D2D1_COLOR_F trk_col  = tb_dark
-                    ? MakeColor(1.0f, 1.0f, 1.0f, 0.26f)
-                    : MakeColor(0.08f, 0.12f, 0.18f, 0.22f);
+                    ? MakeColor(1.0f, 1.0f, 1.0f, 0.28f)
+                    : MakeColor(0.08f, 0.12f, 0.18f, 0.24f);
                 D2D1_COLOR_F det_col  = tb_dark
                     ? HexColor(0x18181A, 0.96f)
                     : HexColor(0xFFFFFF, 0.96f);
 
-                float sil_sz = sz * LerpF(0.76f, 0.98f, s);
+                /* 48x48 viewBox has ~5px..12px inner padding depending on peripheral kind;
+                 * boost sil_sz cleanly so at s=0.50 the actual device silhouette spans ~90% of sz! */
+                bool is_wide_sil = (dev->kind == OCTANS_DEV_KEYBOARD || dev->kind == OCTANS_DEV_GAMEPAD);
+                float base_50 = is_wide_sil ? 1.12f : 1.22f;
+                float sil_ratio = (s <= 0.50f)
+                    ? LerpF(base_50 * 0.78f, base_50, s * 2.0f)
+                    : LerpF(base_50, base_50 * 1.08f, (s - 0.50f) * 2.0f);
+                float sil_sz = sz * sil_ratio;
                 DrawLiquidSilhouetteGlyph(
                     g_tray.d2d_factory.Get(),
                     rt.Get(),
@@ -261,6 +270,8 @@ static HICON RenderTrayIcon(
             } else if (style == TRAY_STYLE_PULSAR) {
                 /* =====================================================================
                  * SCHEME 3 (Pulsar): Clean outline device icon + bottom horizontal bar
+                 * Calibrated so previous 100% scale is now the 50% default, with generous
+                 * vertical separation so tall icons (Mouse) never crowd the bottom bar!
                  * ===================================================================== */
                 D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
                     ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
@@ -275,19 +286,38 @@ static HICON RenderTrayIcon(
                 rt->CreateSolidColorBrush(bar_col, bar_brush.Put());
                 rt->CreateSolidColorBrush(bar_trk, trk_brush.Put());
 
-                float g_half = sz * LerpF(0.28f, 0.36f, s);
-                float g_cy   = sz * LerpF(0.40f, 0.37f, s);
+                /* Bottom horizontal pill bar: sit flush near bottom edge to maximize gap */
+                float bar_w = (s <= 0.50f)
+                    ? (sz * LerpF(0.76f, 0.90f, s * 2.0f))
+                    : (sz * LerpF(0.90f, 0.96f, (s - 0.50f) * 2.0f));
+                float bar_h = (s <= 0.50f)
+                    ? (sz * LerpF(0.115f, 0.135f, s * 2.0f))
+                    : (sz * LerpF(0.135f, 0.155f, (s - 0.50f) * 2.0f));
+                if (bar_h < 3.0f) bar_h = 3.0f;
+                float bar_l = cx - bar_w * 0.5f;
+                float bar_t = sz - bar_h - sz * 0.025f;
+                float bar_r = bar_h * 0.5f;
+
+                /* Upper icon with guaranteed >= 14% vertical breathing gap above bar_t */
+                bool is_tall = (dev->kind == OCTANS_DEV_MOUSE ||
+                                dev->kind == OCTANS_DEV_SPEAKER ||
+                                dev->kind == OCTANS_DEV_STYLUS ||
+                                dev->kind == OCTANS_DEV_EARBUDS);
+                float g_half;
+                if (is_tall) {
+                    g_half = (s <= 0.50f)
+                        ? (sz * LerpF(0.255f, 0.305f, s * 2.0f))
+                        : (sz * LerpF(0.305f, 0.325f, (s - 0.50f) * 2.0f));
+                } else {
+                    g_half = (s <= 0.50f)
+                        ? (sz * LerpF(0.300f, 0.365f, s * 2.0f))
+                        : (sz * LerpF(0.365f, 0.400f, (s - 0.50f) * 2.0f));
+                }
+                float g_cy = is_tall ? (sz * 0.340f) : (sz * 0.360f);
+
                 if (ink_brush) {
                     DrawDeviceGlyph(g_tray.d2d_factory.Get(), rt.Get(), ink_brush.Get(), dev->kind, cx, g_cy, g_half, true);
                 }
-
-                /* Bottom horizontal pill bar */
-                float bar_w = sz * LerpF(0.74f, 0.90f, s);
-                float bar_h = sz * LerpF(0.13f, 0.16f, s);
-                if (bar_h < 3.0f) bar_h = 3.0f;
-                float bar_l = cx - bar_w * 0.5f;
-                float bar_t = sz - bar_h - sz * LerpF(0.08f, 0.04f, s);
-                float bar_r = bar_h * 0.5f;
 
                 if (trk_brush) {
                     rt->FillRoundedRectangle(MakeRoundedRect(MakeRect(bar_l, bar_t, bar_l + bar_w, bar_t + bar_h), bar_r, bar_r), trk_brush.Get());
@@ -316,18 +346,20 @@ static HICON RenderTrayIcon(
             } else {
                 /* =====================================================================
                  * SCHEME 1 (Octans, Default): Circular Battery Ring + Sleek Outline Icon
+                 * Outer ring pushed cleanly outward + inner glyph ratio tuned so there
+                 * is a crisp hairline clearance with ZERO ring-to-icon overlap!
                  * ===================================================================== */
                 float radius_ratio = (s <= 0.50f)
-                    ? LerpF(0.420f, 0.500f, s * 2.0f)
+                    ? LerpF(0.435f, 0.500f, s * 2.0f)
                     : 0.500f;
                 float stroke_ratio = (s <= 0.50f)
-                    ? LerpF(0.076f, 0.098f, s * 2.0f)
-                    : LerpF(0.098f, 0.122f, (s - 0.50f) * 2.0f);
+                    ? LerpF(0.072f, 0.086f, s * 2.0f)
+                    : LerpF(0.086f, 0.104f, (s - 0.50f) * 2.0f);
                 float stroke = sz * stroke_ratio;
-                if (stroke < 2.2f) stroke = 2.2f;
+                if (stroke < 2.1f) stroke = 2.1f;
                 float edge_inset = (s <= 0.50f)
-                    ? LerpF(0.50f, 0.43f, s * 2.0f)
-                    : LerpF(0.43f, 0.34f, (s - 0.50f) * 2.0f);
+                    ? LerpF(0.48f, 0.42f, s * 2.0f)
+                    : LerpF(0.42f, 0.36f, (s - 0.50f) * 2.0f);
                 float radius = (sz * radius_ratio) - (stroke * edge_inset);
                 float inner_r = radius - (stroke * 0.5f);
 
@@ -370,15 +402,16 @@ static HICON RenderTrayIcon(
                     bool wide_diag = (dev->kind == OCTANS_DEV_KEYBOARD ||
                                       dev->kind == OCTANS_DEV_GAMEPAD  ||
                                       dev->kind == OCTANS_DEV_HEADSET);
+                    /* Clean non-overlapping ratio inside inner_r */
                     float glyph_ratio;
                     if (wide_diag) {
                         glyph_ratio = (s <= 0.50f)
-                            ? LerpF(0.68f, 0.78f, s * 2.0f)
-                            : LerpF(0.78f, 0.82f, (s - 0.50f) * 2.0f);
+                            ? LerpF(0.62f, 0.67f, s * 2.0f)
+                            : LerpF(0.67f, 0.71f, (s - 0.50f) * 2.0f);
                     } else {
                         glyph_ratio = (s <= 0.50f)
-                            ? LerpF(0.72f, 0.85f, s * 2.0f)
-                            : LerpF(0.85f, 0.89f, (s - 0.50f) * 2.0f);
+                            ? LerpF(0.64f, 0.70f, s * 2.0f)
+                            : LerpF(0.70f, 0.74f, (s - 0.50f) * 2.0f);
                     }
                     float glyph_half = inner_r * glyph_ratio;
                     DrawDeviceGlyph(
