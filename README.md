@@ -17,7 +17,7 @@
   ·
   <a href="README_EN.md">English</a>
   ·
-  <a href="https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><b>国内高速下载</b></a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><b>国内高速下载</b></a>
   ·
   <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
   ·
