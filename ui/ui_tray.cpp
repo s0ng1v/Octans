@@ -268,9 +268,10 @@ static HICON RenderTrayIcon(
                 }
             } else if (style == TRAY_STYLE_PULSAR && g_tray.dwrite_factory) {
                 /* =====================================================================
-                 * SCHEME 3 (Pulsar): High-impact full-bleed device icon + large colored digits
-                 * Calibrated for real 16-24px Windows taskbar readability with genuine
-                 * dynamic scaling across 0% -> 50% (bold default) -> 100% (edge-to-edge max)!
+                 * SCHEME 3 (Pulsar): High-impact full-bleed device icon + large bold digits
+                 * Scale calibrated so previous 100% becomes new 0%; 50% (default) & 100%
+                 * fill the taskbar slot boldly with exact IDWriteTextLayout cap-height
+                 * placement guaranteeing >= 1px clean separator (ZERO overlap!).
                  * ===================================================================== */
                 D2D1_COLOR_F glyph_ink = IsDeviceMuted(*dev)
                     ? (tb_dark ? HexColor(0xAEAEB2, 0.72f) : HexColor(0x636366, 0.78f))
@@ -295,58 +296,63 @@ static HICON RenderTrayIcon(
                                 dev->kind == OCTANS_DEV_STYLUS ||
                                 dev->kind == OCTANS_DEV_EARBUDS);
                 bool is_headset = (dev->kind == OCTANS_DEV_HEADSET);
-                float g_half;
-                float visual_half_h;
+
+                float top_pad = LerpF(sz * 0.020f, 0.0f, ClampF(s * 1.6f, 0.0f, 1.0f));
+                float target_icon_h = is_tall
+                    ? LerpF(sz * 0.485f, sz * 0.496f, s)
+                    : (is_headset ? LerpF(sz * 0.480f, sz * 0.494f, s)
+                                  : LerpF(sz * 0.470f, sz * 0.496f, s));
+
+                float g_half = 0.0f;
+                float visual_half_h = 0.0f;
+                float sx_icon = 1.0f;
                 if (is_tall) {
-                    /* Tall vertical glyphs (Mouse etc.): clear progression 0% -> 50% -> 100%, zero overlap */
-                    g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.220f, 0.268f, s * 2.0f))
-                        : (sz * LerpF(0.268f, 0.285f, (s - 0.50f) * 2.0f));
-                    visual_half_h = g_half * 1.03f;
+                    g_half = target_icon_h / 2.10f;
+                    visual_half_h = target_icon_h * 0.5f;
+                    sx_icon = (dev->kind == OCTANS_DEV_MOUSE)
+                        ? ((s <= 0.50f) ? LerpF(1.26f, 1.40f, s * 2.0f) : LerpF(1.40f, 1.52f, (s - 0.50f) * 2.0f))
+                        : LerpF(1.06f, 1.24f, s);
                 } else if (is_headset) {
-                    g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.255f, 0.308f, s * 2.0f))
-                        : (sz * LerpF(0.308f, 0.326f, (s - 0.50f) * 2.0f));
-                    visual_half_h = g_half * 0.90f;
+                    g_half = target_icon_h / 1.78f;
+                    visual_half_h = target_icon_h * 0.5f;
+                    sx_icon = (s <= 0.50f) ? LerpF(1.08f, 1.24f, s * 2.0f) : LerpF(1.24f, 1.38f, (s - 0.50f) * 2.0f);
                 } else {
-                    /* Wide horizontal glyphs (Keyboard, Gamepad): fill full taskbar width at 50-100% */
-                    g_half = (s <= 0.50f)
-                        ? (sz * LerpF(0.305f, 0.376f, s * 2.0f))
-                        : (sz * LerpF(0.376f, 0.394f, (s - 0.50f) * 2.0f));
-                    visual_half_h = g_half * 0.72f;
+                    float h_fac = (dev->kind == OCTANS_DEV_GAMEPAD) ? 1.52f : 1.38f;
+                    g_half = target_icon_h / h_fac;
+                    float max_g_half = sz * LerpF(0.395f, 0.480f, s);
+                    if (g_half > max_g_half) g_half = max_g_half;
+                    visual_half_h = (g_half * h_fac) * 0.5f;
+                    sx_icon = (s <= 0.50f) ? LerpF(1.02f, 1.12f, s * 2.0f) : LerpF(1.12f, 1.20f, (s - 0.50f) * 2.0f);
                 }
 
-                /* At 0%: balanced inset; at 50%: bold standard; at 100%: edge-to-edge full bleed */
-                float top_pad = is_tall
-                    ? (sz * LerpF(0.070f, 0.004f, s))
-                    : (is_headset ? (sz * LerpF(0.070f, 0.006f, s))
-                                  : (sz * LerpF(0.095f, 0.020f, s)));
-                float g_cy = visual_half_h + top_pad;
+                float g_cy = top_pad + visual_half_h;
                 float icon_bottom = g_cy + visual_half_h;
 
                 if (ink_brush) {
                     D2D1_MATRIX_3X2_F prev_xf = {};
                     rt->GetTransform(&prev_xf);
-                    if (dev->kind == OCTANS_DEV_MOUSE) {
-                        /* Mouse silhouette is inherently narrow (11/24 aspect); widen gently so it reads boldly at 16-24px! */
-                        float sx_mouse = LerpF(1.14f, 1.32f, s);
-                        rt->SetTransform(MatrixScaleTranslate(sx_mouse, 1.0f, cx, g_cy, 0.0f, 0.0f));
+                    float eff_half_w = g_half * sx_icon;
+                    float max_half_w = sz * 0.485f;
+                    if (eff_half_w > max_half_w && g_half > 0.1f) {
+                        sx_icon = max_half_w / g_half;
                     }
+                    rt->SetTransform(MatrixScaleTranslate(sx_icon, 1.0f, cx, g_cy, 0.0f, 0.0f));
                     DrawDeviceGlyph(g_tray.d2d_factory.Get(), rt.Get(), ink_brush.Get(), dev->kind, cx, g_cy, g_half, true);
                     rt->SetTransform(prev_xf);
                 }
 
                 if (dev->power_state == OCTANS_PWR_CHARGING && num_brush) {
-                    float br = sz * LerpF(0.145f, 0.175f, s);
+                    float br = sz * LerpF(0.135f, 0.160f, s);
                     float bx = sz - br - 0.25f;
-                    float by = g_cy + visual_half_h * 0.25f;
+                    float by = g_cy + visual_half_h * 0.08f;
+                    if (by + br > icon_bottom) by = icon_bottom - br;
                     ComPtr<ID2D1SolidColorBrush> bg_b;
                     rt->CreateSolidColorBrush(
                         tb_dark ? HexColor(0x18181A, 0.96f) : HexColor(0xFFFFFF, 0.96f),
                         bg_b.Put()
                     );
                     if (bg_b) rt->FillEllipse(MakeEllipse(bx, by, br, br), bg_b.Get());
-                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.90f);
+                    DrawLightningBolt(g_tray.d2d_factory.Get(), rt.Get(), num_brush.Get(), bx, by, br * 0.88f);
                 }
 
                 wchar_t num_buf[8] = {};
@@ -355,29 +361,60 @@ static HICON RenderTrayIcon(
                 } else {
                     _snwprintf(num_buf, 7, L"%d", static_cast<int>(dev->battery_percent));
                 }
+                UINT32 nlen = static_cast<UINT32>(wcslen(num_buf));
 
-                /* Bold high-contrast Anthropic Serif digits: large & crisp with zero clipping or overlap */
-                float base_ratio = (s <= 0.50f)
-                    ? LerpF(0.415f, 0.495f, s * 2.0f)
-                    : LerpF(0.495f, 0.525f, (s - 0.50f) * 2.0f);
-                float font_ratio = (dev->battery_percent >= 100) ? (base_ratio * 0.78f) : base_ratio;
-                float font_sz = sz * font_ratio;
-                if (font_sz < 10.0f) font_sz = 10.0f;
+                /* Exact baseline-aligned digit band below icon_bottom with guaranteed >= 1px blank separator */
+                float gap_px = LerpF(sz * 0.095f, sz * 0.062f, s);
+                if (gap_px < 1.95f) gap_px = 1.95f;
+                float want_top = icon_bottom + gap_px;
+                float want_bot = sz - LerpF(sz * 0.025f, 0.25f, s);
+                float want_h = want_bot - want_top;
+                if (want_h < 8.0f) want_h = 8.0f;
+
+                float font_sz = want_h / 0.725f;
+                if (font_sz < 11.0f) font_sz = 11.0f;
 
                 ComPtr<IDWriteTextFormat> fmt;
-                if (num_brush && CreateOctansDigitFormat(g_tray.dwrite_factory.Get(), DWRITE_FONT_WEIGHT_EXTRA_BOLD, font_sz, fmt)) {
-                    /* Always strictly below icon_bottom with crisp hairline breathing room and zero bottom clip */
-                    float gap_px = sz * LerpF(0.052f, 0.030f, s);
-                    float top_num_y = icon_bottom + gap_px;
-                    D2D1_RECT_F tr = MakeRect(-2.5f, top_num_y, sz + 2.5f, sz);
-                    rt->DrawText(
-                        num_buf,
-                        static_cast<UINT32>(wcslen(num_buf)),
-                        fmt.Get(),
-                        tr,
-                        num_brush.Get(),
-                        D2D1_DRAW_TEXT_OPTIONS_NONE
-                    );
+                if (num_brush && CreateOctansDigitFormat(g_tray.dwrite_factory.Get(), DWRITE_FONT_WEIGHT_BLACK, font_sz, fmt)) {
+                    fmt->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+                    fmt->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+
+                    ComPtr<IDWriteTextLayout> layout;
+                    if (SUCCEEDED(g_tray.dwrite_factory->CreateTextLayout(num_buf, nlen, fmt.Get(), sz * 3.0f, sz * 2.0f, layout.Put()))) {
+                        DWRITE_TEXT_METRICS tm = {};
+                        DWRITE_LINE_METRICS lm = {};
+                        UINT32 lc = 0;
+                        layout->GetMetrics(&tm);
+                        layout->GetLineMetrics(&lm, 1, &lc);
+
+                        float nat_w = (tm.width > 1.0f) ? tm.width : (font_sz * 0.9f);
+                        float baseline = (lc > 0 && lm.baseline > 1.0f) ? lm.baseline : (font_sz * 0.85f);
+
+                        float target_w_frac = 0.74f;
+                        if (nlen >= 3) {
+                            target_w_frac = (s <= 0.50f) ? LerpF(0.78f, 0.90f, s * 2.0f) : LerpF(0.90f, 0.96f, (s - 0.50f) * 2.0f);
+                        } else if (nlen == 2) {
+                            target_w_frac = (s <= 0.50f) ? LerpF(0.64f, 0.77f, s * 2.0f) : LerpF(0.77f, 0.88f, (s - 0.50f) * 2.0f);
+                        } else {
+                            target_w_frac = (s <= 0.50f) ? LerpF(0.36f, 0.45f, s * 2.0f) : LerpF(0.45f, 0.54f, (s - 0.50f) * 2.0f);
+                        }
+                        float sx_num = ClampF((sz * target_w_frac) / nat_w, 0.62f, 1.24f);
+                        float draw_x = cx - nat_w * 0.5f - tm.left;
+                        float draw_y = want_bot - baseline;
+
+                        D2D1_MATRIX_3X2_F prev_xf = {};
+                        rt->GetTransform(&prev_xf);
+                        rt->SetTransform(MatrixScaleTranslate(sx_num, 1.0f, cx, want_bot, 0.0f, 0.0f));
+                        rt->DrawTextLayout(MakePt(draw_x, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+
+                        /* Purely horizontal micro-bolding (+0.0px vertical height -> zero overlap!) */
+                        float bold_dx = LerpF(0.16f, 0.46f, s) * (sz / 32.0f);
+                        if (bold_dx >= 0.18f) {
+                            rt->DrawTextLayout(MakePt(draw_x - bold_dx, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+                            rt->DrawTextLayout(MakePt(draw_x + bold_dx, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
+                        }
+                        rt->SetTransform(prev_xf);
+                    }
                 }
             } else {
                 /* =====================================================================

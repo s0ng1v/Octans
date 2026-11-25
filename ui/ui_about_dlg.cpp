@@ -465,6 +465,7 @@ static LRESULT CALLBACK AboutSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
                 int ctl = LOWORD(wp);
                 if (ctl == IDC_ABOUT_CLOSE) {
                     st->done = true;
+                    PostMessageW(hwnd, WM_NULL, 0, 0);
                     return 0;
                 }
                 if (ctl == IDC_ABOUT_SECONDARY) {
@@ -528,7 +529,10 @@ static LRESULT CALLBACK AboutSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
             return 1;
 
         case WM_CLOSE:
-            if (st) st->done = true;
+            if (st) {
+                st->done = true;
+                PostMessageW(hwnd, WM_NULL, 0, 0);
+            }
             return 0;
 
         default:

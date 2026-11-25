@@ -211,6 +211,24 @@ static inline UINT GetWindowDpiSafe(HWND hwnd) {
     return dpi >= 72 ? dpi : 96;
 }
 
+static inline UINT GetMonitorDpiSafe(HMONITOR mon, HWND fallback_hwnd) {
+    if (mon) {
+        typedef HRESULT (WINAPI *GetDpiForMonitorFn)(HMONITOR, int, UINT *, UINT *);
+        HMODULE shcore = GetModuleHandleW(L"shcore.dll");
+        if (!shcore) shcore = LoadLibraryW(L"shcore.dll");
+        if (shcore) {
+            auto fn = reinterpret_cast<GetDpiForMonitorFn>(GetProcAddress(shcore, "GetDpiForMonitor"));
+            if (fn) {
+                UINT dx = 0, dy = 0;
+                if (SUCCEEDED(fn(mon, 0, &dx, &dy)) && dx >= 72) {
+                    return dx;
+                }
+            }
+        }
+    }
+    return GetWindowDpiSafe(fallback_hwnd);
+}
+
 static inline int GetSystemMetricsDpiSafe(int index, UINT dpi) {
     typedef int (WINAPI *GetSystemMetricsForDpiFn)(int, UINT);
     HMODULE user32 = GetModuleHandleW(L"user32.dll");
@@ -275,6 +293,9 @@ struct UiState {
     uint64_t last_inactive_hide_ms = 0;
     TrayStyle tray_style = TRAY_STYLE_OCTANS;
     float tray_scale = kDefaultTrayScale;
+    bool has_custom_panel_pos = false;
+    int custom_panel_x = 0;
+    int custom_panel_y = 0;
 
     octans_backend_ops_t ops = {};
     void *backend_ctx = nullptr;
@@ -316,6 +337,7 @@ void ActionShowContextMenu(int screen_x, int screen_y, int clicked_device_index,
 void ActionPromptRenameDevice(int device_index);
 void ActionToggleTrayStyle(TrayStyle style);
 void ActionSetTrayScale(float scale);
+void ActionSavePanelPosition(int x, int y);
 void ActionToggleAutostart();
 void ActionShowAboutDialog();
 void ActionRunDemoAction(int action_id);

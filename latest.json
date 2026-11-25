@@ -1,7 +1,7 @@
 {
   "version": "0.5.0",
-  "notes": "全新 Octans 液态渐变水波默认样式；Pulsar 托盘图标大幅放大；彻底消除常驻显卡/输入法内存膨胀；新增狼蛛/雷柏/达尔优/黑爵/ATK/海盗船/杜伽/HyperX/IQUNIX 协议；修复重命名并内置 SHA256 自动升级。",
-  "sha256": "CB9AD7BFEAEBCBCF76A857D9BE40B9E4ED531C3E1DDB4D4E94979BA8950D64E1",
+  "notes": "全新 Octans 液态渐变水波默认样式；面板支持任意空白区拖动并记忆位置，修复任务栏重叠；右键菜单失焦 0ms 瞬时收起；Pulsar 托盘大字重新标定且零重叠；常驻内存降至 ~2MB；新增多品牌 2.4G 协议与 SHA256 自动升级。",
+  "sha256": "12790100EE7DEB36059EF2053F3A0AC95168A91327571E916CFDD2E414615739",
   "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
   "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
   "page_cn": "https://atomgit.com/s0ng1v/Octans/releases",

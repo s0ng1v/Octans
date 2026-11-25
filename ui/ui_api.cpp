@@ -46,6 +46,13 @@ static void LoadUiConfig() {
     int scale_pct = static_cast<int>(GetPrivateProfileIntW(L"UI", L"TrayScalePct", 50, ini));
     g_state.tray_scale = ClampF(static_cast<float>(scale_pct) / 100.0f, 0.0f, 1.0f);
 
+    g_state.has_custom_panel_pos = (GetPrivateProfileIntW(L"UI", L"PanelPosCustom", 0, ini) != 0);
+    wchar_t pos_w[32] = {};
+    GetPrivateProfileStringW(L"UI", L"PanelPosX", L"0", pos_w, 32, ini);
+    g_state.custom_panel_x = _wtoi(pos_w);
+    GetPrivateProfileStringW(L"UI", L"PanelPosY", L"0", pos_w, 32, ini);
+    g_state.custom_panel_y = _wtoi(pos_w);
+
     wchar_t pins_w[1024] = {};
     GetPrivateProfileStringW(L"UI", L"PinnedIds", L"", pins_w, 1024, ini);
     g_state.pinned_count = 0;
@@ -108,6 +115,12 @@ static void SaveUiConfig() {
     int pct = static_cast<int>(roundf(ClampF(g_state.tray_scale, 0.0f, 1.0f) * 100.0f));
     _snwprintf(buf, 31, L"%d", pct);
     WritePrivateProfileStringW(L"UI", L"TrayScalePct", buf, ini);
+
+    WritePrivateProfileStringW(L"UI", L"PanelPosCustom", g_state.has_custom_panel_pos ? L"1" : L"0", ini);
+    _snwprintf(buf, 31, L"%d", g_state.custom_panel_x);
+    WritePrivateProfileStringW(L"UI", L"PanelPosX", buf, ini);
+    _snwprintf(buf, 31, L"%d", g_state.custom_panel_y);
+    WritePrivateProfileStringW(L"UI", L"PanelPosY", buf, ini);
 
     char pins_u8[1024] = {};
     size_t pos = 0;
@@ -461,6 +474,13 @@ void ActionSetTrayScale(float scale) {
     }
 }
 
+void ActionSavePanelPosition(int x, int y) {
+    g_state.has_custom_panel_pos = true;
+    g_state.custom_panel_x = x;
+    g_state.custom_panel_y = y;
+    SaveUiConfig();
+}
+
 void ActionToggleAutostart() {
     if (!g_state.ops.set_autostart) return;
     int cur = g_state.ops.get_autostart ? g_state.ops.get_autostart(g_state.backend_ctx) : 0;
@@ -505,6 +525,7 @@ void ActionSetDemoHooks(const DemoMenuHooks *hooks) {
         g_state.initial_scan_done = true;
         g_state.tray_style = TRAY_STYLE_OCTANS;
         g_state.tray_scale = kDefaultTrayScale;
+        g_state.has_custom_panel_pos = false;
         g_state.pinned_count = 0;
         g_state.hidden_count = 0;
         for (size_t i = 0; i < MAX_DEVICES; ++i) {
@@ -697,6 +718,9 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
     st.is_dark = DetectSystemDarkMode();
     st.tray_style = TRAY_STYLE_OCTANS;
     st.tray_scale = kDefaultTrayScale;
+    st.has_custom_panel_pos = false;
+    st.custom_panel_x = 0;
+    st.custom_panel_y = 0;
     st.device_count = 0;
     st.pinned_count = 0;
     for (size_t i = 0; i < MAX_DEVICES; ++i) st.pinned_ids[i][0] = '\0';

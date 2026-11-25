@@ -47,6 +47,7 @@ struct MenuState {
     bool has_demo = false;
 
     uint64_t created_ms = 0;
+    bool ready_for_dismiss = false;
     bool done = false;
     bool dismissed_by_outside = false;
     bool dragging_slider = false;
@@ -95,6 +96,17 @@ struct MenuState {
     ComPtr<IDWriteTextFormat> fmt_seg;
     ComPtr<IDWriteTextFormat> fmt_right;
 };
+
+static void DismissMenu(MenuState &m, bool outside) {
+    if (m.done) return;
+    m.done = true;
+    if (outside) m.dismissed_by_outside = true;
+    if (m.hwnd) {
+        /* Hide immediately (0ms visual dismiss) and post WM_NULL to wake GetMessageW! */
+        ShowWindow(m.hwnd, SW_HIDE);
+        PostMessageW(m.hwnd, WM_NULL, 0, 0);
+    }
+}
 
 static bool PtInR(const D2D1_RECT_F &r, float x, float y) {
     return (r.right > r.left) && (r.bottom > r.top) &&
@@ -813,18 +825,18 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                 switch (hz) {
                     case HIT_REFRESH:
                         ActionTriggerRefresh();
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     case HIT_SCAN_DEVICES:
                         m->pending_post_action = 3;
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     case HIT_PIN_DEVICE: {
                         const UiState &st = GetState();
                         if (m->device_index >= 0 && static_cast<size_t>(m->device_index) < st.device_count) {
                             ActionTogglePinDevice(st.devices[m->device_index].id);
                             if (m->mode == MENU_MODE_PANEL_DEVICE) {
-                                m->done = true;
+                                DismissMenu(*m, false);
                             } else {
                                 RepaintMenu(*m);
                             }
@@ -833,11 +845,11 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                     }
                     case HIT_RENAME_DEVICE:
                         m->pending_post_action = 1;
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     case HIT_DELETE_DEVICE:
                         m->pending_post_action = 4;
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     case HIT_SEG_OCTANS:
                         ActionToggleTrayStyle(TRAY_STYLE_OCTANS);
@@ -880,11 +892,11 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                         break;
                     case HIT_ABOUT:
                         m->pending_post_action = 5;
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     case HIT_QUIT:
                         m->pending_post_action = 2;
-                        m->done = true;
+                        DismissMenu(*m, false);
                         break;
                     default:
                         break;
@@ -911,18 +923,36 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
 
         case WM_KEYDOWN:
             if (m && wp == VK_ESCAPE) {
-                m->done = true;
+                DismissMenu(*m, false);
                 return 0;
             }
             break;
 
         case WM_ACTIVATE:
-            if (m && LOWORD(wp) == WA_INACTIVE && !m->dragging_slider) {
-                if ((GetTickCount64() - m->created_ms) >= 160ULL) {
-                    HWND activated = reinterpret_cast<HWND>(lp);
-                    m->dismissed_by_outside = (activated != m->owner);
-                    m->done = true;
+            if (m && LOWORD(wp) == WA_INACTIVE && m->ready_for_dismiss && !m->dragging_slider) {
+                HWND activated = reinterpret_cast<HWND>(lp);
+                DismissMenu(*m, activated != m->owner);
+            }
+            return 0;
+
+        case WM_ACTIVATEAPP:
+            if (m && wp == FALSE && m->ready_for_dismiss && !m->dragging_slider) {
+                DismissMenu(*m, true);
+            }
+            return 0;
+
+        case WM_KILLFOCUS:
+            if (m && m->ready_for_dismiss && !m->dragging_slider) {
+                HWND next_w = reinterpret_cast<HWND>(wp);
+                if (next_w != hwnd) {
+                    DismissMenu(*m, next_w != m->owner);
                 }
+            }
+            return 0;
+
+        case WM_CANCELMODE:
+            if (m && m->ready_for_dismiss && !m->dragging_slider) {
+                DismissMenu(*m, true);
             }
             return 0;
 
@@ -959,12 +989,18 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
         registered = true;
     }
 
+    POINT pt = { screen_x, screen_y };
+    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(mon, &mi);
+
     const UiState &st = GetState();
     MenuState m = {};
     m.owner = owner;
     m.mode = mode;
     m.device_index = device_index;
-    m.dpi = GetWindowDpiSafe(owner);
+    m.dpi = GetMonitorDpiSafe(mon, owner);
     QueryPerformanceFrequency(&m.qpc_freq);
     m.seg_pos = m.seg_target = static_cast<float>(static_cast<int>(st.tray_style));
     bool auto_on = (st.ops.get_autostart && st.ops.get_autostart(st.backend_ctx) != 0);
@@ -977,12 +1013,6 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     int px_w = static_cast<int>(ceilf(m.logical_w * scale));
     int px_h = static_cast<int>(ceilf(m.logical_h * scale));
     int margin = static_cast<int>(ceilf(8.0f * scale));
-
-    POINT pt = { screen_x, screen_y };
-    HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi = {};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfoW(mon, &mi);
 
     int x = screen_x;
     int y = screen_y;
@@ -1013,15 +1043,18 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     DwmSetWindowAttribute(hwnd, 33, &corner, sizeof(corner));
 
     m.created_ms = GetTickCount64();
+    m.ready_for_dismiss = false;
     ShowWindow(hwnd, SW_SHOW);
     SetForegroundWindow(hwnd);
     SetActiveWindow(hwnd);
     RepaintMenu(m);
+    m.ready_for_dismiss = true;
 
     MSG msg = {};
     while (!m.done && GetMessageW(&msg, nullptr, 0, 0) > 0) {
+        if (m.done) break;
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
-            m.done = true;
+            DismissMenu(m, false);
             break;
         }
         TranslateMessage(&msg);

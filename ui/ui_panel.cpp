@@ -56,6 +56,13 @@ struct PanelContext {
     bool has_anchor = false;
     bool anchor_from_top = false;
 
+    /* Drag-to-move state (hold any non-interactive area) */
+    bool dragging = false;
+    bool drag_moved = false;
+    POINT drag_start_cursor = {};
+    int drag_start_x = 0;
+    int drag_start_y = 0;
+
     /* Offscreen 32-bit premultiplied DIB size */
     UINT buf_w = 0;
     UINT buf_h = 0;
@@ -443,10 +450,80 @@ static void ComputeLayoutMetrics() {
     }
 }
 
+static RECT ComputeMonitorSafeWorkRect(const MONITORINFO &mi) {
+    RECT safe = mi.rcWork;
+    const LONG mid_x = (mi.rcMonitor.left + mi.rcMonitor.right) / 2;
+    const LONG mid_y = (mi.rcMonitor.top + mi.rcMonitor.bottom) / 2;
+
+    auto subtract_taskbar = [&](HWND tb) {
+        if (!tb || !IsWindowVisible(tb)) return;
+        RECT tr = {};
+        if (!GetWindowRect(tb, &tr)) return;
+        int tb_w = tr.right - tr.left;
+        int tb_h = tr.bottom - tr.top;
+        if (tb_w <= 0 || tb_h <= 0) return;
+
+        /* Ensure taskbar intersects this monitor meaningfully */
+        LONG ix0 = (tr.left > mi.rcMonitor.left) ? tr.left : mi.rcMonitor.left;
+        LONG ix1 = (tr.right < mi.rcMonitor.right) ? tr.right : mi.rcMonitor.right;
+        LONG iy0 = (tr.top > mi.rcMonitor.top) ? tr.top : mi.rcMonitor.top;
+        LONG iy1 = (tr.bottom < mi.rcMonitor.bottom) ? tr.bottom : mi.rcMonitor.bottom;
+        if ((ix1 - ix0) < 16 || (iy1 - iy0) < 16) return;
+
+        if (tb_w > tb_h && tb_h >= 20) {
+            if (tr.top >= mid_y && tr.top < mi.rcMonitor.bottom - 12) {
+                if (tr.top < safe.bottom) safe.bottom = tr.top;
+            } else if (tr.bottom <= mid_y && tr.bottom > mi.rcMonitor.top + 12) {
+                if (tr.bottom > safe.top) safe.top = tr.bottom;
+            }
+        } else if (tb_h > tb_w && tb_w >= 20) {
+            if (tr.left >= mid_x && tr.left < mi.rcMonitor.right - 12) {
+                if (tr.left < safe.right) safe.right = tr.left;
+            } else if (tr.right <= mid_x && tr.right > mi.rcMonitor.left + 12) {
+                if (tr.right > safe.left) safe.left = tr.right;
+            }
+        }
+    };
+
+    subtract_taskbar(FindWindowW(L"Shell_TrayWnd", nullptr));
+    HWND sec = nullptr;
+    while ((sec = FindWindowExW(nullptr, sec, L"Shell_SecondaryTrayWnd", nullptr)) != nullptr) {
+        subtract_taskbar(sec);
+    }
+    return safe;
+}
+
 static void ComputeTargetPosition(int ax, int ay) {
     g_panel.anchor_x = ax;
     g_panel.anchor_y = ay;
     g_panel.has_anchor = true;
+
+    const UiState &st = GetState();
+    if (st.has_custom_panel_pos) {
+        POINT cpt = { st.custom_panel_x + 120, st.custom_panel_y + 120 };
+        HMONITOR mon = MonitorFromPoint(cpt, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO mi = {};
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(mon, &mi);
+
+        UINT dpi = GetMonitorDpiSafe(mon, g_panel.hwnd);
+        g_panel.dpi = dpi;
+        float scale = static_cast<float>(dpi) / 96.0f;
+        int px_w = static_cast<int>(ceilf(g_panel.logical_w * scale));
+        int px_h = static_cast<int>(ceilf(g_panel.logical_h * scale));
+
+        int x = st.custom_panel_x;
+        int y = st.custom_panel_y;
+        if (x + px_w > mi.rcMonitor.right) x = mi.rcMonitor.right - px_w;
+        if (x < mi.rcMonitor.left) x = mi.rcMonitor.left;
+        if (y + px_h > mi.rcMonitor.bottom) y = mi.rcMonitor.bottom - px_h;
+        if (y < mi.rcMonitor.top) y = mi.rcMonitor.top;
+
+        g_panel.anchor_from_top = false;
+        g_panel.target_x = x;
+        g_panel.target_y = y;
+        return;
+    }
 
     POINT pt = { ax, ay };
     HMONITOR mon = MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST);
@@ -454,8 +531,8 @@ static void ComputeTargetPosition(int ax, int ay) {
     mi.cbSize = sizeof(mi);
     GetMonitorInfoW(mon, &mi);
 
-    /* Query monitor DPI cleanly */
-    UINT dpi = GetWindowDpiSafe(g_panel.hwnd);
+    /* Query target monitor's real DPI BEFORE moving HWND so mixed-DPI setups never undercompute px_h! */
+    UINT dpi = GetMonitorDpiSafe(mon, g_panel.hwnd);
     g_panel.dpi = dpi;
     float scale = static_cast<float>(dpi) / 96.0f;
 
@@ -463,26 +540,28 @@ static void ComputeTargetPosition(int ax, int ay) {
     int px_h = static_cast<int>(ceilf(g_panel.logical_h * scale));
     int margin = static_cast<int>(ceilf(12.0f * scale));
 
+    RECT safe = ComputeMonitorSafeWorkRect(mi);
+
     int x = ax - px_w / 2;
-    if (x + px_w > mi.rcWork.right - margin) {
-        x = mi.rcWork.right - margin - px_w;
+    if (x + px_w > safe.right - margin) {
+        x = safe.right - margin - px_w;
     }
-    if (x < mi.rcWork.left + margin) {
-        x = mi.rcWork.left + margin;
+    if (x < safe.left + margin) {
+        x = safe.left + margin;
     }
 
     int y = 0;
-    if (ay < mi.rcWork.top + static_cast<int>(64.0f * scale)) {
+    if (ay < safe.top + static_cast<int>(64.0f * scale)) {
         /* Top taskbar */
         g_panel.anchor_from_top = true;
-        y = mi.rcWork.top + margin;
+        y = safe.top + margin;
     } else {
         /* Standard bottom taskbar */
         g_panel.anchor_from_top = false;
-        y = mi.rcWork.bottom - margin - px_h;
+        y = safe.bottom - margin - px_h;
     }
-    if (y < mi.rcWork.top + margin) y = mi.rcWork.top + margin;
-    if (y + px_h > mi.rcWork.bottom - margin) y = mi.rcWork.bottom - margin - px_h;
+    if (y < safe.top + margin) y = safe.top + margin;
+    if (y + px_h > safe.bottom - margin) y = safe.bottom - margin - px_h;
 
     g_panel.target_x = x;
     g_panel.target_y = y;
@@ -719,15 +798,19 @@ static void RenderPanel(HDC paint_dc = nullptr) {
 
     ctx->BeginDraw();
     if (is_exiting) {
-        /* Compute pivot directly toward the clicked tray icon along the bottom (or top) edge */
+        /* Compute exit pivot: in-place gentle settle when user-positioned, or toward tray icon when anchored */
         float pivot_x = g_panel.logical_w * 0.5f;
-        if (g_panel.has_anchor) {
-            float rel_x = static_cast<float>(g_panel.anchor_x - g_panel.target_x) / scale;
-            pivot_x = ClampF(rel_x, 32.0f, g_panel.logical_w - 32.0f);
+        float pivot_y = g_panel.logical_h * 0.5f;
+        float ty = exit_accel * 10.0f;
+        if (!st.has_custom_panel_pos) {
+            if (g_panel.has_anchor) {
+                float rel_x = static_cast<float>(g_panel.anchor_x - g_panel.target_x) / scale;
+                pivot_x = ClampF(rel_x, 32.0f, g_panel.logical_w - 32.0f);
+            }
+            pivot_y = g_panel.anchor_from_top ? 0.0f : g_panel.logical_h;
+            ty = (g_panel.anchor_from_top ? -1.0f : 1.0f) * (exit_accel * 26.0f);
         }
-        float pivot_y = g_panel.anchor_from_top ? 0.0f : g_panel.logical_h;
         float s = LerpF(1.0f, 0.78f, exit_accel);
-        float ty = (g_panel.anchor_from_top ? -1.0f : 1.0f) * (exit_accel * 26.0f);
         ctx->SetTransform(MatrixScaleTranslate(s, s, pivot_x, pivot_y, 0.0f, ty));
     } else {
         ctx->SetTransform(MatrixIdentity());
@@ -1589,7 +1672,60 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             }
             break;
 
+        case WM_LBUTTONDOWN: {
+            float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+            float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
+            float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
+            int card = -1;
+            int btn = 0;
+            HitTestAt(dx, dy, &card, &btn);
+            if (card < 0 && btn == 0) {
+                g_panel.dragging = true;
+                g_panel.drag_moved = false;
+                GetCursorPos(&g_panel.drag_start_cursor);
+                RECT wr = {};
+                if (GetWindowRect(hwnd, &wr)) {
+                    g_panel.drag_start_x = wr.left;
+                    g_panel.drag_start_y = wr.top;
+                } else {
+                    g_panel.drag_start_x = g_panel.target_x;
+                    g_panel.drag_start_y = g_panel.target_y;
+                }
+                SetCapture(hwnd);
+            }
+            return 0;
+        }
+
         case WM_MOUSEMOVE: {
+            if (g_panel.dragging) {
+                POINT cur = {};
+                GetCursorPos(&cur);
+                int ddx = cur.x - g_panel.drag_start_cursor.x;
+                int ddy = cur.y - g_panel.drag_start_cursor.y;
+                if (!g_panel.drag_moved && (abs(ddx) >= 3 || abs(ddy) >= 3)) {
+                    g_panel.drag_moved = true;
+                    g_panel.panel_t = 1.0f;
+                }
+                if (g_panel.drag_moved) {
+                    float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+                    int px_w = static_cast<int>(ceilf(g_panel.logical_w * scale));
+                    int nx = g_panel.drag_start_x + ddx;
+                    int ny = g_panel.drag_start_y + ddy;
+                    HMONITOR mon = MonitorFromPoint(cur, MONITOR_DEFAULTTONEAREST);
+                    MONITORINFO mi = {};
+                    mi.cbSize = sizeof(mi);
+                    if (GetMonitorInfoW(mon, &mi)) {
+                        if (nx < mi.rcMonitor.left - px_w + 64) nx = mi.rcMonitor.left - px_w + 64;
+                        if (nx > mi.rcMonitor.right - 64) nx = mi.rcMonitor.right - 64;
+                        if (ny < mi.rcMonitor.top) ny = mi.rcMonitor.top;
+                        if (ny > mi.rcMonitor.bottom - 48) ny = mi.rcMonitor.bottom - 48;
+                    }
+                    g_panel.target_x = nx;
+                    g_panel.target_y = ny;
+                    SetWindowPos(hwnd, HWND_TOPMOST, nx, ny, 0, 0, SWP_NOSIZE | SWP_NOACTIVATE);
+                }
+                return 0;
+            }
             if (!g_panel.mouse_tracked) {
                 TRACKMOUSEEVENT tme = {};
                 tme.cbSize = sizeof(tme);
@@ -1636,6 +1772,21 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             return 0;
 
         case WM_LBUTTONUP: {
+            if (g_panel.dragging) {
+                bool moved = g_panel.drag_moved;
+                g_panel.dragging = false;
+                g_panel.drag_moved = false;
+                if (GetCapture() == hwnd) ReleaseCapture();
+                if (moved) {
+                    RECT wr = {};
+                    if (GetWindowRect(hwnd, &wr)) {
+                        g_panel.target_x = wr.left;
+                        g_panel.target_y = wr.top;
+                    }
+                    ActionSavePanelPosition(g_panel.target_x, g_panel.target_y);
+                }
+                return 0;
+            }
             float scale = static_cast<float>(g_panel.dpi) / 96.0f;
             float dx = static_cast<float>(static_cast<short>(LOWORD(lp))) / scale;
             float dy = static_cast<float>(static_cast<short>(HIWORD(lp))) / scale;
@@ -1710,8 +1861,24 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
             break;
         }
 
+        case WM_CAPTURECHANGED:
+            if (g_panel.dragging) {
+                bool moved = g_panel.drag_moved;
+                g_panel.dragging = false;
+                g_panel.drag_moved = false;
+                if (moved) {
+                    RECT wr = {};
+                    if (GetWindowRect(hwnd, &wr)) {
+                        g_panel.target_x = wr.left;
+                        g_panel.target_y = wr.top;
+                    }
+                    ActionSavePanelPosition(g_panel.target_x, g_panel.target_y);
+                }
+            }
+            return 0;
+
         case WM_ACTIVATE: {
-            if (LOWORD(wp) == WA_INACTIVE && !GetState().modal_open && g_panel.want_visible) {
+            if (LOWORD(wp) == WA_INACTIVE && !GetState().modal_open && !g_panel.dragging && g_panel.want_visible) {
                 /* Guard against taskbar focus bounce within 160ms of opening the flyout */
                 if ((GetTickCount64() - g_panel.last_show_ms) >= 160ULL) {
                     GetState().last_inactive_hide_ms = GetTickCount64();
@@ -1723,7 +1890,12 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
 
         case WM_DPICHANGED: {
             g_panel.dpi = HIWORD(wp);
-            if (g_panel.has_anchor) {
+            if (g_panel.dragging) {
+                float scale = static_cast<float>(g_panel.dpi) / 96.0f;
+                int px_w = static_cast<int>(ceilf(g_panel.logical_w * scale));
+                int px_h = static_cast<int>(ceilf(g_panel.logical_h * scale));
+                SetWindowPos(hwnd, HWND_TOPMOST, g_panel.target_x, g_panel.target_y, px_w, px_h, SWP_NOACTIVATE);
+            } else if (g_panel.has_anchor) {
                 ComputeTargetPosition(g_panel.anchor_x, g_panel.anchor_y);
                 ApplyWindowBoundsForAnim();
             }
@@ -1848,6 +2020,11 @@ void PanelShow(int anchor_x, int anchor_y, bool toggle_if_visible) {
 
 void PanelHide() {
     if (!g_panel.hwnd) return;
+    if (g_panel.dragging) {
+        g_panel.dragging = false;
+        g_panel.drag_moved = false;
+        if (GetCapture() == g_panel.hwnd) ReleaseCapture();
+    }
     if (!g_panel.want_visible && !IsWindowVisible(g_panel.hwnd)) return;
     g_panel.want_visible = false;
     g_panel.exiting_layered = true;

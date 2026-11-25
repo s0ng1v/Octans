@@ -215,6 +215,7 @@ static void ConfirmSheet(RenameSheetState &st) {
     }
     st.accepted = true;
     st.done = true;
+    if (st.hwnd) PostMessageW(st.hwnd, WM_NULL, 0, 0);
 }
 
 static LRESULT CALLBACK RenameBtnSubclassProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
@@ -286,6 +287,7 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
                 if (ctl == IDC_RENAME_CANCEL) {
                     st->accepted = false;
                     st->done = true;
+                    PostMessageW(hwnd, WM_NULL, 0, 0);
                     return 0;
                 }
             }
@@ -336,6 +338,7 @@ static LRESULT CALLBACK RenameSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM l
             if (st) {
                 st->accepted = false;
                 st->done = true;
+                PostMessageW(hwnd, WM_NULL, 0, 0);
             }
             return 0;
 
