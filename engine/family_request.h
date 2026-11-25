@@ -75,8 +75,15 @@ int octans_proto_parse_keyboard(const uint8_t *buf,
                                 uint32_t expected_req_id,
                                 octans_proto_reading_t *out);
 
+void octans_proto_build_mchose_hid4d(uint8_t report_id, uint16_t cmd, uint8_t *out_buf, size_t len);
+int octans_proto_parse_mchose_hid4d(const uint8_t *buf, size_t len, uint16_t expected_vid, octans_proto_reading_t *out);
+int octans_proto_parse_mchose_hid4d_batt(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 void octans_proto_build_mchose_m7(uint8_t report_id, uint8_t cmd, uint8_t *out_buf, size_t len);
 int octans_proto_parse_mchose_m7(const uint8_t *buf, size_t len, uint8_t expected_cmd, octans_proto_reading_t *out);
+void octans_proto_build_mchose_g7max(uint8_t report_id, uint8_t out64[64]);
+int octans_proto_parse_mchose_g7max(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+int octans_proto_parse_mchose_by(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out);
+int octans_proto_parse_mchose_audio_mc(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,

@@ -468,7 +468,7 @@ static void test_keyboards_and_independent(void) {
     ASSERT_EQ_INT(73, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
 
-    const uint8_t mv9[4] = {0x55, 0x65, 60, 0x00};
+    const uint8_t mv9[4] = {0x55, 0x65, 60, 0x03};
     octans_reading_init(&r);
     ASSERT_EQ_INT(1, octans_proto_parse_indep(mv9, 4, VAR_INDEP_MCHOSE_V9, &r));
     ASSERT_EQ_INT(60, r.battery_percent);
@@ -790,6 +790,114 @@ static void test_usb_etw_learner(void) {
     ASSERT_EQ_INT(0x07, cands[0].rule.req[0]);
 }
 
+static void test_mchose_v2_suite(void) {
+    octans_proto_reading_t r;
+
+    /* F1 / F4 HID4D: build 0x0900 (XOR=0x08) & 0x0904 (XOR=0x0C) */
+    uint8_t h4d[64];
+    octans_proto_build_mchose_hid4d(0x4Du, 0x0900u, h4d, sizeof(h4d));
+    ASSERT_EQ_INT(0x4D, h4d[0]);
+    ASSERT_EQ_INT(0x01, h4d[1]);
+    ASSERT_EQ_INT(0x01, h4d[2]);
+    ASSERT_EQ_INT(0x00, h4d[4]);
+    ASSERT_EQ_INT(0x09, h4d[5]);
+    ASSERT_EQ_INT(0x08, h4d[8]);
+
+    octans_proto_build_mchose_hid4d(0x4Du, 0x0904u, h4d, sizeof(h4d));
+    ASSERT_EQ_INT(0x04, h4d[4]);
+    ASSERT_EQ_INT(0x0C, h4d[8]);
+
+    /* F1 0x0900 response auto-aligned by VID LE (0x37 0x38) with RID 0x4D prefix */
+    uint8_t f1_rep[64] = {0};
+    f1_rep[0] = 0x4Du; f1_rep[1] = 0x01u; f1_rep[4] = 0x00u; f1_rep[5] = 0x09u;
+    f1_rep[8] = 0x37u; f1_rep[9] = 0x38u; /* VID 0x3837 LE at p=8 */
+    f1_rep[8 + 11] = 1u;  /* chargeStatus = charging */
+    f1_rep[8 + 12] = 88u; /* batteryLevel = 88% */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_hid4d(f1_rep, sizeof(f1_rep), 0x3837u, &r));
+    ASSERT_EQ_INT(88, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* F4 0x0904 response (CZ keyboard dedicated battery cmd) */
+    uint8_t f4_rep[64] = {0};
+    f4_rep[0] = 0x4Du; f4_rep[4] = 0x04u; f4_rep[5] = 0x09u;
+    f4_rep[8] = 2u;  /* full */
+    f4_rep[9] = 100u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_hid4d_batt(f4_rep, sizeof(f4_rep), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* F2 MC Feature (0x11 inverted): both with & without RID 0x11 */
+    uint8_t f2_rep[21];
+    memset(f2_rep, 0xFF, sizeof(f2_rep));
+    f2_rep[0] = 0x11u;
+    f2_rep[1] = (uint8_t)(0x06u ^ 0xFFu);
+    f2_rep[2 + 9] = (uint8_t)(76u ^ 0xFFu);
+    f2_rep[2 + 10] = (uint8_t)(0u ^ 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_m7(f2_rep, sizeof(f2_rep), 0x06u, &r));
+    ASSERT_EQ_INT(76, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* F3 BY Keyboard: wired & wireless */
+    uint8_t by_w[12] = {0x06, 0x87, 0, 0, 0, 0, 0, 0, 0x17}; /* chg=1, lvl=7 -> 70% */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(by_w, sizeof(by_w), 1, &r));
+    ASSERT_EQ_INT(70, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t by_wl[8] = {0x13, 0x4A, 0x09}; /* chg=0, lvl=9 -> 90% */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(by_wl, sizeof(by_wl), 0, &r));
+    ASSERT_EQ_INT(90, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* F5 G-Series: with leading 0x00 Windows Report ID */
+    uint8_t g5[16] = {0x00, 0xAA, 0x30, 0, 0, 0, 0, 0, 0, 64, 1};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(g5, sizeof(g5), VAR_INDEP_MCHOSE_G7, &r));
+    ASSERT_EQ_INT(64, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* F6 G7 MAX: build CRC + parse */
+    uint8_t g7m_req[64];
+    octans_proto_build_mchose_g7max(0x03u, g7m_req);
+    ASSERT_EQ_INT(0x03, g7m_req[0]);
+    ASSERT_EQ_INT((0x50 + 0x00 + 0x02 + 0x4F + 0x81) & 0xFF, g7m_req[1]);
+    uint8_t g7m_rep[16] = {0x03, 0, 0, 0, 0, 0, 0, (uint8_t)(0x80u | 55u)};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_g7max(g7m_rep, sizeof(g7m_rep), &r));
+    ASSERT_EQ_INT(55, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* F7 / F9 Audio BLK & V9 TURBO: discharge(2), charging(3), full(4), sleep(26) */
+    uint8_t v9_chg[8] = {0x55, 0x65, 81, 3};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(v9_chg, sizeof(v9_chg), VAR_INDEP_MCHOSE_V9, &r));
+    ASSERT_EQ_INT(81, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t v9_slp[8] = {0x55, 0x65, 0, 26};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_indep(v9_slp, sizeof(v9_slp), VAR_INDEP_MCHOSE_V9, &r));
+    ASSERT_EQ_INT(1, r.asleep);
+    ASSERT_EQ_INT(OCTANS_PWR_SLEEPING, r.power_state);
+
+    /* F8 Audio MC (V9 PRO 2 / R9 / K20 GT): active + asleep */
+    uint8_t mc_ok[16] = {0x55, 0xAA, 0x01, 0x00, 0x03, 0x00, 0x01, 0x0B, 0x01, (uint8_t)(0x80u | 67u)};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_audio_mc(mc_ok, sizeof(mc_ok), &r));
+    ASSERT_EQ_INT(67, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    uint8_t mc_slp[16] = {0x55, 0xAA, 0x01, 0x00, 0x03, 0x00, 0x01, 0x22, 0x00, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_audio_mc(mc_slp, sizeof(mc_slp), &r));
+    ASSERT_EQ_INT(1, r.asleep);
+    ASSERT_EQ_INT(OCTANS_PWR_SLEEPING, r.power_state);
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -801,6 +909,7 @@ int main(void) {
     test_merge_json_and_abi();
     test_user_rules_and_broad();
     test_usb_etw_learner();
+    test_mchose_v2_suite();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

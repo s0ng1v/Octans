@@ -57,11 +57,13 @@ static octans_device_kind_t infer_kind(const octans_hid_info_t *info,
                                        size_t count,
                                        octans_proto_variant_t var) {
     if (var == VAR_JIELI_TLV || var == VAR_INDEP_MCHOSE_V9 ||
+        var == VAR_INDEP_MCHOSE_AUDIO_MC ||
         var == VAR_RAZER_PA_HEADSET || var == VAR_HX_GEN2 || var == VAR_HX_CLOUD3S) {
         return OCTANS_DEV_HEADSET;
     }
     if (var == VAR_KB_ATK_EVISION || var == VAR_KB_VIA_RAW ||
-        var == VAR_KB_KEYCHRON || var == VAR_KB_SEMICO_AA55 || var == VAR_KB_LOFREE_HYZEN) {
+        var == VAR_KB_KEYCHRON || var == VAR_KB_SEMICO_AA55 ||
+        var == VAR_KB_LOFREE_HYZEN || var == VAR_KB_MCHOSE_BY) {
         return OCTANS_DEV_KEYBOARD;
     }
     for (size_t i = 0; i < count; ++i) {
@@ -143,13 +145,16 @@ static size_t select_candidates(const octans_hid_info_t *info,
         out[n++] = VAR_INDEP_VAXEE;
     } else if (up == 0xFF1Cu && u == 0x0092u && out_l >= 32u) {
         out[n++] = VAR_KB_ATK_EVISION;
-    } else if (up == 0xFF01u && feat_l >= 20u) {
-        out[n++] = VAR_INDEP_MCHOSE_M7;
-    } else if (up == 0xFF01u && out_l >= 64u && in_l >= 64u) {
+    } else if ((up == 0xFF01u || up == 0xFF0Bu) && out_l >= 61u && in_l >= 61u) {
+        out[n++] = VAR_INDEP_MCHOSE_HID4D;
+        if (feat_l >= 20u) out[n++] = VAR_INDEP_MCHOSE_M7;
         if (out_l >= 65u) out[n++] = VAR_INDEP_MCHOSE_G7;
         out[n++] = VAR_KB_SEMICO_AA55;
+    } else if (up == 0xFF01u && feat_l >= 20u) {
+        out[n++] = VAR_INDEP_MCHOSE_M7;
     } else if ((up == 0xFF00u || up == 0xFF90u) && out_l >= 64u && in_l >= 64u) {
         out[n++] = VAR_INDEP_MCHOSE_V9;
+        out[n++] = VAR_INDEP_MCHOSE_AUDIO_MC;
         out[n++] = VAR_RAZER_PA_HEADSET;
     } else if (up == 0xFF60u && u == 0x0061u && out_l >= 32u && in_l >= 32u) {
         out[n++] = VAR_KB_VIA_RAW;
