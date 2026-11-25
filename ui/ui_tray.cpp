@@ -149,7 +149,9 @@ static HICON RenderTrayIcon(
     if (!EnsureTrayFactories()) return nullptr;
     if (icon_px < 16) icon_px = 16;
     if (icon_px > 64) icon_px = 64;
-    float s = ClampF(tray_scale, 0.0f, 1.0f);
+    float s = ClampF(tray_scale, 0.0f, kMaxTrayScale);
+    float s01 = ClampF(s, 0.0f, 1.0f);
+    float s_extra = ClampF((s - 1.0f) / (kMaxTrayScale - 1.0f), 0.0f, 1.0f);
 
     ThemePalette pal = GetThemePalette(tb_dark);
 
@@ -203,7 +205,9 @@ static HICON RenderTrayIcon(
 
             if (!dev) {
                 /* 0 pinned devices or no device detected: standalone transparent Octans Logo. */
-                float logo_r = sz * LerpF(0.38f, 0.48f, s);
+                float logo_r = (s <= 1.0f)
+                    ? (sz * LerpF(0.38f, 0.48f, s01))
+                    : (sz * LerpF(0.48f, 0.50f, s_extra));
                 DrawOctansLogo(
                     g_tray.d2d_factory.Get(),
                     rt.Get(),
@@ -234,9 +238,13 @@ static HICON RenderTrayIcon(
                  * boost sil_sz cleanly so at s=0.50 the actual device silhouette spans ~90% of sz! */
                 bool is_wide_sil = (dev->kind == OCTANS_DEV_KEYBOARD || dev->kind == OCTANS_DEV_GAMEPAD);
                 float base_50 = is_wide_sil ? 1.12f : 1.22f;
-                float sil_ratio = (s <= 0.50f)
-                    ? LerpF(base_50 * 0.78f, base_50, s * 2.0f)
-                    : LerpF(base_50, base_50 * 1.08f, (s - 0.50f) * 2.0f);
+                float sil_ratio = (s01 <= 0.50f)
+                    ? LerpF(base_50 * 0.78f, base_50, s01 * 2.0f)
+                    : LerpF(base_50, base_50 * 1.08f, (s01 - 0.50f) * 2.0f);
+                if (s_extra > 0.0f) {
+                    float sil_max = is_wide_sil ? 1.28f : 1.36f;
+                    sil_ratio = LerpF(base_50 * 1.08f, sil_max, s_extra);
+                }
                 float sil_sz = sz * sil_ratio;
                 DrawLiquidSilhouetteGlyph(
                     g_tray.d2d_factory.Get(),
@@ -297,11 +305,14 @@ static HICON RenderTrayIcon(
                                 dev->kind == OCTANS_DEV_EARBUDS);
                 bool is_headset = (dev->kind == OCTANS_DEV_HEADSET);
 
-                float top_pad = LerpF(sz * 0.020f, 0.0f, ClampF(s * 1.6f, 0.0f, 1.0f));
+                float top_pad = LerpF(sz * 0.020f, 0.0f, ClampF(s01 * 1.6f, 0.0f, 1.0f));
                 float target_icon_h = is_tall
-                    ? LerpF(sz * 0.485f, sz * 0.496f, s)
-                    : (is_headset ? LerpF(sz * 0.480f, sz * 0.494f, s)
-                                  : LerpF(sz * 0.470f, sz * 0.496f, s));
+                    ? LerpF(sz * 0.485f, sz * 0.496f, s01)
+                    : (is_headset ? LerpF(sz * 0.480f, sz * 0.494f, s01)
+                                  : LerpF(sz * 0.470f, sz * 0.496f, s01));
+                if (s_extra > 0.0f) {
+                    target_icon_h += 0.018f * sz * s_extra;
+                }
 
                 float g_half = 0.0f;
                 float visual_half_h = 0.0f;
@@ -310,19 +321,33 @@ static HICON RenderTrayIcon(
                     g_half = target_icon_h / 2.10f;
                     visual_half_h = target_icon_h * 0.5f;
                     sx_icon = (dev->kind == OCTANS_DEV_MOUSE)
-                        ? ((s <= 0.50f) ? LerpF(1.26f, 1.40f, s * 2.0f) : LerpF(1.40f, 1.52f, (s - 0.50f) * 2.0f))
-                        : LerpF(1.06f, 1.24f, s);
+                        ? ((s01 <= 0.50f) ? LerpF(1.26f, 1.40f, s01 * 2.0f) : LerpF(1.40f, 1.52f, (s01 - 0.50f) * 2.0f))
+                        : LerpF(1.06f, 1.24f, s01);
+                    if (s_extra > 0.0f) {
+                        sx_icon = (dev->kind == OCTANS_DEV_MOUSE)
+                            ? LerpF(1.52f, 1.72f, s_extra)
+                            : LerpF(1.24f, 1.38f, s_extra);
+                    }
                 } else if (is_headset) {
                     g_half = target_icon_h / 1.78f;
                     visual_half_h = target_icon_h * 0.5f;
-                    sx_icon = (s <= 0.50f) ? LerpF(1.08f, 1.24f, s * 2.0f) : LerpF(1.24f, 1.38f, (s - 0.50f) * 2.0f);
+                    sx_icon = (s01 <= 0.50f) ? LerpF(1.08f, 1.24f, s01 * 2.0f) : LerpF(1.24f, 1.38f, (s01 - 0.50f) * 2.0f);
+                    if (s_extra > 0.0f) {
+                        sx_icon = LerpF(1.38f, 1.54f, s_extra);
+                    }
                 } else {
                     float h_fac = (dev->kind == OCTANS_DEV_GAMEPAD) ? 1.52f : 1.38f;
                     g_half = target_icon_h / h_fac;
-                    float max_g_half = sz * LerpF(0.395f, 0.480f, s);
+                    float max_g_half = sz * LerpF(0.395f, 0.480f, s01);
+                    if (s_extra > 0.0f) {
+                        max_g_half = sz * LerpF(0.480f, 0.498f, s_extra);
+                    }
                     if (g_half > max_g_half) g_half = max_g_half;
                     visual_half_h = (g_half * h_fac) * 0.5f;
-                    sx_icon = (s <= 0.50f) ? LerpF(1.02f, 1.12f, s * 2.0f) : LerpF(1.12f, 1.20f, (s - 0.50f) * 2.0f);
+                    sx_icon = (s01 <= 0.50f) ? LerpF(1.02f, 1.12f, s01 * 2.0f) : LerpF(1.12f, 1.20f, (s01 - 0.50f) * 2.0f);
+                    if (s_extra > 0.0f) {
+                        sx_icon = LerpF(1.20f, 1.34f, s_extra);
+                    }
                 }
 
                 float g_cy = top_pad + visual_half_h;
@@ -332,7 +357,7 @@ static HICON RenderTrayIcon(
                     D2D1_MATRIX_3X2_F prev_xf = {};
                     rt->GetTransform(&prev_xf);
                     float eff_half_w = g_half * sx_icon;
-                    float max_half_w = sz * 0.485f;
+                    float max_half_w = sz * LerpF(0.485f, 0.498f, s_extra);
                     if (eff_half_w > max_half_w && g_half > 0.1f) {
                         sx_icon = max_half_w / g_half;
                     }
@@ -342,7 +367,10 @@ static HICON RenderTrayIcon(
                 }
 
                 if (dev->power_state == OCTANS_PWR_CHARGING && num_brush) {
-                    float br = sz * LerpF(0.135f, 0.160f, s);
+                    float br = sz * LerpF(0.135f, 0.160f, s01);
+                    if (s_extra > 0.0f) {
+                        br = sz * LerpF(0.160f, 0.172f, s_extra);
+                    }
                     float bx = sz - br - 0.25f;
                     float by = g_cy + visual_half_h * 0.08f;
                     if (by + br > icon_bottom) by = icon_bottom - br;
@@ -363,11 +391,17 @@ static HICON RenderTrayIcon(
                 }
                 UINT32 nlen = static_cast<UINT32>(wcslen(num_buf));
 
-                /* Exact baseline-aligned digit band below icon_bottom with guaranteed >= 1px blank separator */
-                float gap_px = LerpF(sz * 0.095f, sz * 0.062f, s);
-                if (gap_px < 1.95f) gap_px = 1.95f;
+                /* Exact baseline-aligned digit band below icon_bottom with guaranteed >= 1.35px blank separator */
+                float gap_px = (s_extra > 0.0f)
+                    ? LerpF(sz * 0.062f, sz * 0.044f, s_extra)
+                    : LerpF(sz * 0.095f, sz * 0.062f, s01);
+                float min_gap = (s_extra > 0.0f) ? 1.35f : 1.95f;
+                if (gap_px < min_gap) gap_px = min_gap;
                 float want_top = icon_bottom + gap_px;
-                float want_bot = sz - LerpF(sz * 0.025f, 0.25f, s);
+                float want_bot = sz - LerpF(sz * 0.025f, 0.25f, s01);
+                if (s_extra > 0.0f) {
+                    want_bot = sz - LerpF(0.25f, 0.0f, s_extra);
+                }
                 float want_h = want_bot - want_top;
                 if (want_h < 8.0f) want_h = 8.0f;
 
@@ -392,23 +426,30 @@ static HICON RenderTrayIcon(
 
                         float target_w_frac = 0.74f;
                         if (nlen >= 3) {
-                            target_w_frac = (s <= 0.50f) ? LerpF(0.78f, 0.90f, s * 2.0f) : LerpF(0.90f, 0.96f, (s - 0.50f) * 2.0f);
+                            target_w_frac = (s01 <= 0.50f) ? LerpF(0.78f, 0.90f, s01 * 2.0f) : LerpF(0.90f, 0.96f, (s01 - 0.50f) * 2.0f);
+                            if (s_extra > 0.0f) target_w_frac = LerpF(0.96f, 0.99f, s_extra);
                         } else if (nlen == 2) {
-                            target_w_frac = (s <= 0.50f) ? LerpF(0.64f, 0.77f, s * 2.0f) : LerpF(0.77f, 0.88f, (s - 0.50f) * 2.0f);
+                            target_w_frac = (s01 <= 0.50f) ? LerpF(0.64f, 0.77f, s01 * 2.0f) : LerpF(0.77f, 0.88f, (s01 - 0.50f) * 2.0f);
+                            if (s_extra > 0.0f) target_w_frac = LerpF(0.88f, 0.98f, s_extra);
                         } else {
-                            target_w_frac = (s <= 0.50f) ? LerpF(0.36f, 0.45f, s * 2.0f) : LerpF(0.45f, 0.54f, (s - 0.50f) * 2.0f);
+                            target_w_frac = (s01 <= 0.50f) ? LerpF(0.36f, 0.45f, s01 * 2.0f) : LerpF(0.45f, 0.54f, (s01 - 0.50f) * 2.0f);
+                            if (s_extra > 0.0f) target_w_frac = LerpF(0.54f, 0.66f, s_extra);
                         }
-                        float sx_num = ClampF((sz * target_w_frac) / nat_w, 0.62f, 1.24f);
+                        float max_sx_num = LerpF(1.24f, 1.48f, s_extra);
+                        float sx_num = ClampF((sz * target_w_frac) / nat_w, 0.62f, max_sx_num);
+                        float sy_num = LerpF(1.0f, 1.06f, s_extra);
                         float draw_x = cx - nat_w * 0.5f - tm.left;
                         float draw_y = want_bot - baseline;
 
                         D2D1_MATRIX_3X2_F prev_xf = {};
                         rt->GetTransform(&prev_xf);
-                        rt->SetTransform(MatrixScaleTranslate(sx_num, 1.0f, cx, want_bot, 0.0f, 0.0f));
+                        rt->SetTransform(MatrixScaleTranslate(sx_num, sy_num, cx, want_bot, 0.0f, 0.0f));
                         rt->DrawTextLayout(MakePt(draw_x, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
 
                         /* Purely horizontal micro-bolding (+0.0px vertical height -> zero overlap!) */
-                        float bold_dx = LerpF(0.16f, 0.46f, s) * (sz / 32.0f);
+                        float bold_dx = (s_extra > 0.0f)
+                            ? (LerpF(0.46f, 0.72f, s_extra) * (sz / 32.0f))
+                            : (LerpF(0.16f, 0.46f, s01) * (sz / 32.0f));
                         if (bold_dx >= 0.18f) {
                             rt->DrawTextLayout(MakePt(draw_x - bold_dx, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
                             rt->DrawTextLayout(MakePt(draw_x + bold_dx, draw_y), layout.Get(), num_brush.Get(), D2D1_DRAW_TEXT_OPTIONS_NONE);
@@ -422,17 +463,23 @@ static HICON RenderTrayIcon(
                  * Outer ring pushed cleanly outward + inner glyph ratio tuned so there
                  * is a crisp hairline clearance with ZERO ring-to-icon overlap!
                  * ===================================================================== */
-                float radius_ratio = (s <= 0.50f)
-                    ? LerpF(0.435f, 0.500f, s * 2.0f)
+                float radius_ratio = (s01 <= 0.50f)
+                    ? LerpF(0.435f, 0.500f, s01 * 2.0f)
                     : 0.500f;
-                float stroke_ratio = (s <= 0.50f)
-                    ? LerpF(0.072f, 0.086f, s * 2.0f)
-                    : LerpF(0.086f, 0.104f, (s - 0.50f) * 2.0f);
+                float stroke_ratio = (s01 <= 0.50f)
+                    ? LerpF(0.072f, 0.086f, s01 * 2.0f)
+                    : LerpF(0.086f, 0.104f, (s01 - 0.50f) * 2.0f);
+                if (s_extra > 0.0f) {
+                    stroke_ratio = LerpF(0.104f, 0.126f, s_extra);
+                }
                 float stroke = sz * stroke_ratio;
                 if (stroke < 2.1f) stroke = 2.1f;
-                float edge_inset = (s <= 0.50f)
-                    ? LerpF(0.48f, 0.42f, s * 2.0f)
-                    : LerpF(0.42f, 0.36f, (s - 0.50f) * 2.0f);
+                float edge_inset = (s01 <= 0.50f)
+                    ? LerpF(0.48f, 0.42f, s01 * 2.0f)
+                    : LerpF(0.42f, 0.36f, (s01 - 0.50f) * 2.0f);
+                if (s_extra > 0.0f) {
+                    edge_inset = LerpF(0.36f, 0.28f, s_extra);
+                }
                 float radius = (sz * radius_ratio) - (stroke * edge_inset);
                 float inner_r = radius - (stroke * 0.5f);
 
@@ -478,13 +525,15 @@ static HICON RenderTrayIcon(
                     /* Clean non-overlapping ratio inside inner_r */
                     float glyph_ratio;
                     if (wide_diag) {
-                        glyph_ratio = (s <= 0.50f)
-                            ? LerpF(0.62f, 0.67f, s * 2.0f)
-                            : LerpF(0.67f, 0.71f, (s - 0.50f) * 2.0f);
+                        glyph_ratio = (s01 <= 0.50f)
+                            ? LerpF(0.62f, 0.67f, s01 * 2.0f)
+                            : LerpF(0.67f, 0.71f, (s01 - 0.50f) * 2.0f);
+                        if (s_extra > 0.0f) glyph_ratio = LerpF(0.71f, 0.78f, s_extra);
                     } else {
-                        glyph_ratio = (s <= 0.50f)
-                            ? LerpF(0.64f, 0.70f, s * 2.0f)
-                            : LerpF(0.70f, 0.74f, (s - 0.50f) * 2.0f);
+                        glyph_ratio = (s01 <= 0.50f)
+                            ? LerpF(0.64f, 0.70f, s01 * 2.0f)
+                            : LerpF(0.70f, 0.74f, (s01 - 0.50f) * 2.0f);
+                        if (s_extra > 0.0f) glyph_ratio = LerpF(0.74f, 0.82f, s_extra);
                     }
                     float glyph_half = inner_r * glyph_ratio;
                     DrawDeviceGlyph(
@@ -616,7 +665,7 @@ static void UpsertTraySlot(
     int k_pwr   = dev ? static_cast<int>(dev->power_state) : -1;
     int k_low   = dev ? static_cast<int>(dev->is_low_battery) : -1;
     int k_style = static_cast<int>(style);
-    int k_size  = static_cast<int>(roundf(ClampF(tray_scale, 0.0f, 1.0f) * 100.0f));
+    int k_size  = static_cast<int>(roundf(ClampF(tray_scale, 0.0f, kMaxTrayScale) * 100.0f));
     int k_dark  = tb_dark ? 1 : 0;
 
     bool icon_dirty = (!slot.active || !slot.hicon ||

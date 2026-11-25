@@ -54,9 +54,10 @@ enum MenuMode : uint8_t {
     MENU_MODE_PANEL_GENERAL = 2  /* Right-click on flyout background or '...' button: general settings, no Rename */
 };
 
-/* Continuous tray scale in [0.0f .. 1.0f]:
- *   0.00 = 小巧, 0.25 = 紧凑, 0.50 = 标准(默认, 原100%档位), 0.75 = 大号, 1.00 = 超大 */
+/* Continuous tray scale in [0.0f .. 1.50f]:
+ *   0.00 = 小巧, 0.25 = 紧凑, 0.50 = 标准(默认), 0.75 = 大号, 1.00 = 超大, 1.50 = 极大 */
 static constexpr float kDefaultTrayScale = 0.50f;
+static constexpr float kMaxTrayScale     = 1.50f;
 
 /* Minimal zero-overhead COM smart pointer (no WRL/STL dependency). */
 template <typename T>

@@ -44,7 +44,7 @@ static void LoadUiConfig() {
     else g_state.tray_style = TRAY_STYLE_OCTANS;
 
     int scale_pct = static_cast<int>(GetPrivateProfileIntW(L"UI", L"TrayScalePct", 50, ini));
-    g_state.tray_scale = ClampF(static_cast<float>(scale_pct) / 100.0f, 0.0f, 1.0f);
+    g_state.tray_scale = ClampF(static_cast<float>(scale_pct) / 100.0f, 0.0f, kMaxTrayScale);
 
     g_state.has_custom_panel_pos = (GetPrivateProfileIntW(L"UI", L"PanelPosCustom", 0, ini) != 0);
     wchar_t pos_w[32] = {};
@@ -112,7 +112,7 @@ static void SaveUiConfig() {
     _snwprintf(buf, 31, L"%d", static_cast<int>(g_state.tray_style));
     WritePrivateProfileStringW(L"UI", L"TrayStyle", buf, ini);
 
-    int pct = static_cast<int>(roundf(ClampF(g_state.tray_scale, 0.0f, 1.0f) * 100.0f));
+    int pct = static_cast<int>(roundf(ClampF(g_state.tray_scale, 0.0f, kMaxTrayScale) * 100.0f));
     _snwprintf(buf, 31, L"%d", pct);
     WritePrivateProfileStringW(L"UI", L"TrayScalePct", buf, ini);
 
@@ -466,7 +466,7 @@ void ActionToggleTrayStyle(TrayStyle style) {
 }
 
 void ActionSetTrayScale(float scale) {
-    float clamped = ClampF(scale, 0.0f, 1.0f);
+    float clamped = ClampF(scale, 0.0f, kMaxTrayScale);
     if (fabsf(g_state.tray_scale - clamped) >= 0.005f) {
         g_state.tray_scale = clamped;
         SaveUiConfig();

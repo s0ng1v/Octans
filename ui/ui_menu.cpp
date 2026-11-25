@@ -345,8 +345,9 @@ static const wchar_t *DescribeScaleLabel(float s) {
     if (s < 0.15f) return L"\u5c0f\u5de7";
     if (s < 0.38f) return L"\u7d27\u51d1";
     if (s < 0.63f) return L"\u6807\u51c6";
-    if (s < 0.88f) return L"\u5927\u53f7";
-    return L"\u8d85\u5927";
+    if (s < 0.90f) return L"\u5927\u53f7";
+    if (s < 1.25f) return L"\u8d85\u5927";
+    return L"\u6781\u5927";
 }
 
 static void RenderMenuToDC(MenuState &m, HDC target_dc) {
@@ -510,13 +511,13 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                     rt->DrawText(kStyleNames[i], static_cast<UINT32>(wcslen(kStyleNames[i])), m.fmt_seg.Get(), m.rc_seg[i], b.Get());
                 }
 
-                /* 5. Live Continuous Tray Size Slider (50% = Default center tick) */
+                /* 5. Live Continuous Tray Size Slider (0%..150%, 50% = Default tick) */
                 b->SetColor(pal.text_secondary);
                 rt->DrawText(L"\u6258\u76d8\u56fe\u6807\u5927\u5c0f", 6, m.fmt_small.Get(),
                              MakeRect(14.0f, m.slider_label_y, m.logical_w - 86.0f, m.slider_label_y + 18.0f), b.Get());
 
                 wchar_t sbuf[32] = {};
-                int pct_lbl = static_cast<int>(roundf(st.tray_scale * 100.0f));
+                int pct_lbl = static_cast<int>(roundf(ClampF(st.tray_scale, 0.0f, kMaxTrayScale) * 100.0f));
                 _snwprintf(sbuf, 31, L"%ls \u00b7 %d%%", DescribeScaleLabel(st.tray_scale), pct_lbl);
                 b->SetColor(accent);
                 rt->DrawText(sbuf, static_cast<UINT32>(wcslen(sbuf)), m.fmt_right.Get(),
@@ -525,7 +526,8 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                 float tl = m.rc_slider_track.left;
                 float tr = m.rc_slider_track.right;
                 float ty = (m.rc_slider_track.top + m.rc_slider_track.bottom) * 0.5f;
-                float thumb_x = LerpF(tl, tr, ClampF(st.tray_scale, 0.0f, 1.0f));
+                float norm_s = ClampF(st.tray_scale / kMaxTrayScale, 0.0f, 1.0f);
+                float thumb_x = LerpF(tl, tr, norm_s);
 
                 b->SetColor(dk ? MakeColor(1, 1, 1, 0.14f) : MakeColor(0, 0, 0, 0.11f));
                 rt->FillRoundedRectangle(MakeRoundedRect(m.rc_slider_track, 2.2f, 2.2f), b.Get());
@@ -536,8 +538,8 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                     rt->FillRoundedRectangle(MakeRoundedRect(fill_rc, 2.2f, 2.2f), b.Get());
                 }
 
-                for (int t = 0; t <= 4; ++t) {
-                    float tx = LerpF(tl, tr, static_cast<float>(t) * 0.25f);
+                for (int t = 0; t <= 6; ++t) {
+                    float tx = LerpF(tl, tr, static_cast<float>(t) / 6.0f);
                     bool is_def = (t == 2);
                     b->SetColor(is_def ? accent : (dk ? MakeColor(1, 1, 1, 0.22f) : MakeColor(0, 0, 0, 0.18f)));
                     rt->FillEllipse(MakeEllipse(tx, ty + 9.5f, is_def ? 1.8f : 1.2f, is_def ? 1.8f : 1.2f), b.Get());
@@ -719,15 +721,15 @@ static void UpdateSliderFromX(MenuState &m, float dx) {
     float tl = m.rc_slider_track.left;
     float tr = m.rc_slider_track.right;
     if (tr <= tl) return;
-    float raw = ClampF((dx - tl) / (tr - tl), 0.0f, 1.0f);
-    for (int t = 0; t <= 4; ++t) {
+    float raw = ClampF((dx - tl) / (tr - tl), 0.0f, 1.0f) * kMaxTrayScale;
+    for (int t = 0; t <= 6; ++t) {
         float tick = static_cast<float>(t) * 0.25f;
-        if (fabsf(raw - tick) < 0.03f) {
+        if (fabsf(raw - tick) < 0.04f) {
             raw = tick;
             break;
         }
     }
-    float quant = roundf(raw * 50.0f) / 50.0f;
+    float quant = ClampF(roundf(raw * 50.0f) / 50.0f, 0.0f, kMaxTrayScale);
     if (fabsf(quant - GetState().tray_scale) >= 0.015f) {
         ActionSetTrayScale(quant);
         RepaintMenu(m);
@@ -908,7 +910,7 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
             if (m && m->has_general) {
                 short delta = GET_WHEEL_DELTA_WPARAM(wp);
                 float step = (delta > 0) ? 0.05f : -0.05f;
-                ActionSetTrayScale(ClampF(GetState().tray_scale + step, 0.0f, 1.0f));
+                ActionSetTrayScale(ClampF(GetState().tray_scale + step, 0.0f, kMaxTrayScale));
                 RepaintMenu(*m);
                 return 0;
             }
