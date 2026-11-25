@@ -1,9 +1,9 @@
 {
-  "version": "0.5.0",
-  "notes": "全新 Octans 液态渐变水波默认样式；面板支持任意空白区拖动并记忆位置，修复任务栏重叠；右键菜单失焦 0ms 瞬时收起；Pulsar 托盘大字重新标定且零重叠；常驻内存降至 ~2MB；新增多品牌 2.4G 协议与 SHA256 自动升级。",
-  "sha256": "10559DDB195BF5D7F95D590854C9DA7F547B8B5D45CDBE34877916E1864571B1",
-  "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.5.0/Octans-Setup-v0.5.0.exe",
+  "version": "0.6.1",
+  "notes": "全新 Octans 液态渐变水波默认样式；面板支持任意空白区拖动记忆位置且防任务栏遮挡；右键菜单 0ms 失焦收起；Pulsar 托盘放大且零重叠；修复罗技双显重复设备；常驻内存低至数 MB 并内置 SHA256 自动升级。",
+  "sha256": "9FB4330F8657ECD77EBF8AEE975B837352A661C74A867CCBB798DE7F1279D8C3",
+  "download_cn": "https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe",
   "page_cn": "https://atomgit.com/s0ng1v/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

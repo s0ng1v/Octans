@@ -13,9 +13,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>立即下载最新版 (v0.5.0)</b></a>
+  <a href="https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe"><b>国内高速直链下载 (v0.6.1)</b></a>
   ·
-  <a href="https://atomgit.com/s0ng1v/Octans/releases"><b>国内高速下载 (AtomGit)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
   ·
   <a href="#功能亮点">功能亮点</a>
   ·
@@ -23,7 +23,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v0.5.0-2563EB?style=flat-square"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v0.6.1-2563EB?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-16A34A?style=flat-square"></a>
   <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0891B2?style=flat-square">
   <img alt="Idle CPU" src="https://img.shields.io/badge/常驻%20CPU-0%25-10B981?style=flat-square">
@@ -67,12 +67,12 @@
 
 ## 下载与安装
 
-推荐直接下载安装程序 **`Octans-Setup-v0.5.0.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
+推荐直接下载安装程序 **`Octans-Setup-v0.6.1.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内镜像（推荐）** | AtomGit 免登录高速直连，国内网络流畅 | [前往 AtomGit Releases 下载](https://atomgit.com/s0ng1v/Octans/releases) |
-| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [前往 GitHub Releases 下载](https://github.com/s0ng1v/Octans/releases/latest) |
+| **国内高速直链（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v0.6.1.exe](https://atomgit.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe) · [全部版本](https://atomgit.com/s0ng1v/Octans/releases) |
+| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v0.6.1.exe](https://github.com/s0ng1v/Octans/releases/download/v0.6.1/Octans-Setup-v0.6.1.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
 > 1. 首次安装运行后，若任务栏图标被系统折叠进右下角 `^` 箭头内，直接将其拖出到任务栏即可永久常驻显示。
@@ -109,7 +109,7 @@
 ### 技术实现与极致轻量设计
 
 - **纯原生零依赖**：后端协议引擎采用纯 C11，界面采用 Win32 + Direct2D / DirectWrite 轻量软件渲染（彻底避免常驻加载 D3D11 / GPU 驱动模块，同时对非输入窗口解绑 IME 防止输入法 DLL 注入）；无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖。
-- **超小体积**：桌面主程序 `Octans.exe` 仅约 **325 KB**，独立命令行工具 `octans-cli.exe` 约 **120 KB**。
+- **超小体积**：桌面主程序 `Octans.exe` 仅约 **330 KB**，独立命令行工具 `octans-cli.exe` 约 **122 KB**。
 - **按需释放与零静态网络导入**：面板关闭后自动释放离屏缓冲并触发工作集回收；PE 导入表零网络 DLL 静态依赖，仅在用户手动点击检查更新时按需动态加载 `winhttp.dll` 与 `bcrypt.dll`。
 
 ### 目录结构
@@ -123,7 +123,7 @@ cli/        独立无头命令行工具（支持 list --json、test-rule、probe
 include/    后端与 UI 稳定 C ABI 头文件与版本定义
 assets/     Octans 品牌视觉资产与多分辨率图标
 installer/  Inno Setup 安装脚本与一键打包脚本
-tests/      协议解析、混淆表匹配与 ABI 单元测试（356 项断言）
+tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（374 项断言）
 ```
 
 ### 从源码构建
@@ -131,10 +131,10 @@ tests/      协议解析、混淆表匹配与 ABI 单元测试（356 项断言�
 需要 Windows 10/11 与 LLVM-MinGW (UCRT) 工具链（打包安装程序需 Inno Setup 6）：
 
 ```powershell
-# 一键编译命令行工具、运行 356 项单元测试并构建 build\Octans.exe
+# 一键编译命令行工具、运行 374 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v0.5.0.exe）
+# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v0.6.1.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # 单独编译并预览无硬件 UI Demo
