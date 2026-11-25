@@ -321,9 +321,13 @@ int octans_engine_poll(octans_engine_t *eng, int force_rescan) {
         wcsncpy(r.name, bts[i].name, 63);
         r.name[63] = L'\0';
 
-        char inst_utf8[96];
-        octans_wide_to_utf8(bts[i].instance_id, inst_utf8, sizeof(inst_utf8));
-        snprintf(r.stable_id, sizeof(r.stable_id), "bt:%.*s", 58, inst_utf8);
+        if (bts[i].mac[0]) {
+            snprintf(r.stable_id, sizeof(r.stable_id), "bt:%s", bts[i].mac);
+        } else {
+            char inst_utf8[96];
+            octans_wide_to_utf8(bts[i].instance_id, inst_utf8, sizeof(inst_utf8));
+            snprintf(r.stable_id, sizeof(r.stable_id), "bt:%.*s", 58, inst_utf8);
+        }
         snprintf(r.source_tag, sizeof(r.source_tag), "bt_devpkey");
         readings[rcount++] = r;
     }

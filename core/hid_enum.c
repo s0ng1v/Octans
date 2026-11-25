@@ -158,7 +158,11 @@ static void probe_single_interface(const wchar_t *path, octans_hid_info_t *info)
 
     if (!parse_hex4_after(path, L"vid_", &info->vid)) {
         if (!parse_hex4_after(path, L"vid&0002", &info->vid)) {
-            parse_hex4_after(path, L"vid&0001", &info->vid);
+            if (!parse_hex4_after(path, L"vid&0001", &info->vid)) {
+                if (!parse_hex4_after(path, L"vid&02", &info->vid)) {
+                    parse_hex4_after(path, L"vid&01", &info->vid);
+                }
+            }
         }
     }
     if (!parse_hex4_after(path, L"pid_", &info->pid)) {

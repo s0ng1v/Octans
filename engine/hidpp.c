@@ -524,8 +524,10 @@ static int hidpp_read_identity(hidpp_channel_t *ch,
     if (hidpp_probe_feature(ch, slot, 0x0003u, &info_idx)) {
         uint8_t ans[16];
         if (hidpp_xfer(ch, slot, info_idx, 0u, NULL, 0, 500, ans)) {
-            snprintf(out_unitid, uid_cap, "hidpp:%02x%02x%02x%02x",
-                     ans[1], ans[2], ans[3], ans[4]);
+            if ((ans[1] | ans[2] | ans[3] | ans[4]) != 0u) {
+                snprintf(out_unitid, uid_cap, "hidpp:%02x%02x%02x%02x",
+                         ans[1], ans[2], ans[3], ans[4]);
+            }
             char model_str[12];
             memcpy(model_str, ans + 5, 11);
             model_str[11] = '\0';
@@ -610,15 +612,13 @@ static int hidpp_query_slot(hidpp_channel_t *ch,
             (!ch->last_err_is_v10 && ch->last_err_code == 0x0Cu)) {
             return 0;
         }
-        /* Out-of-range / sleeping / HW error */
+        /* Out-of-range / sleeping / HW error on receiver slot:
+         * Do NOT emit a synthetic "USB Receiver (offline)" device with slot-based ID;
+         * previously-seen mice are already retained in sleeping state by merge.c with
+         * their real name & unitId, avoiding duplicate phantom receiver entries! */
         if ((ch->last_err_is_v10 && ch->last_err_code == 0x09u) ||
             (!ch->last_err_is_v10 && (ch->last_err_code == 0x0Bu || ch->last_err_code == 0x04u))) {
-            out->offline = 1;
-            out->power_state = OCTANS_PWR_OFFLINE;
-            snprintf(out->stable_id, sizeof(out->stable_id),
-                     "hidpp:%04x:%04x:slot%u", info->vid, info->pid, (unsigned)slot);
-            snprintf(out->source_tag, sizeof(out->source_tag), "hidpp_offline");
-            return 1;
+            return 0;
         }
         /* Legacy HID++ 1.0 device behind Unifying receiver */
         if (ch->last_err_is_v10 && ch->last_err_code == 0x01u) {

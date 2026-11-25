@@ -13,10 +13,14 @@ extern "C" {
 typedef struct octans_bt_battery {
     wchar_t name[64];
     wchar_t instance_id[128];
+    char mac[16]; /**< Normalized 12-hex lowercase BT/BLE address if parsed */
     int8_t battery_percent; /**< 0..100, or -1 if absent/zero */
     int has_property;
     int is_handsfree;
 } octans_bt_battery_t;
+
+/** Extract normalized 12-hex Bluetooth MAC address from a Windows PnP instance ID. */
+int octans_bt_extract_mac(const wchar_t *inst_id, char out_mac[16]);
 
 /**
  * Enumerate Windows Bluetooth devices and query DEVPKEY_Bluetooth_Battery

@@ -18,6 +18,7 @@ typedef struct octans_device_slot {
     octans_device_view_t view;
     uint64_t last_seen_ms;
     uint64_t last_valid_ms;
+    wchar_t raw_name[64];
     wchar_t alias[64];
 } octans_device_slot_t;
 

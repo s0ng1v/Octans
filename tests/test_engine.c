@@ -5,6 +5,7 @@
 
 #include "octans_core.h"
 #include "octans_ui_api.h"
+#include "../core/bluetooth.h"
 #include "../core/xinput.h"
 #include "../engine/family_request.h"
 #include "../engine/frame.h"
@@ -1031,6 +1032,133 @@ static void test_protocol_all_v1_suite(void) {
     ASSERT_EQ_INT(69, r.battery_percent);
 }
 
+static void test_dedup_logitech_and_bt(void) {
+    /* 1. BT/BLE MAC extraction across Windows PnP formats */
+    char mac[16];
+    ASSERT_EQ_INT(1, octans_bt_extract_mac(L"BTHLE\\DEV_A4C138112233\\7&1234&0&A4C138112233", mac));
+    ASSERT_EQ_INT(0, strcmp(mac, "a4c138112233"));
+    ASSERT_EQ_INT(1, octans_bt_extract_mac(
+        L"BTHLEDEVICE\\{0000180F-0000-1000-8000-00805F9B34FB}_DEV_VID&02046D_PID&B034_REV&0012_A4C138112233\\9&1234", mac));
+    ASSERT_EQ_INT(0, strcmp(mac, "a4c138112233"));
+    ASSERT_EQ_INT(0, octans_bt_extract_mac(L"BTHLE\\DEV_000000000000\\7&1", mac));
+
+    /* 2. Single Logitech mouse reported by BOTH HID++ and Windows BT DEVPKEY merges to 1 */
+    octans_merge_state_t m;
+    octans_merge_init(&m);
+    octans_proto_reading_t batch[2];
+    octans_reading_init(&batch[0]);
+    batch[0].valid = 1;
+    batch[0].vid = 0x046D;
+    batch[0].pid = 0xB034;
+    batch[0].kind = OCTANS_DEV_MOUSE;
+    batch[0].conn = OCTANS_CONN_BLUETOOTH;
+    batch[0].power_state = OCTANS_PWR_DISCHARGING;
+    batch[0].battery_percent = 85;
+    wcscpy(batch[0].brand, L"Logitech");
+    wcscpy(batch[0].name, L"MX Master 3S");
+    strcpy(batch[0].stable_id, "hidpp:12345678");
+
+    octans_reading_init(&batch[1]);
+    batch[1].valid = 1;
+    batch[1].vid = 0;
+    batch[1].kind = OCTANS_DEV_OTHER;
+    batch[1].conn = OCTANS_CONN_BLUETOOTH;
+    batch[1].power_state = OCTANS_PWR_DISCHARGING;
+    batch[1].battery_percent = 85;
+    wcscpy(batch[1].brand, L"Bluetooth");
+    wcscpy(batch[1].name, L"Logi MX Master 3S Mouse");
+    strcpy(batch[1].stable_id, "bt:a4c138112233");
+
+    octans_merge_apply(&m, batch, 2, 1000ULL);
+    octans_device_view_t views[8];
+    size_t n = octans_merge_export(&m, views, 8);
+    ASSERT_EQ_INT(1, n);
+    ASSERT_EQ_INT(OCTANS_DEV_MOUSE, views[0].kind);
+    ASSERT_EQ_INT(0, strcmp(views[0].id, "hidpp:12345678"));
+    ASSERT_EQ_INT(0, wcscmp(views[0].brand, L"Logitech"));
+
+    /* 3. Even after user renames MX Master 3S, subsequent BT reading still merges (via raw_name) */
+    ASSERT_EQ_INT(0, octans_merge_set_alias(&m, "hidpp:12345678", L"Office Mouse"));
+    octans_merge_apply(&m, batch, 2, 2000ULL);
+    n = octans_merge_export(&m, views, 8);
+    ASSERT_EQ_INT(1, n);
+    ASSERT_EQ_INT(0, wcscmp(views[0].name, L"Office Mouse"));
+
+    /* 4. Phantom offline receiver slot NEVER conjures a duplicate "USB Receiver" card */
+    octans_proto_reading_t ghost;
+    octans_reading_init(&ghost);
+    ghost.offline = 1;
+    ghost.vid = 0x046D;
+    ghost.pid = 0xC547;
+    ghost.conn = OCTANS_CONN_DONGLE_24G;
+    ghost.power_state = OCTANS_PWR_OFFLINE;
+    wcscpy(ghost.brand, L"Logitech");
+    wcscpy(ghost.name, L"USB Receiver");
+    strcpy(ghost.stable_id, "hidpp:046d:c547:slot2");
+    octans_merge_apply(&m, &ghost, 1, 5000ULL);
+    n = octans_merge_export(&m, views, 8);
+    ASSERT_EQ_INT(1, n);
+    ASSERT_EQ_INT(OCTANS_PWR_SLEEPING, views[0].power_state);
+    ASSERT_EQ_INT(85, views[0].battery_percent);
+
+    /* 5. Dual-mode Logitech mouse (2.4G + BT) with differing unitIds still merges cleanly */
+    octans_merge_state_t m2;
+    octans_merge_init(&m2);
+    octans_proto_reading_t dual[2];
+    octans_reading_init(&dual[0]);
+    dual[0].valid = 1;
+    dual[0].vid = 0x046D; dual[0].pid = 0xC54D;
+    dual[0].kind = OCTANS_DEV_MOUSE; dual[0].conn = OCTANS_CONN_DONGLE_24G;
+    dual[0].power_state = OCTANS_PWR_DISCHARGING; dual[0].battery_percent = 72;
+    wcscpy(dual[0].brand, L"Logitech"); wcscpy(dual[0].name, L"Logitech G309 LIGHTSPEED");
+    strcpy(dual[0].stable_id, "hidpp:aaaabbbb");
+
+    octans_reading_init(&dual[1]);
+    dual[1].valid = 1;
+    dual[1].vid = 0x046D; dual[1].pid = 0xB03C;
+    dual[1].kind = OCTANS_DEV_MOUSE; dual[1].conn = OCTANS_CONN_BLUETOOTH;
+    dual[1].power_state = OCTANS_PWR_DISCHARGING; dual[1].battery_percent = 72;
+    wcscpy(dual[1].brand, L"Logitech"); wcscpy(dual[1].name, L"G309");
+    strcpy(dual[1].stable_id, "hidpp:ccccdddd");
+
+    octans_merge_apply(&m2, dual, 2, 1000ULL);
+    n = octans_merge_export(&m2, views, 8);
+    ASSERT_EQ_INT(1, n);
+
+    /* 6. Two genuinely distinct same-model mice BOTH on 2.4G with distinct unitIds stay 2! */
+    octans_merge_state_t m3;
+    octans_merge_init(&m3);
+    octans_proto_reading_t pair[2];
+    octans_reading_init(&pair[0]);
+    pair[0].valid = 1; pair[0].vid = 0x046D; pair[0].pid = 0xC54D;
+    pair[0].kind = OCTANS_DEV_MOUSE; pair[0].conn = OCTANS_CONN_DONGLE_24G;
+    pair[0].power_state = OCTANS_PWR_DISCHARGING; pair[0].battery_percent = 90;
+    wcscpy(pair[0].brand, L"Logitech"); wcscpy(pair[0].name, L"PRO X SUPERLIGHT 2");
+    strcpy(pair[0].stable_id, "hidpp:11111111");
+
+    octans_reading_init(&pair[1]);
+    pair[1].valid = 1; pair[1].vid = 0x046D; pair[1].pid = 0xC54D;
+    pair[1].kind = OCTANS_DEV_MOUSE; pair[1].conn = OCTANS_CONN_DONGLE_24G;
+    pair[1].power_state = OCTANS_PWR_DISCHARGING; pair[1].battery_percent = 45;
+    wcscpy(pair[1].brand, L"Logitech"); wcscpy(pair[1].name, L"PRO X SUPERLIGHT 2");
+    strcpy(pair[1].stable_id, "hidpp:22222222");
+
+    octans_merge_apply(&m3, pair, 2, 1000ULL);
+    n = octans_merge_export(&m3, views, 8);
+    ASSERT_EQ_INT(2, n);
+
+    /* 7. Two different Logitech models (MX Master 3S + MX Anywhere 3S) stay 2! */
+    octans_merge_state_t m4;
+    octans_merge_init(&m4);
+    octans_proto_reading_t diff[2] = { batch[0], batch[0] };
+    wcscpy(diff[1].name, L"MX Anywhere 3S");
+    strcpy(diff[1].stable_id, "bt:112233445566");
+    diff[1].vid = 0;
+    octans_merge_apply(&m4, diff, 2, 1000ULL);
+    n = octans_merge_export(&m4, views, 8);
+    ASSERT_EQ_INT(2, n);
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -1044,6 +1172,7 @@ int main(void) {
     test_mchose_v2_suite();
     test_proto_obf_and_table_match();
     test_protocol_all_v1_suite();
+    test_dedup_logitech_and_bt();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

@@ -85,14 +85,117 @@ int octans_merge_set_alias(octans_merge_state_t *m, const char *device_id, const
     return 0;
 }
 
+static int is_exact_hidpp_unit_id(const char *id) {
+    return id && strncmp(id, "hidpp:", 6) == 0 && strlen(id) == 14;
+}
+
+static int is_bt_id(const char *id) {
+    return id && strncmp(id, "bt:", 3) == 0;
+}
+
+/* Extract lowercase alphanumeric core model token, stripping leading brand names
+ * and trailing generic transport/category words so HID++ & Windows BT / wired paths
+ * of the same physical mouse unify cleanly without colliding distinct models. */
+static void normalize_core_model_name(const wchar_t *name, char *out, size_t cap) {
+    if (!out || cap == 0) return;
+    out[0] = '\0';
+    if (!name || !name[0]) return;
+
+    char tokens[12][24];
+    size_t tok_n = 0;
+    size_t i = 0;
+    while (name[i] && tok_n < 12) {
+        while (name[i] && !((name[i] >= L'a' && name[i] <= L'z') ||
+                            (name[i] >= L'A' && name[i] <= L'Z') ||
+                            (name[i] >= L'0' && name[i] <= L'9'))) {
+            ++i;
+        }
+        if (!name[i]) break;
+        size_t len = 0;
+        while (name[i] && ((name[i] >= L'a' && name[i] <= L'z') ||
+                           (name[i] >= L'A' && name[i] <= L'Z') ||
+                           (name[i] >= L'0' && name[i] <= L'9'))) {
+            wchar_t c = name[i++];
+            if (c >= L'A' && c <= L'Z') c = (wchar_t)(c - L'A' + L'a');
+            if (len + 1 < sizeof(tokens[0])) {
+                tokens[tok_n][len++] = (char)c;
+            }
+        }
+        tokens[tok_n][len] = '\0';
+        if (len > 0) ++tok_n;
+    }
+
+    size_t start = 0;
+    size_t end = tok_n;
+    static const char *const kLeadBrands[] = {
+        "logitech", "logi", "razer", "corsair", "steelseries", "hyperx",
+        "asus", "rog", "rapoo", "keychron", "mchose", "atk", "aula",
+        "ajazz", "dareu", "iqunix", "durgod"
+    };
+    while (start < end) {
+        int matched = 0;
+        for (size_t b = 0; b < sizeof(kLeadBrands) / sizeof(kLeadBrands[0]); ++b) {
+            if (strcmp(tokens[start], kLeadBrands[b]) == 0) {
+                matched = 1;
+                break;
+            }
+        }
+        if (!matched) break;
+        ++start;
+    }
+
+    static const char *const kTrailNoise[] = {
+        "mouse", "keyboard", "headset", "wireless", "gaming", "lightspeed",
+        "receiver", "dongle", "bluetooth", "ble", "bt", "le", "24g", "usb", "device"
+    };
+    while (end > start) {
+        int matched = 0;
+        for (size_t t = 0; t < sizeof(kTrailNoise) / sizeof(kTrailNoise[0]); ++t) {
+            if (strcmp(tokens[end - 1], kTrailNoise[t]) == 0) {
+                matched = 1;
+                break;
+            }
+        }
+        if (!matched) break;
+        --end;
+    }
+
+    size_t pos = 0;
+    for (size_t k = start; k < end; ++k) {
+        size_t tlen = strlen(tokens[k]);
+        if (pos + tlen >= cap) tlen = (cap > pos + 1) ? (cap - 1 - pos) : 0;
+        if (tlen > 0) {
+            memcpy(out + pos, tokens[k], tlen);
+            pos += tlen;
+        }
+    }
+    out[pos] = '\0';
+
+    /* Reject generic placeholder names that must never cross-merge unrelated devices. */
+    if (pos < 3 ||
+        strcmp(out, "hid") == 0 ||
+        strcmp(out, "usbreceiver") == 0 ||
+        strcmp(out, "logitechdevice") == 0 ||
+        strcmp(out, "bluetoothdevice") == 0 ||
+        strcmp(out, "wirelessmouse") == 0) {
+        out[0] = '\0';
+    }
+}
+
+static int kinds_compatible(octans_device_kind_t a, octans_device_kind_t b) {
+    if (a == OCTANS_DEV_UNKNOWN || a == OCTANS_DEV_OTHER) return 1;
+    if (b == OCTANS_DEV_UNKNOWN || b == OCTANS_DEV_OTHER) return 1;
+    return a == b;
+}
+
 static void compute_merge_key(const octans_proto_reading_t *r, char *out, size_t cap) {
-    if (strncmp(r->stable_id, "hidpp:", 6) == 0 && strlen(r->stable_id) == 14) {
+    if (is_exact_hidpp_unit_id(r->stable_id)) {
         /* Exact Logitech unitid (hidpp:xxxxxxxx) merges across dongle & wired cable. */
         strncpy(out, r->stable_id, cap - 1);
         out[cap - 1] = '\0';
         return;
     }
-    if (strncmp(r->stable_id, "bt:", 3) == 0) {
+    if (is_bt_id(r->stable_id)) {
         strncpy(out, r->stable_id, cap - 1);
         out[cap - 1] = '\0';
         return;
@@ -127,6 +230,53 @@ static int find_slot_by_id(const octans_merge_state_t *m, const char *id) {
     return -1;
 }
 
+static int find_matching_slot(const octans_merge_state_t *m,
+                              const octans_proto_reading_t *r,
+                              const char *key) {
+    int exact = find_slot_by_id(m, key);
+    if (exact >= 0) return exact;
+    if (!r->valid || !r->name[0]) return -1;
+
+    char r_core[48];
+    normalize_core_model_name(r->name, r_core, sizeof(r_core));
+    if (!r_core[0]) return -1;
+
+    int r_bt = is_bt_id(key);
+    int r_exact_hidpp = is_exact_hidpp_unit_id(key);
+
+    for (size_t i = 0; i < OCTANS_MAX_DEVICES; ++i) {
+        if (!m->slots[i].in_use) continue;
+        const octans_device_slot_t *s = &m->slots[i];
+        if (!kinds_compatible(r->kind, s->view.kind)) continue;
+
+        const wchar_t *sname = s->raw_name[0] ? s->raw_name : s->view.name;
+        char s_core[48];
+        normalize_core_model_name(sname, s_core, sizeof(s_core));
+        if (!s_core[0] || strcmp(r_core, s_core) != 0) continue;
+
+        int s_bt = is_bt_id(s->view.id);
+        int s_exact_hidpp = is_exact_hidpp_unit_id(s->view.id);
+
+        /* Rule 1: Cross-protocol dedup between Windows BT (bt:...) and vendor HID (e.g. Logitech HID++). */
+        if (r_bt != s_bt) {
+            return (int)i;
+        }
+
+        /* Rule 2: Same vendor + same exact model across different buses (2.4G vs BT vs Wired)
+         * or when one path lacks an exact hidpp:<8hex> unitId (keeps two same-model 2.4G mice
+         * with distinct unitIds separate!). */
+        if (r->vid != 0 && s->view.vid == r->vid) {
+            int diff_bus = (r->conn != OCTANS_CONN_UNKNOWN &&
+                            s->view.conn != OCTANS_CONN_UNKNOWN &&
+                            r->conn != s->view.conn);
+            if (diff_bus || !r_exact_hidpp || !s_exact_hidpp) {
+                return (int)i;
+            }
+        }
+    }
+    return -1;
+}
+
 static int alloc_slot(octans_merge_state_t *m) {
     for (size_t i = 0; i < OCTANS_MAX_DEVICES; ++i) {
         if (!m->slots[i].in_use) return (int)i;
@@ -144,6 +294,8 @@ static int alloc_slot(octans_merge_state_t *m) {
 static int reading_priority(const octans_proto_reading_t *r) {
     int p = 0;
     if (r->valid) p += 100;
+    if (r->vid != 0) p += 30; /* Vendor HID protocol beats generic bt_devpkey */
+    if (is_exact_hidpp_unit_id(r->stable_id)) p += 10;
     if (r->power_state == OCTANS_PWR_CHARGING || r->power_state == OCTANS_PWR_FULL) p += 40;
     if (r->conn == OCTANS_CONN_WIRED) p += 20;
     if (!r->is_estimated) p += 5;
@@ -168,8 +320,12 @@ void octans_merge_apply(octans_merge_state_t *m,
         char key[64];
         compute_merge_key(r, key, sizeof(key));
 
-        int idx = find_slot_by_id(m, key);
+        int idx = find_matching_slot(m, r, key);
         if (idx < 0) {
+            if (!r->valid) {
+                /* Never conjure a brand-new ghost card from an unseen offline/asleep reading. */
+                continue;
+            }
             idx = alloc_slot(m);
             memset(&m->slots[idx], 0, sizeof(m->slots[idx]));
             m->slots[idx].in_use = 1;
@@ -198,9 +354,14 @@ void octans_merge_apply(octans_merge_state_t *m,
             best_prio_this_tick[idx] = prio;
             s->last_valid_ms = now_ms;
 
-            s->view.vid = r->vid;
-            s->view.pid = r->pid;
-            if (r->kind != OCTANS_DEV_UNKNOWN) s->view.kind = r->kind;
+            if (r->vid != 0) {
+                s->view.vid = r->vid;
+                s->view.pid = r->pid;
+            }
+            if (r->kind != OCTANS_DEV_UNKNOWN &&
+                !(r->kind == OCTANS_DEV_OTHER && s->view.kind != OCTANS_DEV_UNKNOWN && s->view.kind != OCTANS_DEV_OTHER)) {
+                s->view.kind = r->kind;
+            }
             if (r->conn != OCTANS_CONN_UNKNOWN) s->view.conn = r->conn;
             s->view.power_state = r->power_state;
             s->view.battery_percent = r->battery_percent;
@@ -210,6 +371,10 @@ void octans_merge_apply(octans_merge_state_t *m,
             s->view.is_low_battery = (r->battery_percent >= 0 && r->battery_percent <= 20) ? 1u : 0u;
             s->view.updated_ms = now_ms;
 
+            if (r->name[0]) {
+                wcsncpy(s->raw_name, r->name, 63);
+                s->raw_name[63] = L'\0';
+            }
             if (s->alias[0]) {
                 wcsncpy(s->view.name, s->alias, 63);
             } else if (r->name[0]) {
