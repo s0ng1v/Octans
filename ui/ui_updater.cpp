@@ -6,10 +6,10 @@
 namespace octans_ui {
 
 /* Default dual-source update endpoints (CN fast AtomGit primary + GitHub fallback) */
-static constexpr const wchar_t *kUrlManifestCn     = L"https://raw.atomgit.com/s0ng1v/Octans/raw/main/latest.json";
+static constexpr const wchar_t *kUrlManifestCn     = L"https://raw.atomgit.com/gcw_dkdsv0bD/Octans/raw/main/latest.json";
 static constexpr const wchar_t *kUrlManifestGlobal = L"https://raw.githubusercontent.com/s0ng1v/Octans/main/latest.json";
 static constexpr const wchar_t *kUrlGithubApi      = L"https://api.github.com/repos/s0ng1v/Octans/releases/latest";
-static constexpr const wchar_t *kDefaultPageCn     = L"https://atomgit.com/s0ng1v/Octans/releases";
+static constexpr const wchar_t *kDefaultPageCn     = L"https://atomgit.com/gcw_dkdsv0bD/Octans/releases";
 static constexpr const wchar_t *kDefaultPageGlobal = L"https://github.com/s0ng1v/Octans/releases/latest";
 
 /* ============================================================================

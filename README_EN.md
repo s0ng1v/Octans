@@ -6,10 +6,10 @@
   </picture>
 </p>
 
-<h3 align="center">Ultra-Lightweight Native Windows 2.4G Wireless Peripheral Battery Tray Monitor</h3>
+<h3 align="center">Real-time wireless peripheral battery in your Windows taskbar</h3>
 
 <p align="center">
-  Display real-time battery levels for your 2.4G wireless mice, keyboards, headsets, and controllers right in the Windows taskbar tray — <b>0% idle CPU</b>, <b>&lt; 5 MB idle RAM</b>, no bloated vendor suites required.
+  Lightweight &amp; native · 2.4G &amp; Bluetooth mice, keyboards, headsets, controllers · <b>0% CPU</b>, <b>&lt; 5 MB RAM</b>, no vendor bloat
 </p>
 
 <p align="center">
@@ -17,19 +17,19 @@
   ·
   <b>English</b>
   ·
-  <a href="https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><b>Direct Download (CN Mirror)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><b>Download (v1.0.0)</b></a>
   ·
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe">CN Mirror</a>
   ·
   <a href="#supported-brands--devices">Supported Devices</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v1.0.0-2563EB?style=flat-square"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-16A34A?style=flat-square"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0891B2?style=flat-square">
-  <img alt="Idle CPU" src="https://img.shields.io/badge/Idle%20CPU-0%25-10B981?style=flat-square">
-  <img alt="Idle RAM" src="https://img.shields.io/badge/Idle%20RAM-%3C5MB-6366F1?style=flat-square">
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><img alt="Download v1.0.0" src="https://img.shields.io/badge/download-v1.0.0-E05D44"></a>
+  <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
+  <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
+  <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
+  <img alt="Idle RAM <5MB" src="https://img.shields.io/badge/RAM-%3C5MB-6366F1">
 </p>
 
 <p align="center">
@@ -58,7 +58,7 @@ Download the installer **`Octans-Setup-v1.0.0.exe`** and double-click to install
 | Channel | Description | Link |
 |---|---|---|
 | **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.0.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
-| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.0.0.exe](https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [All Releases](https://atomgit.com/s0ng1v/Octans/releases) |
+| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.0.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 
 > **Tips**:
 > 1. If Windows hides the newly installed tray icon inside the `^` overflow menu, drag it out to the taskbar once to keep it permanently visible.
@@ -68,7 +68,7 @@ Download the installer **`Octans-Setup-v1.0.0.exe`** and double-click to install
 
 ## Supported Brands & Devices
 
-Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream brands out of the box across 2.4G wireless and Bluetooth:
+Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream brands out of the box across 2.4G wireless and Bluetooth (some models have not been hardware-tested yet and may not be detected — feel free to open an Issue):
 
 | Brand | Supported Devices & Popular Models |
 |---|---|

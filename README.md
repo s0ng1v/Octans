@@ -6,10 +6,10 @@
   </picture>
 </p>
 
-<h3 align="center">轻量原生、极低消耗的 Windows 2.4G 外设托盘电量显示工具</h3>
+<h3 align="center">在任务栏实时显示你的无线外设电量</h3>
 
 <p align="center">
-  把 2.4G 无线鼠标、键盘、耳机、手柄的实时电量直接放进 Windows 任务栏右下角——常驻 <b>0% CPU</b>、<b>&lt; 5 MB 内存</b>，告别臃肿官方驱动。
+  轻量原生 · 支持 2.4G 与蓝牙鼠键、耳机和手柄 · 常驻 <b>0% CPU</b>、<b>&lt; 5 MB 内存</b>，告别臃肿驱动
 </p>
 
 <p align="center">
@@ -25,11 +25,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/latest"><img alt="Release" src="https://img.shields.io/badge/Release-v1.0.0-2563EB?style=flat-square"></a>
-  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-GPL--3.0-16A34A?style=flat-square"></a>
-  <img alt="Platform" src="https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20x64-0891B2?style=flat-square">
-  <img alt="Idle CPU" src="https://img.shields.io/badge/常驻%20CPU-0%25-10B981?style=flat-square">
-  <img alt="Idle RAM" src="https://img.shields.io/badge/常驻内存-%3C5MB-6366F1?style=flat-square">
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe"><img alt="Download v1.0.0" src="https://img.shields.io/badge/download-v1.0.0-E05D44"></a>
+  <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
+  <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
+  <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
+  <img alt="Idle RAM <5MB" src="https://img.shields.io/badge/RAM-%3C5MB-6366F1">
 </p>
 
 <p align="center">
@@ -57,7 +57,7 @@
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.0.0.exe](https://atomgit.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [全部版本](https://atomgit.com/s0ng1v/Octans/releases) |
+| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.0.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 | **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.0.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.0.0/Octans-Setup-v1.0.0.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
@@ -68,7 +68,7 @@
 
 ## 支持的品牌与外设
 
-支持 20+ 主流品牌的 2.4G 无线外设、蓝牙设备与无线手柄，涵盖鼠标、键盘、耳机与手柄，即插即用：
+支持 20+ 主流品牌的 2.4G 无线外设、蓝牙设备与无线手柄，涵盖鼠标、键盘、耳机与手柄，即插即用（部分型号未经真机测试，可能会有检测不到的情况，欢迎提 Issues）：
 
 | 品牌 | 支持设备与常见型号 |
 |---|---|
