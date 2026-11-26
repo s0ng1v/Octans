@@ -33,6 +33,10 @@
 </p>
 
 <p align="center">
+  <img alt="Octans 在任务栏实时显示你的无线外设电量" src="assets/screenshots/octans-banner.png" width="100%">
+</p>
+
+<p align="center">
   <img alt="Octans 浅色与深色模式主面板与任务栏托盘预览" src="assets/screenshots/octans-hero.png" width="100%">
 </p>
 

@@ -33,6 +33,10 @@
 </p>
 
 <p align="center">
+  <img alt="Octans Real-time Wireless Peripheral Battery Overview" src="assets/screenshots/octans-banner.png" width="100%">
+</p>
+
+<p align="center">
   <img alt="Octans Light & Dark Main Panel and Taskbar Tray Preview" src="assets/screenshots/octans-hero.png" width="100%">
 </p>
 
