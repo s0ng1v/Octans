@@ -17,7 +17,7 @@
   ·
   <a href="README_EN.md">English</a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><b>国内高速下载</b></a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe"><b>国内高速下载</b></a>
   ·
   <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
   ·
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><img alt="Download v1.1.1" src="https://img.shields.io/badge/download-v1.1.1-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe"><img alt="Download v1.2.0" src="https://img.shields.io/badge/download-v1.2.0-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -56,12 +56,12 @@
 
 ## 下载与安装
 
-推荐直接下载安装程序 **`Octans-Setup-v1.1.1.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
+推荐直接下载安装程序 **`Octans-Setup-v1.2.0.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.1.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
-| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.1.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
+| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.2.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.2.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
 > 1. 首次安装运行后，若任务栏图标被系统折叠进右下角 `^` 箭头内，直接将其拖出到任务栏即可永久常驻显示。
@@ -80,6 +80,7 @@
 | **海盗船 / 赛睿 / HyperX / 索尼 / 联想 / 音珀 EPOS / 斐风 FIFINE** | 海盗船无线鼠键耳机；赛睿 Aerox 鼠标、Arctis 1 / Nova / GameBuds 耳机；HyperX 飓风 Cloud II / III / Alpha / Flight 耳机与脉冲星鼠标；索尼 INZONE Buds / PULSE 3D；联想无线耳机；音珀 H3PRO；斐风 HT6 |
 | **华硕 ROG / 杜伽 DURGOD / 铝厂 IQUNIX / Keychron / 洛斐** | 华硕 ROG 龙鳞 / 月刃 / 战刃等无线鼠键；杜伽无线键盘；IQUNIX 无线键鼠；Keychron、洛斐等主流三模机械键盘 |
 | **雷柏 Rapoo** | VT0 / VT0 MAX / VT0 Air MAX、VT1 / VT3 / VT7 / VT9 二代及全系 VT 无线鼠标、V700DIY 无线键盘与无线接收器外设 |
+| **漫步者 EDIFIER / 漫步者电竞 HECATE** | HECATE G5 MAX / G5 MAX V2 / G5 MAX 底座版 / G4 MAX / G3 MAX / G3 / G2 MAX / V5 MAX / V3 MAX 无线耳机、GX03 ULTRA / GX05 大师版无线 TWS、G5M PRO / G5M ULTRA / G3M PRO 升级版 / G3M ULTRA / G2M PRO 无线鼠标；花再 Halo Space / Evo Space 无线耳机与 TempoHub 键鼠（蓝牙耳机同步直读） |
 | **ATK / VXE / VGN / 兰族 LAMZU / 忍者 Ninjutso / Pulsar / 影魔 WLmouse** | ATK / VXE 蜻蜓 R1、F1、A9 / A9 Pro Max、X1 / X1 Ultimate、V3 星闪鼠标及 A87 / A98 键盘；兰族 Maya X / Inca / Atlantis；忍者 Sora V2；Pulsar X2 / Xlite；影魔 Beast X；扎品 Z1 Pro / Z2 等主流轻量化鼠标 |
 | **迈从 MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 等无线鼠标；G87 / G87 V2 / G98 / K99 / X75 / Z75 及磁轴机械键盘；V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
 | **凌豹 LEOBOG / 狼蛛 AULA** | 凌豹 Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 等三模键盘与 GM2 系列无线鼠标；狼蛛 F75 / F87 / F87 Pro V2C / F99 等全系无线鼠键 |
@@ -101,7 +102,7 @@
 ### 技术实现与极致轻量设计
 
 - **纯原生零依赖**：后端协议引擎采用纯 C11，界面采用 Win32 + Direct2D / DirectWrite 轻量软件渲染（彻底避免常驻加载 D3D11 / GPU 驱动模块，同时对非输入窗口解绑 IME 防止输入法 DLL 注入）；无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖。
-- **超小体积**：桌面主程序 `Octans.exe` 仅约 **358 KB**，独立命令行工具 `octans-cli.exe` 约 **155 KB**。
+- **超小体积**：桌面主程序 `Octans.exe` 仅约 **373 KB**，独立命令行工具 `octans-cli.exe` 约 **175 KB**。
 - **按需释放与零静态网络导入**：面板关闭后自动释放离屏缓冲并触发工作集回收；PE 导入表零网络 DLL 静态依赖，仅在用户手动点击检查更新时按需动态加载 `winhttp.dll` 与 `bcrypt.dll`。
 
 ### 目录结构
@@ -115,7 +116,7 @@ cli/        独立无头命令行工具（支持 list --json、test-rule、probe
 include/    后端与 UI 稳定 C ABI 头文件与版本定义
 assets/     Octans 品牌视觉资产与多分辨率图标
 installer/  Inno Setup 安装脚本与一键打包脚本
-tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（557 项断言）
+tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（648 项断言）
 ```
 
 ### 从源码构建
@@ -123,10 +124,10 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 需要 Windows 10/11 与 LLVM-MinGW (UCRT) 工具链（打包安装程序需 Inno Setup 6）：
 
 ```powershell
-# 一键编译命令行工具、运行 557 项单元测试并构建 build\Octans.exe
+# 一键编译命令行工具、运行 648 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.1.1.exe）
+# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.2.0.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # 单独编译并预览无硬件 UI Demo

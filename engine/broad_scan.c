@@ -58,8 +58,12 @@ static octans_device_kind_t infer_kind(const octans_hid_info_t *info,
                                        octans_proto_variant_t var) {
     if (var == VAR_JIELI_TLV || var == VAR_INDEP_MCHOSE_V9 ||
         var == VAR_INDEP_MCHOSE_AUDIO_MC ||
+        var == VAR_INDEP_HECATE_HEADSET || var == VAR_INDEP_EDIFIER_EC ||
         var == VAR_RAZER_PA_HEADSET || var == VAR_HX_GEN2 || var == VAR_HX_CLOUD3S) {
         return OCTANS_DEV_HEADSET;
+    }
+    if (var == VAR_INDEP_HECATE_TWS) {
+        return OCTANS_DEV_EARBUDS;
     }
     if (var == VAR_KB_ATK_EVISION || var == VAR_KB_VIA_RAW ||
         var == VAR_KB_KEYCHRON || var == VAR_KB_SEMICO_AA55 ||
@@ -172,6 +176,8 @@ static size_t select_candidates(const octans_hid_info_t *info,
         out[n++] = VAR_INDEP_NORDIC_GEN;
     } else if (up == 0xFF42u && out_l >= 64u && in_l >= 64u) {
         out[n++] = VAR_CORSAIR_BRAGI;
+    } else if (up == 0xFF14u && u == 0x0001u && out_l >= 64u && in_l >= 64u) {
+        out[n++] = VAR_INDEP_EDIFIER_EC;
     }
 
     return n;

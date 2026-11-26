@@ -1638,6 +1638,207 @@ static void test_v110_leobog_darmoshark_and_audit(void) {
     ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x144Au, 0xFF00u, 0x0002u, 1));
 }
 
+static void test_v120_edifier_hecate(void) {
+    octans_proto_reading_t r;
+
+    /* 1. HECATE Standard Headsets (0x35BB, 0xD0 wireless / 0xE0 wired) */
+    uint8_t h_req[64];
+    octans_proto_build_hecate_headset(0xD0u, 0x00u, h_req);
+    ASSERT_EQ_INT(0xD0, h_req[0]);
+    ASSERT_EQ_INT(0x35, h_req[1]);
+    ASSERT_EQ_INT(0xBB, h_req[2]);
+    ASSERT_EQ_INT(0x01, h_req[3]);
+    ASSERT_EQ_INT(0x00, h_req[4]);
+
+    /* Real hardware capture: G5 MAX online 100% discharging */
+    const uint8_t h_on[16] = {0xD0, 0x35, 0xBB, 0x04, 0x00, 0x01, 0x64, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_headset(h_on, sizeof(h_on), 0xD0u, &r));
+    ASSERT_EQ_INT(1, r.valid);
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Real hardware capture: G5 MAX docked/off (buf[5]=0 must report offline, never stale 100%) */
+    const uint8_t h_off[16] = {0xD0, 0x35, 0xBB, 0x04, 0x00, 0x00, 0x64, 0x01};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_headset(h_off, sizeof(h_off), 0xD0u, &r));
+    ASSERT_EQ_INT(0, r.valid);
+    ASSERT_EQ_INT(1, r.offline);
+    ASSERT_EQ_INT(OCTANS_PWR_OFFLINE, r.power_state);
+
+    /* Charging (1) & Full (2) + Wired 0xE0 + cmd 0x01 */
+    const uint8_t h_wired_chg[16] = {0xE0, 0x35, 0xBB, 0x04, 0x00, 0x01, 78, 0x01};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_headset(h_wired_chg, sizeof(h_wired_chg), 0xE0u, &r));
+    ASSERT_EQ_INT(78, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+    ASSERT_EQ_INT(OCTANS_CONN_WIRED, r.conn);
+
+    const uint8_t h_full[16] = {0xD0, 0x35, 0xBB, 0x04, 0x00, 0x01, 100, 0x02};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_headset(h_full, sizeof(h_full), 0xD0u, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    const uint8_t h_cmd1[16] = {0xD0, 0x35, 0xBB, 0x03, 0x01, 65, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_headset(h_cmd1, sizeof(h_cmd1), 0xD0u, &r));
+    ASSERT_EQ_INT(65, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Reject LED RID 0xED and out-of-range battery */
+    const uint8_t h_led[16] = {0xED, 0x35, 0xBB, 0x04, 0x00, 0x01, 80, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_hecate_headset(h_led, sizeof(h_led), 0u, &r));
+    const uint8_t h_badpct[16] = {0xD0, 0x35, 0xBB, 0x04, 0x00, 0x01, 105, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_hecate_headset(h_badpct, sizeof(h_badpct), 0xD0u, &r));
+
+    /* 2. HECATE TWS Earbuds (GX03 ULTRA 35BB:A217 & GX05 Master 35BB:A221) */
+    const uint8_t tws_both[16] = {0xD0, 0x35, 0xBB, 0x08, 0x00, 0x03, 80, 65, 90};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_tws(tws_both, sizeof(tws_both), &r));
+    ASSERT_EQ_INT(65, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t tws_chg[16] = {0xD0, 0x35, 0xBB, 0x08, 0x01, 0x03, (uint8_t)(0x80u | 90u), 70, 50};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_tws(tws_chg, sizeof(tws_chg), &r));
+    ASSERT_EQ_INT(70, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t tws_single[16] = {0xD0, 0x35, 0xBB, 0x08, 0x00, 0x01, 55, 0xFF, 80};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_tws(tws_single, sizeof(tws_single), &r));
+    ASSERT_EQ_INT(55, r.battery_percent);
+
+    const uint8_t tws_off[16] = {0xD0, 0x35, 0xBB, 0x08, 0x00, 0x00, 0xFF, 0xFF, 80};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_tws(tws_off, sizeof(tws_off), &r));
+    ASSERT_EQ_INT(0, r.valid);
+    ASSERT_EQ_INT(1, r.offline);
+
+    /* 3. HECATE G5M Pro (35BB:D00B Report 0x04) */
+    uint8_t m04_req[64];
+    octans_proto_build_hecate_mouse04(m04_req);
+    ASSERT_EQ_INT(0x04, m04_req[0]);
+    ASSERT_EQ_INT(0x1A, m04_req[3]);
+
+    const uint8_t m04_dis[16] = {0x04, 0x00, 0x00, 0x1A, 0, 0, 0, 0, 82, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_mouse04(m04_dis, sizeof(m04_dis), &r));
+    ASSERT_EQ_INT(82, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    const uint8_t m04_chg[16] = {0x04, 0x00, 0x00, 0x1A, 0, 0, 0, 0, 44, 0x01};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_mouse04(m04_chg, sizeof(m04_chg), &r));
+    ASSERT_EQ_INT(44, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t m04_full[16] = {0x04, 0x00, 0x00, 0x1A, 0, 0, 0, 0, 100, 0x02};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_hecate_mouse04(m04_full, sizeof(m04_full), &r));
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    const uint8_t m04_hb[16] = {0x04, 0xAA, 0x00, 0xAA, 0, 0, 0, 0, 50, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_hecate_mouse04(m04_hb, sizeof(m04_hb), &r));
+    const uint8_t m04_zero[16] = {0x04, 0x00, 0x00, 0x1A, 0, 0, 0, 0, 0, 0x00};
+    ASSERT_EQ_INT(0, octans_proto_parse_hecate_mouse04(m04_zero, sizeof(m04_zero), &r));
+
+    /* 4. EDIFIER / Huazai EC-Protocol (VID 0x2D99, 0xFF14:0x0001) */
+    uint8_t ec_req[64];
+    octans_proto_build_edifier_ec(0x65u, ec_req);
+    ASSERT_EQ_INT(0x2E, ec_req[0]);
+    ASSERT_EQ_INT(0xAA, ec_req[1]);
+    ASSERT_EQ_INT(0xEC, ec_req[2]);
+    ASSERT_EQ_INT(0x65, ec_req[3]);
+    ASSERT_EQ_INT(0xFB, ec_req[6]);
+
+    octans_proto_build_edifier_ec(0xD0u, ec_req);
+    ASSERT_EQ_INT(0x66, ec_req[6]);
+    octans_proto_build_edifier_ec(0xF2u, ec_req);
+    ASSERT_EQ_INT(0x88, ec_req[6]);
+
+    /* CM_65 encryption discovery */
+    uint8_t ec_65[16] = {0x2F, 0xBB, 0xEC, 0x65, 0x00, 0x04, 0x01, 0x10, 0x00, 0x40, 0x00};
+    uint32_t s65 = 0;
+    for (size_t i = 1; i < 10; ++i) s65 += ec_65[i];
+    ec_65[10] = (uint8_t)(s65 & 0xFFu);
+    uint8_t enc_mode = 0;
+    ASSERT_EQ_INT(1, octans_proto_parse_edifier_ec_enc(ec_65, sizeof(ec_65), &enc_mode));
+    ASSERT_EQ_INT(0x10, enc_mode);
+
+    /* Real hardware capture: Halo Space 2F BB EC D0 00 01 86 FE (+ stale tail bytes) -> 35% */
+    const uint8_t halo_d0[16] = {0x2F, 0xBB, 0xEC, 0xD0, 0x00, 0x01, 0x86, 0xFE, 0xDE, 0xAD};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_edifier_ec(halo_d0, sizeof(halo_d0), 0x10u, &r));
+    ASSERT_EQ_INT(35, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Bad CRC rejected */
+    uint8_t halo_bad[16];
+    memcpy(halo_bad, halo_d0, sizeof(halo_bad));
+    halo_bad[7] ^= 0x01u;
+    ASSERT_EQ_INT(0, octans_proto_parse_edifier_ec(halo_bad, sizeof(halo_bad), 0x10u, &r));
+
+    /* Plaintext (0x00) & Bitwise-NOT (0x30) + CM_F2 charging state */
+    uint8_t ec_not[16] = {0x2F, 0xBB, 0xEC, 0xD0, 0x00, 0x01, (uint8_t)(~72u), 0x00};
+    uint32_t sn = 0;
+    for (size_t i = 1; i < 7; ++i) sn += ec_not[i];
+    ec_not[7] = (uint8_t)(sn & 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_edifier_ec(ec_not, sizeof(ec_not), 0x30u, &r));
+    ASSERT_EQ_INT(72, r.battery_percent);
+
+    uint8_t ec_f2[16] = {0x2F, 0xBB, 0xEC, 0xF2, 0x00, 0x06,
+                         0x00 ^ 0xA5, 0xFF ^ 0xA5, 0xFF ^ 0xA5, 74 ^ 0xA5, 1 ^ 0xA5, 0x00 ^ 0xA5, 0x00};
+    uint32_t sf2 = 0;
+    for (size_t i = 1; i < 12; ++i) sf2 += ec_f2[i];
+    ec_f2[12] = (uint8_t)(sf2 & 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_edifier_ec(ec_f2, sizeof(ec_f2), 0x10u, &r));
+    ASSERT_EQ_INT(74, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* 5. EDIFIER TempoHub KBM (VID 0x0E8D, 0xFF14:0x0001, CM_06) */
+    uint8_t kbm_req[64];
+    octans_proto_build_edifier_kbm(kbm_req);
+    ASSERT_EQ_INT(0x2E, kbm_req[0]);
+    ASSERT_EQ_INT(0xAA, kbm_req[1]);
+    ASSERT_EQ_INT(0x01, kbm_req[2]);
+    ASSERT_EQ_INT(0x06, kbm_req[3]);
+    ASSERT_EQ_INT(0xB1, kbm_req[6]);
+
+    uint8_t kbm_rep[16] = {0x2F, 0xBB, 0x01, 0x06, 0x00, 0x02, 0x01, 88, 0x00};
+    uint32_t sk = 0;
+    for (size_t i = 1; i < 8; ++i) sk += kbm_rep[i];
+    kbm_rep[8] = (uint8_t)(sk & 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_edifier_kbm(kbm_rep, sizeof(kbm_rep), &r));
+    ASSERT_EQ_INT(88, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    kbm_rep[8] ^= 0xFFu;
+    ASSERT_EQ_INT(0, octans_proto_parse_edifier_kbm(kbm_rep, sizeof(kbm_rep), &r));
+
+    /* 6. Protocol Table Routing (No Collisions between CompX Mice, TWS & Headsets on 0x35BB) */
+    ASSERT_EQ_INT((int)VAR_COMPX_A_OUTPUT, first_matching_variant(0x35BBu, 0xD3FBu, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_COMPX_A_OUTPUT, first_matching_variant(0x35BBu, 0xD013u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_COMPX_A_OUTPUT, first_matching_variant(0x35BBu, 0xD017u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_COMPX_A_OUTPUT, first_matching_variant(0x35BBu, 0xD011u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_MOUSE_04, first_matching_variant(0x35BBu, 0xD00Bu, 0xFF1Cu, 0x0092u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA00Bu, 0xFF02u, 0x0002u, 3));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA228u, 0xFF02u, 0x0002u, 4));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA23Fu, 0xFF02u, 0x0002u, 4));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA239u, 0xFF02u, 0x0002u, 3));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA233u, 0xFF02u, 0x0002u, 4));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_HEADSET, first_matching_variant(0x35BBu, 0xA235u, 0xFF02u, 0x0002u, 3));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_TWS, first_matching_variant(0x35BBu, 0xA217u, 0xFF02u, 0x0002u, 4));
+    ASSERT_EQ_INT((int)VAR_INDEP_HECATE_TWS, first_matching_variant(0x35BBu, 0xA221u, 0xFF02u, 0x0002u, 4));
+    ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_EC, first_matching_variant(0x2D99u, 0xE049u, 0xFF14u, 0x0001u, 3));
+    ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_EC, first_matching_variant(0x2D99u, 0xE057u, 0xFF14u, 0x0001u, 3));
+    ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_KBM, first_matching_variant(0x0E8Du, 0x0001u, 0xFF14u, 0x0001u, 1));
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -1654,6 +1855,7 @@ int main(void) {
     test_dedup_logitech_and_bt();
     test_new_vendor_protocols();
     test_v110_leobog_darmoshark_and_audit();
+    test_v120_edifier_hecate();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

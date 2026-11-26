@@ -1678,6 +1678,319 @@ int octans_proto_parse_epos_h3pro(const uint8_t *buf, size_t len, int is_wired, 
     return 1;
 }
 
+/* ---- EDIFIER (漫步者/花再) & HECATE (漫步者电竞) Verified Protocols ---- */
+
+void octans_proto_build_hecate_headset(uint8_t report_id, uint8_t cmd, uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = report_id; /* 0xD0 wireless dongle, 0xE0 wired USB */
+    out64[1] = 0x35u;
+    out64[2] = 0xBBu;
+    out64[3] = 0x01u;
+    out64[4] = cmd;       /* 0x00 status+battery, 0x01 battery-only */
+}
+
+int octans_proto_parse_hecate_headset(const uint8_t *buf, size_t len, uint8_t expected_rid, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 7u) return 0;
+    if (expected_rid != 0u) {
+        if (buf[0] != expected_rid) return 0;
+    } else if (buf[0] != 0xD0u && buf[0] != 0xE0u) {
+        return 0;
+    }
+    if (buf[1] != 0x35u || buf[2] != 0xBBu) return 0;
+
+    uint8_t plen = buf[3];
+    uint8_t cmd = buf[4];
+    if (cmd == 0x00u && plen >= 3u) {
+        if (buf[0] == 0xD0u && buf[5] != 0x01u) {
+            out->offline = 1;
+            out->power_state = OCTANS_PWR_OFFLINE;
+            return 1;
+        }
+        uint8_t pct = buf[6];
+        if (pct > 100u) return 0;
+        uint8_t chg = (plen >= 4u && len >= 8u) ? buf[7] : 0u;
+        out->battery_percent = (int8_t)pct;
+        out->power_state = (chg == 2u) ? OCTANS_PWR_FULL
+                         : (chg == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+        if (buf[0] == 0xE0u) out->conn = OCTANS_CONN_WIRED;
+        out->valid = 1;
+        return 1;
+    }
+    if (cmd == 0x01u && plen >= 3u) {
+        uint8_t pct = buf[5];
+        uint8_t chg = buf[6];
+        if (pct > 100u) return 0;
+        out->battery_percent = (int8_t)pct;
+        out->power_state = (chg == 2u) ? OCTANS_PWR_FULL
+                         : (chg == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+        if (buf[0] == 0xE0u) out->conn = OCTANS_CONN_WIRED;
+        out->valid = 1;
+        return 1;
+    }
+    return 0;
+}
+
+int octans_proto_parse_hecate_tws(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 8u) return 0;
+    if (buf[0] != 0xD0u || buf[1] != 0x35u || buf[2] != 0xBBu) return 0;
+    if (buf[3] < 3u || (buf[4] != 0x00u && buf[4] != 0x01u)) return 0;
+
+    uint8_t mask = buf[5];
+    int bud_a = (mask & 0x01u) != 0u;
+    int bud_b = (mask & 0x02u) != 0u;
+    if (!bud_a && !bud_b) {
+        out->offline = 1;
+        out->power_state = OCTANS_PWR_OFFLINE;
+        return 1;
+    }
+
+    int pct_a = -1, chg_a = 0;
+    int pct_b = -1, chg_b = 0;
+    if (bud_a) {
+        uint8_t p = buf[6] & 0x7Fu;
+        if (p <= 100u) {
+            pct_a = (int)p;
+            chg_a = (buf[6] >> 7) & 1;
+        }
+    }
+    if (bud_b) {
+        uint8_t p = buf[7] & 0x7Fu;
+        if (p <= 100u) {
+            pct_b = (int)p;
+            chg_b = (buf[7] >> 7) & 1;
+        }
+    }
+    if (pct_a < 0 && pct_b < 0) return 0;
+
+    int pct;
+    int chg;
+    if (pct_a >= 0 && pct_b >= 0) {
+        pct = (pct_a < pct_b) ? pct_a : pct_b;
+        chg = (chg_a || chg_b);
+    } else if (pct_a >= 0) {
+        pct = pct_a;
+        chg = chg_a;
+    } else {
+        pct = pct_b;
+        chg = chg_b;
+    }
+    out->battery_percent = (int8_t)pct;
+    out->power_state = (chg && pct >= 100) ? OCTANS_PWR_FULL
+                     : (chg ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    out->valid = 1;
+    return 1;
+}
+
+void octans_proto_build_hecate_mouse04(uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = 0x04u;
+    out64[3] = 0x1Au;
+}
+
+int octans_proto_parse_hecate_mouse04(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 10u) return 0;
+    if (buf[0] != 0x04u || buf[3] != 0x1Au) return 0;
+    uint8_t pct = buf[8];
+    uint8_t chg = buf[9];
+    if (pct == 0u || pct > 100u) return 0;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = (chg == 2u) ? OCTANS_PWR_FULL
+                     : (chg == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    out->valid = 1;
+    return 1;
+}
+
+static uint8_t edifier_ec_sum(const uint8_t *buf, size_t start, size_t end_excl) {
+    uint32_t sum = 0u;
+    for (size_t i = start; i < end_excl; ++i) {
+        sum += buf[i];
+    }
+    return (uint8_t)(sum & 0xFFu);
+}
+
+void octans_proto_build_edifier_ec(uint8_t cmd, uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = 0x2Eu;
+    out64[1] = 0xAAu;
+    out64[2] = 0xECu;
+    out64[3] = cmd;
+    out64[4] = 0x00u;
+    out64[5] = 0x00u;
+    out64[6] = edifier_ec_sum(out64, 1u, 6u);
+}
+
+int octans_proto_parse_edifier_ec_enc(const uint8_t *buf, size_t len, uint8_t *out_enc) {
+    if (!buf || !out_enc || len < 9u) return 0;
+    if (buf[0] != 0x2Fu || buf[1] != 0xBBu || buf[2] != 0xECu || buf[3] != 0x65u) return 0;
+    uint16_t plen = (uint16_t)(((uint16_t)buf[4] << 8) | buf[5]);
+    if (plen < 2u || plen > 57u || (size_t)(6u + plen) >= len) return 0;
+    if (edifier_ec_sum(buf, 1u, (size_t)(6u + plen)) != buf[6u + plen]) return 0;
+    *out_enc = buf[7];
+    return 1;
+}
+
+int octans_proto_parse_edifier_ec(const uint8_t *buf, size_t len, uint8_t enc_mode, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 8u) return 0;
+    if (buf[0] != 0x2Fu || buf[1] != 0xBBu || buf[2] != 0xECu) return 0;
+    uint8_t cmd = buf[3];
+    if (cmd != 0xD0u && cmd != 0xF2u) return 0;
+
+    uint16_t plen = (uint16_t)(((uint16_t)buf[4] << 8) | buf[5]);
+    if (plen < 1u || plen > 57u || (size_t)(6u + plen) >= len) return 0;
+    if (edifier_ec_sum(buf, 1u, (size_t)(6u + plen)) != buf[6u + plen]) return 0;
+
+    uint8_t dec[64];
+    for (uint16_t i = 0; i < plen; ++i) {
+        uint8_t b = buf[6u + i];
+        if (enc_mode == 0x10u) {
+            dec[i] = (uint8_t)(b ^ 0xA5u);
+        } else if (enc_mode == 0x30u) {
+            dec[i] = (uint8_t)(~b);
+        } else if (enc_mode == 0x00u) {
+            dec[i] = b;
+        } else {
+            return 0;
+        }
+    }
+
+    if (cmd == 0xD0u) {
+        if (dec[0] > 100u) return 0;
+        out->battery_percent = (int8_t)dec[0];
+        out->power_state = OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    /* cmd == 0xF2: [Peer, LB, RB, DB, DC, (ED)] */
+    if (plen >= 5u) {
+        uint8_t lb = dec[1];
+        uint8_t rb = dec[2];
+        uint8_t db = dec[3];
+        uint8_t dc = dec[4];
+        if (db <= 100u) {
+            out->battery_percent = (int8_t)db;
+            out->power_state = (dc == 1u) ? (db >= 100u ? OCTANS_PWR_FULL : OCTANS_PWR_CHARGING)
+                                          : OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+        if (lb <= 100u || rb <= 100u) {
+            uint8_t pct = (lb <= 100u && rb <= 100u) ? (lb < rb ? lb : rb)
+                        : (lb <= 100u ? lb : rb);
+            out->battery_percent = (int8_t)pct;
+            out->power_state = (dc == 1u) ? (pct >= 100u ? OCTANS_PWR_FULL : OCTANS_PWR_CHARGING)
+                                          : OCTANS_PWR_DISCHARGING;
+            out->valid = 1;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void octans_proto_build_edifier_kbm(uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = 0x2Eu;
+    out64[1] = 0xAAu;
+    out64[2] = 0x01u;
+    out64[3] = 0x06u;
+    out64[4] = 0x00u;
+    out64[5] = 0x00u;
+    out64[6] = edifier_ec_sum(out64, 1u, 6u);
+}
+
+int octans_proto_parse_edifier_kbm(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 9u) return 0;
+    if (buf[0] != 0x2Fu || buf[1] != 0xBBu || buf[2] != 0x01u || buf[3] != 0x06u) return 0;
+    uint16_t plen = (uint16_t)(((uint16_t)buf[4] << 8) | buf[5]);
+    if (plen < 2u || plen > 57u || (size_t)(6u + plen) >= len) return 0;
+    if (edifier_ec_sum(buf, 1u, (size_t)(6u + plen)) != buf[6u + plen]) return 0;
+    uint8_t state = buf[6];
+    uint8_t pct = buf[7];
+    if (pct > 100u) return 0;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = (state == 1u) ? (pct >= 100u ? OCTANS_PWR_FULL : OCTANS_PWR_CHARGING)
+                                     : OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+static int is_hecate_non_battery_pid(uint16_t pid) {
+    switch (pid) {
+    case 0xB001u: /* G1500 BAR speaker */
+    case 0xB0C9u: /* G2000 BAR speaker */
+    case 0xA100u: /* G2 PRO wired */
+    case 0xA215u: /* G2 HD wired */
+    case 0xA21Bu: /* G5 MAX soundcard wired */
+    case 0xA227u: /* G3 MAX soundcard wired */
+    case 0xA22Eu: /* V5 MAX soundcard wired */
+    case 0xA231u: /* V3 MAX soundcard wired */
+    case 0xA236u: /* GM500 wired */
+        return 1;
+    default:
+        return 0;
+    }
+}
+
+static const wchar_t *hecate_expected_path_feature(uint16_t pid) {
+    switch (pid) {
+    case 0xA00Bu: /* G5 MAX wireless */
+    case 0xA220u: /* G3 wireless */
+    case 0xA226u: /* G3 MAX wireless */
+    case 0xA22Bu: /* G3 MAX dock wireless */
+    case 0xA235u: /* V3 MAX dock wireless */
+    case 0xA238u: /* G2 MAX wired */
+        return L"mi_03&col03";
+    case 0xA217u: /* GX03 ULTRA */
+    case 0xA221u: /* GX05 Master */
+    case 0xA228u: /* G5 MAX dock wireless */
+    case 0xA233u: /* V5 MAX dock wireless */
+    case 0xA23Fu: /* G5 MAX V2 wireless */
+        return L"mi_04&col03";
+    case 0xA211u: /* G5 MAX wired */
+    case 0xA21Fu: /* G3 wired */
+    case 0xA225u: /* G3 MAX wired */
+    case 0xA22Au: /* G3 MAX dock wired */
+    case 0xA22Cu: /* G4 MAX dock wired */
+    case 0xA22Du: /* G4 MAX dock wireless */
+    case 0xA229u: /* G5 MAX dock wired */
+    case 0xA232u: /* V5 MAX dock wired */
+    case 0xA234u: /* V3 MAX dock wired */
+    case 0xA239u: /* G2 MAX wireless */
+    case 0xA23Eu: /* G5 MAX V2 wired */
+        return L"mi_03&col02";
+    default:
+        return NULL;
+    }
+}
+
+/* Isolate HECATE hid_for_device (Report ID 0xD0/0xE0) from hid_for_led (0xED) & hid_for_dockled (0xEE). */
+static uint8_t hecate_select_device_rid(const octans_hid_info_t *info,
+                                        octans_hid_dev_t *dev,
+                                        uint8_t preferred_rid) {
+    if (!info || !dev || is_hecate_non_battery_pid(info->pid)) return 0u;
+    uint8_t rids[8];
+    size_t rcnt = octans_hid_collect_output_rids(dev, rids, 8u);
+    int has_d0 = 0, has_e0 = 0, has_led = 0;
+    for (size_t i = 0; i < rcnt; ++i) {
+        if (rids[i] == 0xD0u) has_d0 = 1;
+        else if (rids[i] == 0xE0u) has_e0 = 1;
+        else if (rids[i] == 0xEDu || rids[i] == 0xEEu) has_led = 1;
+    }
+    if (has_d0) return 0xD0u;
+    if (has_e0) return 0xE0u;
+    if (has_led) return 0u; /* Never touch LED / dock LED collections */
+
+    const wchar_t *feat = hecate_expected_path_feature(info->pid);
+    if (feat && wstr_contains_nocase(info->path, feat)) {
+        return preferred_rid ? preferred_rid : 0xD0u;
+    }
+    return 0u;
+}
+
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,
@@ -1917,6 +2230,21 @@ int octans_proto_parse_indep(const uint8_t *buf,
 
     case VAR_INDEP_DARMOSHARK_TELINK:
         return octans_proto_parse_darmoshark_telink(buf, len, out);
+
+    case VAR_INDEP_HECATE_HEADSET:
+        return octans_proto_parse_hecate_headset(buf, len, 0u, out);
+
+    case VAR_INDEP_HECATE_TWS:
+        return octans_proto_parse_hecate_tws(buf, len, out);
+
+    case VAR_INDEP_HECATE_MOUSE_04:
+        return octans_proto_parse_hecate_mouse04(buf, len, out);
+
+    case VAR_INDEP_EDIFIER_EC:
+        return octans_proto_parse_edifier_ec(buf, len, 0x10u, out);
+
+    case VAR_INDEP_EDIFIER_KBM:
+        return octans_proto_parse_edifier_kbm(buf, len, out);
 
     default:
         return 0;
@@ -3049,6 +3377,121 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     int n = octans_hid_get_feature(&dev, 0x51u, resp, flen);
                     if (n >= 12 && octans_proto_parse_darmoshark_telink(resp, (size_t)n, out)) {
                         ok = 1;
+                    }
+                }
+            }
+        } else if ((e->variant == VAR_INDEP_HECATE_HEADSET || e->variant == VAR_INDEP_HECATE_TWS) &&
+                   dev.output_len >= 64u && dev.input_len >= 64u && dev.can_read) {
+            uint8_t pref_rid = octans_dec8(e->report_id, 5u);
+            uint8_t rid = hecate_select_device_rid(info, &dev, pref_rid);
+            if (rid != 0u) {
+                size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+                static const uint8_t cmds[2] = { 0x00u, 0x01u };
+                for (int ci = 0; ci < 2 && !ok; ++ci) {
+                    memset(req, 0, olen);
+                    octans_proto_build_hecate_headset(rid, cmds[ci], req);
+                    if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                        octans_hid_write_output(&dev, req, olen) == 0) {
+                        for (int a = 0; a < 6; ++a) {
+                            int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
+                            if (n < 7) continue;
+                            int parsed = (e->variant == VAR_INDEP_HECATE_TWS)
+                                       ? octans_proto_parse_hecate_tws(resp, (size_t)n, out)
+                                       : octans_proto_parse_hecate_headset(resp, (size_t)n, rid, out);
+                            if (parsed) {
+                                ok = 1;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_HECATE_MOUSE_04 &&
+                   dev.output_len >= 64u && dev.input_len >= 10u && dev.can_read) {
+            size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+            memset(req, 0, olen);
+            octans_proto_build_hecate_mouse04(req);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 6; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                    if (n >= 10 && octans_proto_parse_hecate_mouse04(resp, (size_t)n, out)) {
+                        ok = 1;
+                        break;
+                    }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_EDIFIER_EC &&
+                   dev.output_len >= 64u && dev.input_len >= 64u && dev.can_read &&
+                   !(info->vid == 0x2D99u && info->pid >= 0xA000u && info->pid <= 0xAFFFu)) {
+            size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+            uint8_t enc_mode = (info->pid == 0xE049u || info->pid == 0xE048u) ? 0x10u : 0x00u;
+
+            /* Step 1: Query CM_65 (always unencrypted) to discover exact payload encryption mode */
+            memset(req, 0, olen);
+            octans_proto_build_edifier_ec(0x65u, req);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 3; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 150u);
+                    uint8_t discovered = 0u;
+                    if (n >= 9 && octans_proto_parse_edifier_ec_enc(resp, (size_t)n, &discovered)) {
+                        enc_mode = discovered;
+                        break;
+                    }
+                }
+            }
+
+            /* Step 2: Query CM_D0 (universal battery query) */
+            memset(req, 0, olen);
+            octans_proto_build_edifier_ec(0xD0u, req);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                    if (n >= 8 && octans_proto_parse_edifier_ec(resp, (size_t)n, enc_mode, out)) {
+                        ok = 1;
+                        break;
+                    }
+                }
+            }
+
+            /* Step 3: Probe CM_F2 for charging state enrichment (or fallback if CM_D0 unsupported) */
+            memset(req, 0, olen);
+            octans_proto_build_edifier_ec(0xF2u, req);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                int attempts = ok ? 2 : 4;
+                uint32_t tmo = ok ? 100u : 180u;
+                for (int a = 0; a < attempts; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), tmo);
+                    octans_proto_reading_t st_r;
+                    octans_reading_init(&st_r);
+                    if (n >= 12 && octans_proto_parse_edifier_ec(resp, (size_t)n, enc_mode, &st_r)) {
+                        if (ok) {
+                            out->power_state = st_r.power_state;
+                        } else {
+                            out->battery_percent = st_r.battery_percent;
+                            out->power_state = st_r.power_state;
+                            out->valid = 1;
+                            ok = 1;
+                        }
+                        break;
+                    }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_EDIFIER_KBM &&
+                   dev.output_len >= 64u && dev.input_len >= 9u && dev.can_read) {
+            size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+            memset(req, 0, olen);
+            octans_proto_build_edifier_kbm(req);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 4; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                    if (n >= 9 && octans_proto_parse_edifier_kbm(resp, (size_t)n, out)) {
+                        ok = 1;
+                        break;
                     }
                 }
             }

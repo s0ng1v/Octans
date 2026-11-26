@@ -130,7 +130,7 @@ static void normalize_core_model_name(const wchar_t *name, char *out, size_t cap
     static const char *const kLeadBrands[] = {
         "logitech", "logi", "razer", "corsair", "steelseries", "hyperx",
         "asus", "rog", "rapoo", "keychron", "mchose", "atk", "aula",
-        "ajazz", "dareu", "iqunix", "durgod"
+        "ajazz", "dareu", "iqunix", "durgod", "edifier", "hecate", "huazai"
     };
     while (start < end) {
         int matched = 0;

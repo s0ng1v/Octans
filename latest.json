@@ -1,9 +1,9 @@
 {
-  "version": "1.1.1",
-  "notes": "v1.1.1：新增雷柏（Rapoo）VT0 / VT0 MAX / VT0 Air MAX / VT0 MAX 大师版及二代 N54 VT 系列鼠标支持，升级 Report 0x07 零写入即时直读，鼠标静止/休眠或与官方 A-HUB 并存时均可秒读电量。",
-  "sha256": "57DE68D144A9DE476B25F05085347E871C80AEE1D50C42A31E7239416BB4C3A6",
-  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe",
+  "version": "1.2.0",
+  "notes": "v1.2.0：新增漫步者（EDIFIER / 花再）与漫步者电竞（HECATE）全系官方驱动协议支持：覆盖 HECATE G5 MAX / G5 MAX V2 / G5 MAX 底座版 / G4 MAX / G3 MAX / G3 / G2 MAX / V5 MAX / V3 MAX 无线头戴耳机、GX03 ULTRA / GX05 大师版无线 TWS 耳机、G5M PRO / G5M ULTRA / G3M PRO 升级版 / G3M ULTRA / G2M PRO 无线鼠标，以及花再 Halo Space / Evo Space 与 TempoHub 无线键鼠。",
+  "sha256": "96BC4952BE7B8C59436A2A644E0C0DE6D6D81F6A1A7123DCF8BF2B09408D6050",
+  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

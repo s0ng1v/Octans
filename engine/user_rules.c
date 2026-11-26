@@ -59,7 +59,12 @@ static const tpl_map_entry_t k_tpl_map[] = {
     {"leobog_bytech", VAR_KB_LEOBOG_BYTECH},
     {"aula_kbd",    VAR_INDEP_AULA_KBD_AA},
     {"darmoshark_nordic", VAR_INDEP_DARMOSHARK_NORDIC},
-    {"darmoshark_telink", VAR_INDEP_DARMOSHARK_TELINK}
+    {"darmoshark_telink", VAR_INDEP_DARMOSHARK_TELINK},
+    {"hecate_headset",    VAR_INDEP_HECATE_HEADSET},
+    {"hecate_tws",        VAR_INDEP_HECATE_TWS},
+    {"hecate_mouse04",    VAR_INDEP_HECATE_MOUSE_04},
+    {"edifier_ec",        VAR_INDEP_EDIFIER_EC},
+    {"edifier_kbm",       VAR_INDEP_EDIFIER_KBM}
 };
 
 const char *octans_variant_to_template_name(octans_proto_variant_t v) {

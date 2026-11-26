@@ -113,6 +113,17 @@ int octans_proto_parse_sony_pulse3d(const uint8_t *buf, size_t len, octans_proto
 void octans_proto_build_epos_h3pro(int is_wired, uint8_t out107[107]);
 int octans_proto_parse_epos_h3pro(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out);
 
+void octans_proto_build_hecate_headset(uint8_t report_id, uint8_t cmd, uint8_t out64[64]);
+int octans_proto_parse_hecate_headset(const uint8_t *buf, size_t len, uint8_t expected_rid, octans_proto_reading_t *out);
+int octans_proto_parse_hecate_tws(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_hecate_mouse04(uint8_t out64[64]);
+int octans_proto_parse_hecate_mouse04(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_edifier_ec(uint8_t cmd, uint8_t out64[64]);
+int octans_proto_parse_edifier_ec_enc(const uint8_t *buf, size_t len, uint8_t *out_enc);
+int octans_proto_parse_edifier_ec(const uint8_t *buf, size_t len, uint8_t enc_mode, octans_proto_reading_t *out);
+void octans_proto_build_edifier_kbm(uint8_t out64[64]);
+int octans_proto_parse_edifier_kbm(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+
 int octans_proto_parse_indep(const uint8_t *buf,
                              size_t len,
                              octans_proto_variant_t var,
