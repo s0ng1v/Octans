@@ -17,15 +17,15 @@
   ·
   <b>English</b>
   ·
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe"><b>Download (v1.1.0)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><b>Download (v1.1.1)</b></a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe">CN Mirror</a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe">CN Mirror</a>
   ·
   <a href="#supported-brands--devices">Supported Devices</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe"><img alt="Download v1.1.0" src="https://img.shields.io/badge/download-v1.1.0-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><img alt="Download v1.1.1" src="https://img.shields.io/badge/download-v1.1.1-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -53,12 +53,12 @@
 
 ## Download & Install
 
-Download the installer **`Octans-Setup-v1.1.0.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
+Download the installer **`Octans-Setup-v1.1.1.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
 
 | Channel | Description | Link |
 |---|---|---|
-| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.1.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
-| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.1.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.1.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
+| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.1.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 
 > **Tips**:
 > 1. If Windows hides the newly installed tray icon inside the `^` overflow menu, drag it out to the taskbar once to keep it permanently visible.
@@ -123,7 +123,7 @@ Requires Windows 10/11 and the LLVM-MinGW (UCRT) toolchain (plus Inno Setup 6 fo
 # Build CLI, run all 557 unit tests, and build build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# Build and package the Windows installer (outputs dist\Octans-Setup-v1.1.0.exe)
+# Build and package the Windows installer (outputs dist\Octans-Setup-v1.1.1.exe)
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # Build and launch the hardware-free UI preview demo

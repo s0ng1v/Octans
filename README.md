@@ -17,7 +17,7 @@
   ·
   <a href="README_EN.md">English</a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe"><b>国内高速下载</b></a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><b>国内高速下载</b></a>
   ·
   <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
   ·
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe"><img alt="Download v1.1.0" src="https://img.shields.io/badge/download-v1.1.0-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe"><img alt="Download v1.1.1" src="https://img.shields.io/badge/download-v1.1.1-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -52,12 +52,12 @@
 
 ## 下载与安装
 
-推荐直接下载安装程序 **`Octans-Setup-v1.1.0.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
+推荐直接下载安装程序 **`Octans-Setup-v1.1.1.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.1.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
-| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.1.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
+| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.1.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.1.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.1.1/Octans-Setup-v1.1.1.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
 > 1. 首次安装运行后，若任务栏图标被系统折叠进右下角 `^` 箭头内，直接将其拖出到任务栏即可永久常驻显示。
@@ -122,7 +122,7 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 # 一键编译命令行工具、运行 557 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.1.0.exe）
+# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.1.1.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # 单独编译并预览无硬件 UI Demo
