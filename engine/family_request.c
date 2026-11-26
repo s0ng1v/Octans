@@ -1013,7 +1013,7 @@ static int is_mchose_by_exact_pid(uint16_t vid, uint16_t pid) {
     if (vid == 0x3837u && (pid == 0x201Au || pid == 0x201Bu)) return 1;
     if (vid == 0x41E4u && (pid == 0x2001u || pid == 0x2201u)) return 1;
     if (vid == 0x258Au &&
-        (pid == 0x0150u || pid == 0x01B7u || pid == 0x01C0u || pid == 0x0233u ||
+        (pid == 0x0150u || pid == 0x0233u ||
          pid == 0x010Cu || pid == 0x01B9u || pid == 0x01BBu || pid == 0x01A2u ||
          pid == 0x024Eu || pid == 0x027Eu || pid == 0x026Au || pid == 0x019Du)) {
         return 1;

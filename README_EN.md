@@ -85,7 +85,7 @@ Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream br
 | **Machenike / ThundeRobot** | Machenike L8 MAX, ThundeRobot ML9 mini, X7s Pro / Pro Max / Ultra wireless mice and wireless controllers |
 | **WOB / Akko / MonsGeek** | WOB Rainy75 V2, Zen65 keyboards and Rainy S1 mouse; Akko / MonsGeek tri-mode keyboards (including FUN60 Pro series) |
 | **Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 2.4G & 4K/8K wireless mice and tri-mode keyboards |
-| **INCOTT / Attack Shark / Bloody / Dovetek** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice; Dovetek Sparrow 98 & Bytech 916 tri-mode keyboards (RK M87 / R98Pro V2, VGN V98Pro V3 / V87 V2 / V108, GravaStar) |
+| **INCOTT / Attack Shark / Bloody / Bytech 916** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice; Bytech 916 tri-mode keyboards (RK R98Pro V2, VGN V98Pro V3 / V87 V2 / V108, GravaStar) |
 | **Controllers & Bluetooth Peripherals** | Xbox wireless controllers, Flydigi / GameSir / Beitong / 8BitDo controllers; Sony DualSense / DualShock 4; Nintendo Switch Pro / Joy-Con; plus most standard Bluetooth mice, keyboards, and headsets |
 
 See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) for the detailed device list and hardware verification notes (in Chinese).

@@ -84,7 +84,7 @@
 | **机械师 Machenike / 雷神 ThundeRobot** | 机械师 L8 MAX、雷神 ML9 mini、X7s Pro / Pro Max / Ultra 等无线鼠标与无线手柄 |
 | **WOB / 艾酷 Akko / 魔极客 MonsGeek** | WOB Rainy75 V2、Zen65 键盘与 Rainy S1 鼠标；艾酷 Akko / 魔极客 MonsGeek 三模键盘（含 FUN60 Pro 等系列） |
 | **达摩鲨 Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 等 2.4G 与 4K/8K 无线鼠标及三模键盘 |
-| **因科特 INCOTT / 攻击鲨 Attack Shark / 血手幽灵 Bloody / 鸽鸽电竞 Dovetek** | 因科特 G23 / G24 / Ghero / Zero 系列；攻击鲨 X11 / X3 / X6 / R1 系列；双飞燕血手幽灵 SG5 Pro 等 8K 无线鼠标；鸽鸽电竞 雀98（带屏/无屏）及 Bytech 916 平台无线键盘（含 RK M87 / R98Pro V2、VGN V98Pro V3 / V87 V2 / V108、GravaStar 等） |
+| **因科特 INCOTT / 攻击鲨 Attack Shark / 血手幽灵 Bloody / Bytech 916** | 因科特 G23 / G24 / Ghero / Zero 系列；攻击鲨 X11 / X3 / X6 / R1 系列；双飞燕血手幽灵 SG5 Pro 等 8K 无线鼠标；Bytech 916 平台三模键盘（含 RK R98Pro V2、VGN V98Pro V3 / V87 V2 / V108、GravaStar 等） |
 | **无线手柄与通用蓝牙外设** | Xbox 无线手柄、飞智 / 盖世小鸡 / 北通 / 八位堂等主流无线手柄；索尼 DualSense / DualShock 4；任天堂 Switch Pro / Joy-Con；以及绝大多数蓝牙鼠标、蓝牙键盘与蓝牙耳机 |
 
 详细型号清单与实机验证记录见 [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md)。
