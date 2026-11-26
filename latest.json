@@ -1,7 +1,7 @@
 {
   "version": "1.1.0",
-  "notes": "v1.1.0：新增凌豹（LEOBOG）键盘与鼠标全系、达摩鲨（Darmoshark）全系无线鼠标支持；修复迈从 G87 V2 等键盘检测问题；全面体检修复 15 个外设协议族（雷蛇、海盗船、赛睿、HyperX、ATK/VXE/VGN、狼蛛、杜伽、雷柏等）的报告长度、Feature 权限与 UsagePage 匹配问题。",
-  "sha256": "09819EEE5CD99D6F7A4EEC10ED685AA3AF61F7C6ECE55679274374FC74E2FE85",
+  "notes": "v1.1.0：新增凌豹（LEOBOG）全系键鼠、达摩鲨（Darmoshark）全系无线鼠标、雷柏（Rapoo）VT0 / VT0 MAX / VT0 Air MAX 及二代 VT 系列（Report 0x07 零写入直读）支持；修复迈从 G87 V2 等键盘检测问题并完成 15 个外设协议族全面体检。",
+  "sha256": "EF318F93EF467FBF85F794F9D00E92BF86CAB34CE8B5756A623A104A3D87B7EF",
   "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe",
   "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.1.0/Octans-Setup-v1.1.0.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",

@@ -76,7 +76,7 @@ Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream br
 | **Razer** | DeathAdder V3/V4 Pro, Viper V2/V3/V4 Pro, Basilisk wireless mice; BlackWidow / DeathStalker wireless keyboards; BlackShark V2 Pro / V3 and Barracuda headsets |
 | **Corsair / SteelSeries / HyperX / Sony / Lenovo / EPOS / FIFINE** | Corsair wireless mice, keyboards & headsets; SteelSeries Aerox mice and Arctis 1 / Nova / GameBuds headsets; HyperX Cloud II / III / Alpha / Flight & Pulsefire mice; Sony INZONE Buds / PULSE 3D; Lenovo wireless headsets; EPOS H3PRO; FIFINE HT6 |
 | **ASUS ROG / DURGOD / IQUNIX / Keychron / Lofree** | ASUS ROG Harpe / Keris / Gladius wireless peripherals; DURGOD wireless keyboards; IQUNIX keyboards & mice; Keychron & Lofree tri-mode mechanical keyboards |
-| **Rapoo** | VT7 / VT9 / VT1 and other VT-series wireless mice, keyboards, and wireless receivers |
+| **Rapoo** | VT0 / VT0 MAX / VT0 Air MAX, VT1 / VT3 / VT7 / VT9 Gen-2 & VT-series wireless mice, V700DIY keyboards, and wireless receivers |
 | **ATK / VXE / VGN / LAMZU / Ninjutso / Pulsar / WLmouse** | ATK / VXE Dragonfly R1, F1, A9 / A9 Pro Max, X1 / X1 Ultimate, V3 Nearlink mice & A87 / A98 keyboards; LAMZU Maya X / Inca / Atlantis; Ninjutso Sora V2; Pulsar X2 / Xlite; WLmouse Beast X; Zaopin Z1 Pro / Z2 |
 | **MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 mice; G87 / G87 V2 / G98 / K99 / X75 / Z75 & magnetic/mechanical keyboards; V9 / V9 Turbo / V9 Pro 2 / S9 / R9 headsets |
 | **LEOBOG / AULA** | LEOBOG Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 tri-mode keyboards and GM2 series wireless mice; AULA F75 / F87 / F87 Pro V2C / F99 wireless keyboards & mice |
@@ -112,7 +112,7 @@ cli/        Standalone headless CLI tool (list --json, test-rule, probe --dump)
 include/    Stable C ABI headers and version definitions
 assets/     Octans brand visual assets and multi-DPI icons
 installer/  Inno Setup script and one-click packaging script
-tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (538 assertions)
+tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (557 assertions)
 ```
 
 ### Build from Source
@@ -120,7 +120,7 @@ tests/      Unit tests covering protocol parsing, table lookup, deduplication & 
 Requires Windows 10/11 and the LLVM-MinGW (UCRT) toolchain (plus Inno Setup 6 for packaging):
 
 ```powershell
-# Build CLI, run all 538 unit tests, and build build\Octans.exe
+# Build CLI, run all 557 unit tests, and build build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 # Build and package the Windows installer (outputs dist\Octans-Setup-v1.1.0.exe)

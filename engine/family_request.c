@@ -654,14 +654,30 @@ int octans_proto_parse_rapoo(const uint8_t *buf,
     }
 
     if (var == VAR_RAPOO_MOUSE_R7 && len >= 8u) {
-        uint8_t state = buf[6];
-        uint8_t pct = buf[7];
-        if ((state != 1u && state != 2u) || pct > 100u) return 0;
-        uint8_t link = buf[0] & 0x0Fu;
+        /* Windows ReadFile / HidD_GetInputReport prepends Report ID 0x07 at buf[0].
+         * Cybercafe firmware also inserts 0xB0 (userParams) before gy() payload. */
+        const uint8_t *d = buf;
+        size_t n = len;
+        if (buf[0] == 0x07u && len >= 9u) {
+            d = buf + 1;
+            n = len - 1u;
+            if (d[0] == 0xB0u && n >= 9u) {
+                d += 1;
+                n -= 1u;
+            }
+        }
+        if (n < 8u) return 0;
+        uint8_t state = d[6];
+        uint8_t pct = d[7];
+        /* Official A-HUB validates batStatus in {1=discharging, 2=charging, 3=full}; 0 = unready/sleep. */
+        if ((state != 1u && state != 2u && state != 3u) || pct > 100u) return 0;
+        if (state == 1u && pct == 0u && d[2] == 0u && d[3] == 0u && d[4] == 0u && d[5] == 0u) return 0;
+        uint8_t link = d[0] & 0x0Fu;
         out->conn = (link == 1u) ? OCTANS_CONN_BLUETOOTH
                   : (link == 2u ? OCTANS_CONN_WIRED : OCTANS_CONN_DONGLE_24G);
         out->battery_percent = (int8_t)pct;
-        out->power_state = (state == 2u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->power_state = (state == 3u) ? OCTANS_PWR_FULL
+                         : (state == 2u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
         out->valid = 1;
         return 1;
     }
@@ -2042,13 +2058,35 @@ static int run_passive_listen_live(const proto_entry_t *e,
                                    octans_proto_reading_t *out) {
     if (info->is_system_exclusive || info->input_len == 0) return 0;
     octans_hid_dev_t dev;
-    if (octans_hid_open(info->path, 0, 1, &dev) < 0 || !dev.can_read) {
+    if (octans_hid_open(info->path, 0, 1, &dev) < 0) {
         octans_hid_close(&dev);
         return 0;
     }
 
     int ok = 0;
-    ULONGLONG deadline = GetTickCount64() + (ULONGLONG)(listen_ms > 0 ? listen_ms : 250u);
+
+    /* For Rapoo VT / N54 Gen-2 mice (Report ID 0x07), try instant zero-write HidD_GetInputReport(0x07) first:
+     * works immediately even while stationary/sleeping or when official A-HUB holds write access. */
+    if (e->family == FAM_RAPOO_PUSH && e->variant == VAR_RAPOO_MOUSE_R7 && dev.input_len >= 9u) {
+        uint8_t gbuf[128];
+        size_t glen = dev.input_len <= sizeof(gbuf) ? dev.input_len : sizeof(gbuf);
+        int gn = octans_hid_get_input_report(&dev, 0x07u, gbuf, glen);
+        if (gn >= 9 && octans_proto_parse_rapoo(gbuf, (size_t)gn, e->variant, out)) {
+            octans_hid_close(&dev);
+            return 1;
+        }
+    }
+
+    if (!dev.can_read) {
+        octans_hid_close(&dev);
+        return 0;
+    }
+
+    uint32_t dur = listen_ms > 0 ? listen_ms : 250u;
+    if (e->family == FAM_RAPOO_PUSH && e->variant == VAR_RAPOO_MOUSE_R7 && dur < 500u) {
+        dur = 500u;
+    }
+    ULONGLONG deadline = GetTickCount64() + (ULONGLONG)dur;
     while (GetTickCount64() < deadline) {
         uint8_t buf[128];
         int n = octans_hid_read_input(&dev, buf, sizeof(buf), 80);

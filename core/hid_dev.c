@@ -113,6 +113,17 @@ int octans_hid_get_feature(octans_hid_dev_t *dev, uint8_t report_id, uint8_t *bu
     return (int)len;
 }
 
+int octans_hid_get_input_report(octans_hid_dev_t *dev, uint8_t report_id, uint8_t *buf, size_t len) {
+    if (!dev || dev->h_write == INVALID_HANDLE_VALUE || !buf || len == 0) return -1;
+    memset(buf, 0, len);
+    buf[0] = report_id;
+    if (!HidD_GetInputReport(dev->h_write, buf, (ULONG)len)) {
+        dev->last_error = (int)GetLastError();
+        return -1;
+    }
+    return (int)len;
+}
+
 int octans_hid_set_feature(octans_hid_dev_t *dev, const uint8_t *buf, size_t len) {
     /* Windows permits HidD_SetFeature IOCTL on dwDesiredAccess=0 handles (needed for Razer mice). */
     if (!dev || dev->h_write == INVALID_HANDLE_VALUE || !buf || len == 0) {

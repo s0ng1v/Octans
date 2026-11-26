@@ -75,7 +75,7 @@
 | **雷蛇 Razer** | 炼狱蝰蛇 V3/V4 Pro、毒蝰 V2/V3/V4 Pro、巴塞利斯蛇等鼠标；黑寡妇 / 噬魂金蝎无线键盘；旋风黑鲨 V2 Pro / V3、梭鱼系列无线耳机 |
 | **海盗船 / 赛睿 / HyperX / 索尼 / 联想 / 音珀 EPOS / 斐风 FIFINE** | 海盗船无线鼠键耳机；赛睿 Aerox 鼠标、Arctis 1 / Nova / GameBuds 耳机；HyperX 飓风 Cloud II / III / Alpha / Flight 耳机与脉冲星鼠标；索尼 INZONE Buds / PULSE 3D；联想无线耳机；音珀 H3PRO；斐风 HT6 |
 | **华硕 ROG / 杜伽 DURGOD / 铝厂 IQUNIX / Keychron / 洛斐** | 华硕 ROG 龙鳞 / 月刃 / 战刃等无线鼠键；杜伽无线键盘；IQUNIX 无线键鼠；Keychron、洛斐等主流三模机械键盘 |
-| **雷柏 Rapoo** | VT7 / VT9 / VT1 等 VT 系列无线鼠键及无线接收器外设 |
+| **雷柏 Rapoo** | VT0 / VT0 MAX / VT0 Air MAX、VT1 / VT3 / VT7 / VT9 二代及全系 VT 无线鼠标、V700DIY 无线键盘与无线接收器外设 |
 | **ATK / VXE / VGN / 兰族 LAMZU / 忍者 Ninjutso / Pulsar / 影魔 WLmouse** | ATK / VXE 蜻蜓 R1、F1、A9 / A9 Pro Max、X1 / X1 Ultimate、V3 星闪鼠标及 A87 / A98 键盘；兰族 Maya X / Inca / Atlantis；忍者 Sora V2；Pulsar X2 / Xlite；影魔 Beast X；扎品 Z1 Pro / Z2 等主流轻量化鼠标 |
 | **迈从 MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 等无线鼠标；G87 / G87 V2 / G98 / K99 / X75 / Z75 及磁轴机械键盘；V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
 | **凌豹 LEOBOG / 狼蛛 AULA** | 凌豹 Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 等三模键盘与 GM2 系列无线鼠标；狼蛛 F75 / F87 / F87 Pro V2C / F99 等全系无线鼠键 |
@@ -111,7 +111,7 @@ cli/        独立无头命令行工具（支持 list --json、test-rule、probe
 include/    后端与 UI 稳定 C ABI 头文件与版本定义
 assets/     Octans 品牌视觉资产与多分辨率图标
 installer/  Inno Setup 安装脚本与一键打包脚本
-tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（538 项断言）
+tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（557 项断言）
 ```
 
 ### 从源码构建
@@ -119,7 +119,7 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 需要 Windows 10/11 与 LLVM-MinGW (UCRT) 工具链（打包安装程序需 Inno Setup 6）：
 
 ```powershell
-# 一键编译命令行工具、运行 538 项单元测试并构建 build\Octans.exe
+# 一键编译命令行工具、运行 557 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 # 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.1.0.exe）

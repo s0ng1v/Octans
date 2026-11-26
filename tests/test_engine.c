@@ -1592,6 +1592,50 @@ static void test_v110_leobog_darmoshark_and_audit(void) {
     ASSERT_EQ_INT((int)VAR_INDEP_AULA_KBD_AA, first_matching_variant(0x0C45u, 0xFEFCu, 0xFF80u, 0x0001u, 1));
     ASSERT_EQ_INT((int)VAR_KB_DURGOD_3123, first_matching_variant(0x3151u, 0x4013u, 0xFF55u, 0x0001u, 1));
     ASSERT_EQ_INT((int)VAR_RAPOO_VISION_AP, first_matching_variant(0x2E3Cu, 0x1234u, 0xFF00u, 0x0001u, 1));
+
+    /* 7. Rapoo VT0 / VT_nrf54L Gen-2 Report ID 0x07 (Windows 19B prefixed, charging/full, cybercafe, routing) */
+    const uint8_t vt0_win[19] = {
+        0x07, 0x00, 0x02, 0x40, 0x06, 0x40, 0x06, /* RID=0x07, 2.4G, 1600 DPI */
+        0x01, 85,                                  /* batStatus=1 (discharging), batPercent=85 */
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0xC0
+    };
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(vt0_win, sizeof(vt0_win), VAR_RAPOO_MOUSE_R7, &r));
+    ASSERT_EQ_INT(85, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+    ASSERT_EQ_INT(OCTANS_CONN_DONGLE_24G, r.conn);
+
+    uint8_t vt0_chg[19];
+    memcpy(vt0_chg, vt0_win, sizeof(vt0_chg));
+    vt0_chg[1] = 0x02; /* wired */
+    vt0_chg[7] = 0x02; /* charging */
+    vt0_chg[8] = 64;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(vt0_chg, sizeof(vt0_chg), VAR_RAPOO_MOUSE_R7, &r));
+    ASSERT_EQ_INT(64, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+    ASSERT_EQ_INT(OCTANS_CONN_WIRED, r.conn);
+
+    vt0_chg[7] = 0x03; /* full */
+    vt0_chg[8] = 100;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(vt0_chg, sizeof(vt0_chg), VAR_RAPOO_MOUSE_R7, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    vt0_chg[7] = 0x00; /* batStatus=0 unready frame must be rejected */
+    ASSERT_EQ_INT(0, octans_proto_parse_rapoo(vt0_chg, sizeof(vt0_chg), VAR_RAPOO_MOUSE_R7, &r));
+
+    const uint8_t vt0_cyber[12] = {0x07, 0xB0, 0x00, 0x01, 0x20, 0x03, 0x20, 0x03, 0x01, 71, 0, 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rapoo(vt0_cyber, sizeof(vt0_cyber), VAR_RAPOO_MOUSE_R7, &r));
+    ASSERT_EQ_INT(71, r.battery_percent);
+
+    ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x1410u, 0xFF00u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x4610u, 0xFF00u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x1420u, 0xFF00u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x14A1u, 0xFF00u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_RAPOO_MOUSE_R7, first_matching_variant(0x24AEu, 0x144Au, 0xFF00u, 0x0002u, 1));
 }
 
 int main(void) {

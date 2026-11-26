@@ -40,6 +40,9 @@ void octans_hid_close(octans_hid_dev_t *dev);
 /** Read Feature report (sets buf[0] = report_id). Returns bytes read or -1. */
 int octans_hid_get_feature(octans_hid_dev_t *dev, uint8_t report_id, uint8_t *buf, size_t len);
 
+/** Read Input report via HidD_GetInputReport (sets buf[0] = report_id). Returns bytes read or -1. */
+int octans_hid_get_input_report(octans_hid_dev_t *dev, uint8_t report_id, uint8_t *buf, size_t len);
+
 /** Send Feature report (buf[0] = report_id). Returns 0 on success or -1. */
 int octans_hid_set_feature(octans_hid_dev_t *dev, const uint8_t *buf, size_t len);
 
