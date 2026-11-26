@@ -72,18 +72,18 @@
 | 品牌 | 支持设备与常见型号 |
 |---|---|
 | **罗技 Logitech** | G PRO / GPW 全系、G502 / G903 / G304、MX 办公鼠键；G915 / MX Keys 等键盘；G435 / G533 / G535 / G733 / G935 / PRO X、Astro A50 等无线耳机 |
-| **迈从 MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 等无线鼠标；G87 / G87 V2 / G98 / K99 / X75 / Z75 及磁轴机械键盘；V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
-| **凌豹 LEOBOG / 狼蛛 AULA** | 凌豹 Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 等三模键盘与 GM2 系列无线鼠标；狼蛛 F75 / F87 / F87 Pro V2C / F99 等全系无线鼠键 |
-| **达摩鲨 Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 等 2.4G 与 4K/8K 无线鼠标及三模键盘 |
-| **WOB / 艾酷 Akko / 魔极客 MonsGeek** | WOB Rainy75 V2、Zen65 键盘与 Rainy S1 鼠标；艾酷 Akko / 魔极客 MonsGeek 三模键盘（含 FUN60 Pro 等系列） |
-| **机械师 Machenike / 雷神 ThundeRobot** | 机械师 L8 MAX、雷神 ML9 mini、X7s Pro / Pro Max / Ultra 等无线鼠标与无线手柄 |
-| **因科特 INCOTT / 攻击鲨 Attack Shark / 血手幽灵 Bloody** | 因科特 G23 / G24 / Ghero / Zero 系列；攻击鲨 X11 / X3 / X6 / R1 系列；双飞燕血手幽灵 SG5 Pro 等 8K 无线鼠标 |
 | **雷蛇 Razer** | 炼狱蝰蛇 V3/V4 Pro、毒蝰 V2/V3/V4 Pro、巴塞利斯蛇等鼠标；黑寡妇 / 噬魂金蝎无线键盘；旋风黑鲨 V2 Pro / V3、梭鱼系列无线耳机 |
-| **黑爵 AJAZZ / 前行者 EWEADN / 达尔优 Dareu** | 黑爵 AJ179、AK820 等无线鼠键；前行者 S9 / H2；达尔优 A950 / A900 等 |
-| **ATK / VXE / VGN / 兰族 LAMZU / 忍者 Ninjutso / Pulsar / 影魔 WLmouse** | ATK / VXE 蜻蜓 R1、F1、A9 / A9 Pro Max、X1 / X1 Ultimate、V3 星闪鼠标及 A87 / A98 键盘；兰族 Maya X / Inca / Atlantis；忍者 Sora V2；Pulsar X2 / Xlite；影魔 Beast X；扎品 Z1 Pro / Z2 等主流轻量化鼠标 |
-| **雷柏 Rapoo** | VT7 / VT9 / VT1 等 VT 系列无线鼠键及无线接收器外设 |
 | **海盗船 / 赛睿 / HyperX / 索尼 / 联想 / 音珀 EPOS / 斐风 FIFINE** | 海盗船无线鼠键耳机；赛睿 Aerox 鼠标、Arctis 1 / Nova / GameBuds 耳机；HyperX 飓风 Cloud II / III / Alpha / Flight 耳机与脉冲星鼠标；索尼 INZONE Buds / PULSE 3D；联想无线耳机；音珀 H3PRO；斐风 HT6 |
 | **华硕 ROG / 杜伽 DURGOD / 铝厂 IQUNIX / Keychron / 洛斐** | 华硕 ROG 龙鳞 / 月刃 / 战刃等无线鼠键；杜伽无线键盘；IQUNIX 无线键鼠；Keychron、洛斐等主流三模机械键盘 |
+| **雷柏 Rapoo** | VT7 / VT9 / VT1 等 VT 系列无线鼠键及无线接收器外设 |
+| **ATK / VXE / VGN / 兰族 LAMZU / 忍者 Ninjutso / Pulsar / 影魔 WLmouse** | ATK / VXE 蜻蜓 R1、F1、A9 / A9 Pro Max、X1 / X1 Ultimate、V3 星闪鼠标及 A87 / A98 键盘；兰族 Maya X / Inca / Atlantis；忍者 Sora V2；Pulsar X2 / Xlite；影魔 Beast X；扎品 Z1 Pro / Z2 等主流轻量化鼠标 |
+| **迈从 MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 等无线鼠标；G87 / G87 V2 / G98 / K99 / X75 / Z75 及磁轴机械键盘；V9 / V9 Turbo / V9 Pro 2 / S9 / R9 等无线耳机 |
+| **凌豹 LEOBOG / 狼蛛 AULA** | 凌豹 Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 等三模键盘与 GM2 系列无线鼠标；狼蛛 F75 / F87 / F87 Pro V2C / F99 等全系无线鼠键 |
+| **黑爵 AJAZZ / 前行者 EWEADN / 达尔优 Dareu** | 黑爵 AJ179、AK820 等无线鼠键；前行者 S9 / H2；达尔优 A950 / A900 等 |
+| **机械师 Machenike / 雷神 ThundeRobot** | 机械师 L8 MAX、雷神 ML9 mini、X7s Pro / Pro Max / Ultra 等无线鼠标与无线手柄 |
+| **WOB / 艾酷 Akko / 魔极客 MonsGeek** | WOB Rainy75 V2、Zen65 键盘与 Rainy S1 鼠标；艾酷 Akko / 魔极客 MonsGeek 三模键盘（含 FUN60 Pro 等系列） |
+| **达摩鲨 Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 等 2.4G 与 4K/8K 无线鼠标及三模键盘 |
+| **因科特 INCOTT / 攻击鲨 Attack Shark / 血手幽灵 Bloody** | 因科特 G23 / G24 / Ghero / Zero 系列；攻击鲨 X11 / X3 / X6 / R1 系列；双飞燕血手幽灵 SG5 Pro 等 8K 无线鼠标 |
 | **无线手柄与通用蓝牙外设** | Xbox 无线手柄、飞智 / 盖世小鸡 / 北通 / 八位堂等主流无线手柄；索尼 DualSense / DualShock 4；任天堂 Switch Pro / Joy-Con；以及绝大多数蓝牙鼠标、蓝牙键盘与蓝牙耳机 |
 
 详细型号清单与实机验证记录见 [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md)。

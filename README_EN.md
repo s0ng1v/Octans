@@ -73,18 +73,18 @@ Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream br
 | Brand | Supported Devices & Popular Models |
 |---|---|
 | **Logitech** | G PRO / GPW series, G502 / G903 / G304, MX series mice; G915 / MX Keys keyboards; G435 / G533 / G535 / G733 / G935 / PRO X, Astro A50 wireless headsets |
-| **MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 mice; G87 / G87 V2 / G98 / K99 / X75 / Z75 & magnetic/mechanical keyboards; V9 / V9 Turbo / V9 Pro 2 / S9 / R9 headsets |
-| **LEOBOG / AULA** | LEOBOG Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 tri-mode keyboards and GM2 series wireless mice; AULA F75 / F87 / F87 Pro V2C / F99 wireless keyboards & mice |
-| **Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 2.4G & 4K/8K wireless mice and tri-mode keyboards |
-| **WOB / Akko / MonsGeek** | WOB Rainy75 V2, Zen65 keyboards and Rainy S1 mouse; Akko / MonsGeek tri-mode keyboards (including FUN60 Pro series) |
-| **Machenike / ThundeRobot** | Machenike L8 MAX, ThundeRobot ML9 mini, X7s Pro / Pro Max / Ultra wireless mice and wireless controllers |
-| **INCOTT / Attack Shark / Bloody** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice |
 | **Razer** | DeathAdder V3/V4 Pro, Viper V2/V3/V4 Pro, Basilisk wireless mice; BlackWidow / DeathStalker wireless keyboards; BlackShark V2 Pro / V3 and Barracuda headsets |
-| **AJAZZ / EWEADN / Dareu** | AJAZZ AJ179, AK820; EWEADN S9 / H2; Dareu A950 / A900 |
-| **ATK / VXE / VGN / LAMZU / Ninjutso / Pulsar / WLmouse** | ATK / VXE Dragonfly R1, F1, A9 / A9 Pro Max, X1 / X1 Ultimate, V3 Nearlink mice & A87 / A98 keyboards; LAMZU Maya X / Inca / Atlantis; Ninjutso Sora V2; Pulsar X2 / Xlite; WLmouse Beast X; Zaopin Z1 Pro / Z2 |
-| **Rapoo** | VT7 / VT9 / VT1 and other VT-series wireless mice, keyboards, and wireless receivers |
 | **Corsair / SteelSeries / HyperX / Sony / Lenovo / EPOS / FIFINE** | Corsair wireless mice, keyboards & headsets; SteelSeries Aerox mice and Arctis 1 / Nova / GameBuds headsets; HyperX Cloud II / III / Alpha / Flight & Pulsefire mice; Sony INZONE Buds / PULSE 3D; Lenovo wireless headsets; EPOS H3PRO; FIFINE HT6 |
 | **ASUS ROG / DURGOD / IQUNIX / Keychron / Lofree** | ASUS ROG Harpe / Keris / Gladius wireless peripherals; DURGOD wireless keyboards; IQUNIX keyboards & mice; Keychron & Lofree tri-mode mechanical keyboards |
+| **Rapoo** | VT7 / VT9 / VT1 and other VT-series wireless mice, keyboards, and wireless receivers |
+| **ATK / VXE / VGN / LAMZU / Ninjutso / Pulsar / WLmouse** | ATK / VXE Dragonfly R1, F1, A9 / A9 Pro Max, X1 / X1 Ultimate, V3 Nearlink mice & A87 / A98 keyboards; LAMZU Maya X / Inca / Atlantis; Ninjutso Sora V2; Pulsar X2 / Xlite; WLmouse Beast X; Zaopin Z1 Pro / Z2 |
+| **MCHOSE** | A7 / M7 / L7 / G3 / G7 / G7 MAX / A5 / K5 / R7 mice; G87 / G87 V2 / G98 / K99 / X75 / Z75 & magnetic/mechanical keyboards; V9 / V9 Turbo / V9 Pro 2 / S9 / R9 headsets |
+| **LEOBOG / AULA** | LEOBOG Hi75C Pro / Hi98 Pro / Hi87 Pro / Hi8 / AMG65 tri-mode keyboards and GM2 series wireless mice; AULA F75 / F87 / F87 Pro V2C / F99 wireless keyboards & mice |
+| **AJAZZ / EWEADN / Dareu** | AJAZZ AJ179, AK820; EWEADN S9 / H2; Dareu A950 / A900 |
+| **Machenike / ThundeRobot** | Machenike L8 MAX, ThundeRobot ML9 mini, X7s Pro / Pro Max / Ultra wireless mice and wireless controllers |
+| **WOB / Akko / MonsGeek** | WOB Rainy75 V2, Zen65 keyboards and Rainy S1 mouse; Akko / MonsGeek tri-mode keyboards (including FUN60 Pro series) |
+| **Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 2.4G & 4K/8K wireless mice and tri-mode keyboards |
+| **INCOTT / Attack Shark / Bloody** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice |
 | **Controllers & Bluetooth Peripherals** | Xbox wireless controllers, Flydigi / GameSir / Beitong / 8BitDo controllers; Sony DualSense / DualShock 4; Nintendo Switch Pro / Joy-Con; plus most standard Bluetooth mice, keyboards, and headsets |
 
 See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) for the detailed device list and hardware verification notes (in Chinese).
