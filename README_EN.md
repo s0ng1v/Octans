@@ -37,10 +37,6 @@
 </p>
 
 <p align="center">
-  <img alt="Octans Light & Dark Main Panel and Taskbar Tray Preview" src="assets/screenshots/octans-hero.png" width="100%">
-</p>
-
-<p align="center">
   <img alt="Octans / Nebula / Pulsar Three Tray Icon Styles Comparison" src="assets/screenshots/octans-styles.png" width="100%">
 </p>
 
