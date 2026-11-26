@@ -118,7 +118,7 @@ int octans_hid_set_feature(octans_hid_dev_t *dev, const uint8_t *buf, size_t len
     if (!dev || dev->h_write == INVALID_HANDLE_VALUE || !buf || len == 0) {
         return -1;
     }
-    uint8_t tmp[512];
+    uint8_t tmp[1024];
     if (len > sizeof(tmp)) return -1;
     memcpy(tmp, buf, len);
     if (!HidD_SetFeature(dev->h_write, tmp, (ULONG)len)) {
@@ -132,7 +132,7 @@ int octans_hid_write_output(octans_hid_dev_t *dev, const uint8_t *buf, size_t le
     if (!dev || !dev->can_write || dev->h_write == INVALID_HANDLE_VALUE || !buf || len == 0) {
         return -1;
     }
-    uint8_t tmp[512];
+    uint8_t tmp[1024];
     if (len > sizeof(tmp)) return -1;
     memcpy(tmp, buf, len);
 
@@ -152,7 +152,7 @@ int octans_hid_write_output_intr(octans_hid_dev_t *dev, const uint8_t *buf, size
     if (!dev || !dev->can_write || dev->h_write == INVALID_HANDLE_VALUE || !buf || len == 0) {
         return -1;
     }
-    uint8_t tmp[512];
+    uint8_t tmp[1024];
     if (len > sizeof(tmp)) return -1;
     memcpy(tmp, buf, len);
 
@@ -213,7 +213,7 @@ void octans_hid_drain(octans_hid_dev_t *dev, int max_packets) {
     if (!dev || !dev->can_read || dev->input_len == 0) return;
     if (max_packets <= 0 || max_packets > 64) max_packets = 64;
 
-    uint8_t discard[512];
+    uint8_t discard[1024];
     for (int i = 0; i < max_packets; ++i) {
         int n = octans_hid_read_input(dev, discard, sizeof(discard), 8);
         if (n <= 0) break;

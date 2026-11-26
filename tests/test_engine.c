@@ -784,18 +784,43 @@ static void test_mchose_v2_suite(void) {
     ASSERT_EQ_INT(76, r.battery_percent);
     ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
 
-    /* F3 BY Keyboard: wired & wireless */
-    uint8_t by_w[12] = {0x06, 0x87, 0, 0, 0, 0, 0, 0, 0x17}; /* chg=1, lvl=7 -> 70% */
+    /* F3 BY Keyboard: wireless request CRC + real wired & wireless M HUB layout + table matching */
+    uint8_t by_req[20];
+    octans_proto_build_mchose_by_wireless(by_req);
+    ASSERT_EQ_INT(0x13, by_req[0]);
+    ASSERT_EQ_INT(0x4A, by_req[1]);
+    ASSERT_EQ_INT(0x01, by_req[2]);
+    ASSERT_EQ_INT(0x5E, by_req[19]);
+
+    uint8_t by_w[12] = {0x09, 0x87, 0, 0, 0, 0, 0, 0, 84, 0x01}; /* 84%, chg=1 */
     octans_reading_init(&r);
     ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(by_w, sizeof(by_w), 1, &r));
-    ASSERT_EQ_INT(70, r.battery_percent);
+    ASSERT_EQ_INT(84, r.battery_percent);
+    ASSERT_EQ_INT(0, r.is_estimated);
     ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
 
-    uint8_t by_wl[8] = {0x13, 0x4A, 0x09}; /* chg=0, lvl=9 -> 90% */
+    uint8_t by_wl[20] = {0x13, 0x4A, 0x01, 0x00, 0x02, 76, 0x00}; /* 76%, discharging */
     octans_reading_init(&r);
     ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(by_wl, sizeof(by_wl), 0, &r));
-    ASSERT_EQ_INT(90, r.battery_percent);
+    ASSERT_EQ_INT(76, r.battery_percent);
+    ASSERT_EQ_INT(0, r.is_estimated);
     ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    octans_hid_info_t g87_info;
+    memset(&g87_info, 0, sizeof(g87_info));
+    g87_info.vid = 0x3837u; g87_info.pid = 0x201Bu; g87_info.usage_page = 0xFF02u; g87_info.interface_num = -1;
+    int var_by = -1;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &g87_info)) { var_by = (int)g_protocols[i].variant; break; }
+    }
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, var_by);
+
+    g87_info.pid = 0x2022u; g87_info.usage_page = 0xFF00u;
+    int var_cz = -1;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &g87_info)) { var_cz = (int)g_protocols[i].variant; break; }
+    }
+    ASSERT_EQ_INT((int)VAR_INDEP_MCHOSE_HID4D, var_cz);
 
     /* F5 G-Series: with leading 0x00 Windows Report ID */
     uint8_t g5[16] = {0x00, 0xAA, 0x30, 0, 0, 0, 0, 0, 0, 64, 1};
@@ -1401,6 +1426,174 @@ static void test_new_vendor_protocols(void) {
     ASSERT_EQ_INT(60, r.battery_percent);
 }
 
+static int first_matching_variant(uint16_t vid, uint16_t pid, uint16_t up, uint16_t u, int16_t mi) {
+    octans_hid_info_t info;
+    memset(&info, 0, sizeof(info));
+    info.vid = vid;
+    info.pid = pid;
+    info.usage_page = up;
+    info.usage = u;
+    info.interface_num = mi;
+    for (size_t i = 0; i < g_protocols_count; ++i) {
+        if (octans_proto_matches_iface(&g_protocols[i], &info)) {
+            return (int)g_protocols[i].variant;
+        }
+    }
+    return -1;
+}
+
+static void test_v110_leobog_darmoshark_and_audit(void) {
+    octans_proto_reading_t r;
+
+    /* 1. LEOBOG 20B 2.4G Keyboard (Hi75C Pro / Hi98 Pro / 3554:FA09) */
+    uint8_t lb20_req[20];
+    octans_proto_build_leobog_20b(lb20_req);
+    ASSERT_EQ_INT(0x13, lb20_req[0]);
+    ASSERT_EQ_INT(0xCA, lb20_req[1]);
+    ASSERT_EQ_INT(0xDD, lb20_req[19]);
+
+    uint8_t lb20_rep[20] = {0x13, 0x4A, 0x01, 0x00, 0x02, 76, 0x01, 0};
+    uint32_t lb_sum = 0;
+    for (size_t i = 0; i < 19; ++i) lb_sum += lb20_rep[i];
+    lb20_rep[19] = (uint8_t)(lb_sum & 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_leobog_20b(lb20_rep, sizeof(lb20_rep), &r));
+    ASSERT_EQ_INT(76, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    lb20_rep[5] = 88; lb20_rep[6] = 0x10; /* charging */
+    lb_sum = 0;
+    for (size_t i = 0; i < 19; ++i) lb_sum += lb20_rep[i];
+    lb20_rep[19] = (uint8_t)(lb_sum & 0xFFu);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_leobog_20b(lb20_rep, sizeof(lb20_rep), &r));
+    ASSERT_EQ_INT(88, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    lb20_rep[19] ^= 0x01u; /* bad checksum */
+    ASSERT_EQ_INT(0, octans_proto_parse_leobog_20b(lb20_rep, sizeof(lb20_rep), &r));
+
+    ASSERT_EQ_INT((int)VAR_KB_LEOBOG_20B, first_matching_variant(0x3554u, 0xFA09u, 0xFF02u, 0x0002u, 1));
+
+    /* 2. LEOBOG Bytech (Hi87 Pro — 258A:02D7 / 38A6:2336 / 372E:xxxx on 0xFF60:0x0061) */
+    uint8_t lbb_req[64];
+    octans_proto_build_leobog_bytech(0x04u, lbb_req);
+    ASSERT_EQ_INT(0x04, lbb_req[0]);
+    ASSERT_EQ_INT(0x87, lbb_req[1]);
+    ASSERT_EQ_INT(0x01, lbb_req[4]);
+    ASSERT_EQ_INT((int)(255u - ((0x04u + 0x87u + 0x01u) & 0xFFu)), lbb_req[63]);
+
+    uint8_t lbb_rep[64] = {0x04, 0x87, 0x00, 0x00, 0x01, 0x00, 0x02, 82, 0x10};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_leobog_bytech(lbb_rep, sizeof(lbb_rep), &r));
+    ASSERT_EQ_INT(82, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    lbb_rep[7] = 100; lbb_rep[8] = 0x01; /* full */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_leobog_bytech(lbb_rep, sizeof(lbb_rep), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    ASSERT_EQ_INT((int)VAR_KB_LEOBOG_BYTECH, first_matching_variant(0x258Au, 0x02D7u, 0xFF60u, 0x0061u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_LEOBOG_BYTECH, first_matching_variant(0x38A6u, 0x2336u, 0xFF60u, 0x0061u, 1));
+
+    /* 3. LEOBOG GM2 / GM2 Pro / GM2 Max (0x10 command + 0xC1 push + table match) */
+    uint8_t gm2_rep[33] = {0};
+    gm2_rep[0] = 0x00; gm2_rep[1] = 0x10; gm2_rep[2] = 0x00;
+    gm2_rep[13] = 1; gm2_rep[14] = 91; gm2_rep[15] = 1;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_eweadn(gm2_rep, sizeof(gm2_rep), &r, NULL));
+    ASSERT_EQ_INT(91, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+    ASSERT_EQ_INT((int)VAR_EWEADN_0X30, first_matching_variant(0x249Au, 0x5C2Fu, 0xFF01u, 0x0010u, 2));
+
+    /* 4. Darmoshark Nordic / Realtek / Motospeed (0xFF0A:0x0001) */
+    uint8_t ds_w[64], ds_u[64];
+    octans_proto_build_darmoshark_nordic(1, ds_w);
+    octans_proto_build_darmoshark_nordic(0, ds_u);
+    ASSERT_EQ_INT(0x41, ds_w[0]);
+    ASSERT_EQ_INT(0x81, ds_w[2]);
+    ASSERT_EQ_INT(0x01, ds_w[3]);
+    ASSERT_EQ_INT(0xDE, ds_w[63]);
+    ASSERT_EQ_INT(0x01, ds_u[0]);
+    ASSERT_EQ_INT(0x1E, ds_u[63]);
+
+    /* dms_v2 with leading 0x00 Windows Report ID + charging */
+    uint8_t ds_rep[65] = {0};
+    ds_rep[0] = 0x00; ds_rep[1] = 0x41; ds_rep[4] = 0x01;
+    ds_rep[7] = 0x15; ds_rep[8] = 0x19; /* VID 0x1915 LE */
+    ds_rep[11] = 1; /* charging */
+    ds_rep[12] = 67;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_darmoshark_nordic(ds_rep, sizeof(ds_rep), &r));
+    ASSERT_EQ_INT(67, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* dms_v2 full (state == 2) */
+    ds_rep[11] = 2; ds_rep[12] = 100;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_darmoshark_nordic(ds_rep, sizeof(ds_rep), &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* dms_v1 legacy (pct at resp[6]) */
+    uint8_t ds_v1[64] = {0};
+    ds_v1[0] = 0x41; ds_v1[3] = 0x01; ds_v1[6] = 54;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_darmoshark_nordic(ds_v1, sizeof(ds_v1), &r));
+    ASSERT_EQ_INT(54, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    ASSERT_EQ_INT((int)VAR_INDEP_DARMOSHARK_NORDIC, first_matching_variant(0x1915u, 0x0723u, 0xFF0Au, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_DARMOSHARK_NORDIC, first_matching_variant(0x362Du, 0x1001u, 0xFF0Au, 0x0001u, 1));
+
+    /* 5. Darmoshark Telink (M3 / M3S / N3 — 248A on 0x008C:0x0001, Feature 0x51) */
+    uint8_t dst_req[21];
+    octans_proto_build_darmoshark_telink(0x06u, dst_req);
+    ASSERT_EQ_INT(0x51, dst_req[0]);
+    ASSERT_EQ_INT(0x06, dst_req[1]);
+
+    uint8_t dst_rep[21] = {0x51, 0x06, 0x01, 0, 0x8A, 0x24, 0x30, 0xFF, 0, 0, 0, 84};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_darmoshark_telink(dst_rep, sizeof(dst_rep), &r));
+    ASSERT_EQ_INT(84, r.battery_percent);
+    ASSERT_EQ_INT((int)VAR_INDEP_DARMOSHARK_TELINK, first_matching_variant(0x248Au, 0xFF30u, 0x008Cu, 0x0001u, 2));
+
+    /* 6. Full-vendor audit regressions: leading 0x00 RID stripping + new UsagePage table routes */
+    const uint8_t bragi_win[8] = {0x00, 0x01, 0x09, 0x02, 0x00, 0x52, 0x03, 0x00}; /* 850 -> 85% */
+    uint16_t bragi_raw = 0;
+    ASSERT_EQ_INT(1, octans_proto_parse_corsair_bragi(bragi_win, sizeof(bragi_win), &bragi_raw));
+    ASSERT_EQ_INT(850, (int)bragi_raw);
+
+    const uint8_t void_win[6] = {0x00, 0x64, 0x00, 77, 0x00, 0x04};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_corsair_void_elite(void_win, sizeof(void_win), &r));
+    ASSERT_EQ_INT(77, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t aerox_win[4] = {0x00, 0xD2, (uint8_t)(0x80u | 63u), 0};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_steelseries(aerox_win, sizeof(aerox_win), VAR_SS_AEROX, &r));
+    ASSERT_EQ_INT(63, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    const uint8_t atk54_win[9] = {0x00, 0x08, 0x72, 0, 0, 0, 0x07, 0, 92};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_atk_54l15(atk54_win, sizeof(atk54_win), &r));
+    ASSERT_EQ_INT(92, r.battery_percent);
+
+    ASSERT_EQ_INT((int)VAR_COMPX_A_OUTPUT, first_matching_variant(0x3554u, 0xF502u, 0xFF04u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_ATK_MOUSEINFO, first_matching_variant(0x373Bu, 0x1020u, 0xFFA0u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_ATK_MOUSEINFO, first_matching_variant(0x373Bu, 0x1041u, 0xFF88u, 0x0088u, 1));
+    ASSERT_EQ_INT((int)VAR_ATK_MOUSEINFO, first_matching_variant(0x373Bu, 0x10B6u, 0xFFB2u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_ATK_HFD, first_matching_variant(0x373Bu, 0x2050u, 0xFF60u, 0x0061u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_ATK_EVISION, first_matching_variant(0x373Bu, 0x1013u, 0xFF1Cu, 0x0092u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_AULA_KBD_AA, first_matching_variant(0x0C45u, 0xFEFCu, 0xFF80u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_DURGOD_3123, first_matching_variant(0x3151u, 0x4013u, 0xFF55u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_RAPOO_VISION_AP, first_matching_variant(0x2E3Cu, 0x1234u, 0xFF00u, 0x0001u, 1));
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -1416,6 +1609,7 @@ int main(void) {
     test_protocol_all_v1_suite();
     test_dedup_logitech_and_bt();
     test_new_vendor_protocols();
+    test_v110_leobog_darmoshark_and_audit();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

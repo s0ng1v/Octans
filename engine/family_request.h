@@ -86,7 +86,16 @@ void octans_proto_build_mchose_m7(uint8_t report_id, uint8_t cmd, uint8_t *out_b
 int octans_proto_parse_mchose_m7(const uint8_t *buf, size_t len, uint8_t expected_cmd, octans_proto_reading_t *out);
 void octans_proto_build_mchose_g7max(uint8_t report_id, uint8_t out64[64]);
 int octans_proto_parse_mchose_g7max(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_mchose_by_wireless(uint8_t out20[20]);
 int octans_proto_parse_mchose_by(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out);
+void octans_proto_build_leobog_20b(uint8_t out20[20]);
+int octans_proto_parse_leobog_20b(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_leobog_bytech(uint8_t report_id, uint8_t out64[64]);
+int octans_proto_parse_leobog_bytech(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_darmoshark_nordic(int wireless, uint8_t out64[64]);
+int octans_proto_parse_darmoshark_nordic(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_darmoshark_telink(uint8_t opcode, uint8_t out21[21]);
+int octans_proto_parse_darmoshark_telink(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_mchose_audio_mc(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_dareu_tg(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 int octans_proto_parse_iqunix_texthex(const uint8_t *buf, size_t len, octans_proto_reading_t *out);

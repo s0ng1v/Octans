@@ -158,8 +158,8 @@ Write-Host ("  build\Octans.exe     : {0} bytes ({1} KB)" -f $appItem.Length, [m
 if ($cliItem.Length -gt 307200) {
     throw "octans-cli.exe size exceeded 300 KB budget!"
 }
-if ($appItem.Length -gt 358400) {
-    throw "Octans.exe size exceeded 350 KB budget!"
+if ($appItem.Length -gt 409600) {
+    throw "Octans.exe size exceeded 400 KB budget!"
 }
 
 Write-Host "[7/7] Checking DLL imports (offline & zero non-system dependencies)..."

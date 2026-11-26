@@ -6,6 +6,7 @@
 #include "family_request.h"
 #include "proto_obf.h"
 #include "../core/hid_dev.h"
+#include "../core/hid_parse.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -185,8 +186,10 @@ void octans_proto_build_atk_54l15(uint8_t out64[64]) {
 
 int octans_proto_parse_atk_54l15(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
     if (!buf || len < 8u || !out) return 0;
-    if (buf[1] != 0x72u || buf[5] != 0x07u || buf[7] > 100u) return 0;
-    out->battery_percent = (int8_t)buf[7];
+    const uint8_t *d = (buf[0] == 0x00u && len >= 9u && buf[2] == 0x72u) ? (buf + 1) : buf;
+    size_t n = (d == buf) ? len : (len - 1u);
+    if (n < 8u || d[1] != 0x72u || d[5] != 0x07u || d[7] > 100u) return 0;
+    out->battery_percent = (int8_t)d[7];
     out->power_state = OCTANS_PWR_DISCHARGING;
     out->valid = 1;
     return 1;
@@ -294,18 +297,22 @@ void octans_proto_build_corsair_bragi(uint8_t target, uint8_t prop, uint8_t out6
 
 int octans_proto_parse_corsair_bragi(const uint8_t *buf, size_t len, uint16_t *out_raw) {
     if (!buf || len < 6u || !out_raw) return 0;
-    if (buf[0] != 0x01u || buf[2] != 0x02u || buf[3] != 0x00u) return 0;
-    *out_raw = (uint16_t)((uint16_t)buf[4] | ((uint16_t)buf[5] << 8));
+    const uint8_t *d = (buf[0] == 0x00u && len >= 7u && buf[1] == 0x01u) ? (buf + 1) : buf;
+    size_t n = (d == buf) ? len : (len - 1u);
+    if (n < 6u || d[0] != 0x01u || d[2] != 0x02u || d[3] != 0x00u) return 0;
+    *out_raw = (uint16_t)((uint16_t)d[4] | ((uint16_t)d[5] << 8));
     return 1;
 }
 
 int octans_proto_parse_corsair_void_elite(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
     if (!buf || len < 5u || !out) return 0;
-    if (buf[0] != 0x64u) return 0;
-    uint8_t lvl = buf[2] & 0x7Fu;
+    const uint8_t *d = (buf[0] == 0x00u && len >= 6u && buf[1] == 0x64u) ? (buf + 1) : buf;
+    size_t n = (d == buf) ? len : (len - 1u);
+    if (n < 5u || d[0] != 0x64u) return 0;
+    uint8_t lvl = d[2] & 0x7Fu;
     if (lvl > 100u) return 0;
     out->battery_percent = (int8_t)lvl;
-    out->power_state = (buf[4] == 4u || buf[4] == 5u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+    out->power_state = (d[4] == 4u || d[4] == 5u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
     out->valid = 1;
     return 1;
 }
@@ -348,9 +355,11 @@ int octans_proto_parse_steelseries(const uint8_t *buf,
     if (!buf || len < 3u || !out) return 0;
 
     if (var == VAR_SS_RIVAL3) {
-        if (len >= 4u && buf[0] == 0xAAu && buf[1] <= 100u) {
-            out->battery_percent = (int8_t)buf[1];
-            out->power_state = buf[3] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        const uint8_t *d = (buf[0] == 0x00u && len >= 5u && buf[1] == 0xAAu) ? (buf + 1) : buf;
+        size_t n = (d == buf) ? len : (len - 1u);
+        if (n >= 4u && d[0] == 0xAAu && d[1] <= 100u) {
+            out->battery_percent = (int8_t)d[1];
+            out->power_state = d[3] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
             out->valid = 1;
             return 1;
         }
@@ -364,8 +373,10 @@ int octans_proto_parse_steelseries(const uint8_t *buf,
     }
 
     if (var == VAR_SS_AEROX) {
-        if (buf[0] != 0xD2u) return 0;
-        uint8_t raw = buf[1];
+        const uint8_t *d = (buf[0] == 0x00u && len >= 3u && buf[1] == 0xD2u) ? (buf + 1) : buf;
+        size_t n = (d == buf) ? len : (len - 1u);
+        if (n < 2u || d[0] != 0xD2u) return 0;
+        uint8_t raw = d[1];
         int charging = (raw & 0x80u) != 0;
         uint8_t v = raw & 0x7Fu;
         int pct;
@@ -384,10 +395,12 @@ int octans_proto_parse_steelseries(const uint8_t *buf,
     }
 
     if (var == VAR_SS_NOVA7) {
-        if (buf[0] != 0xB0u || len < 4u) return 0;
-        uint8_t st = buf[3];
+        const uint8_t *d = (buf[0] == 0x00u && len >= 5u && buf[1] == 0xB0u) ? (buf + 1) : buf;
+        size_t n = (d == buf) ? len : (len - 1u);
+        if (n < 4u || d[0] != 0xB0u) return 0;
+        uint8_t st = d[3];
         if (st == 0x00u) return 0; /* headset off */
-        int pct = (buf[2] <= 4u) ? (int)buf[2] * 25 : (int)octans_clamp_percent((int)buf[2]);
+        int pct = (d[2] <= 4u) ? (int)d[2] * 25 : (int)octans_clamp_percent((int)d[2]);
         out->battery_percent = (int8_t)pct;
         out->power_state = (st == 0x01u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
         out->valid = 1;
@@ -677,26 +690,40 @@ void octans_proto_build_eweadn(uint8_t cmd, uint8_t out33[33]) {
 
 int octans_proto_parse_eweadn(const uint8_t *buf, size_t len, octans_proto_reading_t *out, char out_dev_id[8]) {
     if (!buf || len < 3u || !out) return 0;
-    if (buf[0] == 0xD1u && buf[1] == 0x01u && buf[2] <= 100u) {
-        out->battery_percent = (int8_t)buf[2];
+    const uint8_t *d = buf;
+    size_t n = len;
+    if (buf[0] == 0x00u && len >= 4u &&
+        (buf[1] == 0x30u || buf[1] == 0x10u || buf[1] == 0xD1u || buf[1] == 0xC1u)) {
+        d = buf + 1;
+        n = len - 1u;
+    }
+    if (d[0] == 0xD1u && d[1] == 0x01u && d[2] <= 100u) {
+        out->battery_percent = (int8_t)d[2];
         out->power_state = OCTANS_PWR_DISCHARGING;
         out->valid = 1;
         return 1;
     }
-    if (buf[0] != 0x30u) return 0;
-    if (buf[1] == 0x02u) {
+    if (d[0] == 0xC1u && n >= 4u && d[2] <= 100u && d[2] > 0u) {
+        out->battery_percent = (int8_t)d[2];
+        out->power_state = d[3] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+    if (d[0] != 0x30u && d[0] != 0x10u) return 0;
+    if (d[1] == 0x02u) {
         out->asleep = 1;
         out->power_state = OCTANS_PWR_SLEEPING;
         return 1;
     }
-    if (len < 15u || buf[1] != 0x00u || buf[13] > 100u) return 0;
-    out->battery_percent = (int8_t)buf[13];
-    out->power_state = buf[12] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+    if (n < 15u || d[1] != 0x00u || d[13] > 100u) return 0;
+    if (d[0] == 0x10u && d[13] == 0u && d[14] == 0u) return 0;
+    out->battery_percent = (int8_t)d[13];
+    out->power_state = d[12] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
     out->valid = 1;
     if (out_dev_id) {
         size_t k = 0;
         for (size_t i = 4u; i < 8u; ++i) {
-            if (buf[i] >= 32u && buf[i] < 127u) out_dev_id[k++] = (char)buf[i];
+            if (d[i] >= 32u && d[i] < 127u) out_dev_id[k++] = (char)d[i];
         }
         out_dev_id[k] = '\0';
     }
@@ -956,13 +983,19 @@ static int wstr_contains_nocase(const wchar_t *hay, const wchar_t *needle) {
 
 static int is_mchose_cz_kb_name(const wchar_t *name) {
     static const wchar_t *const k[] = {
-        L"ACE60", L"ACE68", L"ACE75", L"G75 V2", L"G87 V2", L"G87 V3", L"G98 V3",
-        L"GOD60", L"GT75", L"JET75", L"K87 V3", L"K87S", L"K99 V3", L"MIX87",
-        L"ZERO75X", L"Keyboard", NULL
+        L"ACE60", L"ACE68", L"ACE75", L"G75 V2", L"G75_V2", L"G87 V2", L"G87_V2",
+        L"G87 V3", L"G98 V3", L"GOD60", L"GT75", L"JET75", L"K87 V3", L"K87S",
+        L"K99 V3", L"MIX87", L"ZERO75X", L"Keyboard", NULL
     };
     for (size_t i = 0; k[i]; ++i) {
         if (wstr_contains_nocase(name, k[i])) return 1;
     }
+    return 0;
+}
+
+static int is_mchose_by_exact_pid(uint16_t vid, uint16_t pid) {
+    if (vid == 0x3837u && (pid == 0x201Au || pid == 0x201Bu)) return 1;
+    if (vid == 0x41E4u && (pid == 0x2001u || pid == 0x2201u)) return 1;
     return 0;
 }
 
@@ -1123,27 +1156,166 @@ int octans_proto_parse_mchose_g7max(const uint8_t *buf, size_t len, octans_proto
     return 1;
 }
 
+void octans_proto_build_mchose_by_wireless(uint8_t out20[20]) {
+    if (!out20) return;
+    memset(out20, 0, 20u);
+    out20[0] = 0x13u; /* Report ID 19 */
+    out20[1] = 0x4Au; /* getBattery command */
+    out20[2] = 0x01u;
+    out20[19] = octans_crc_sum_range(out20, 0u, 18u); /* 0x5E checksum */
+}
+
 int octans_proto_parse_mchose_by(const uint8_t *buf, size_t len, int is_wired, octans_proto_reading_t *out) {
     if (!buf || !out) return 0;
-    uint8_t v = 0;
+    uint8_t lvl = 0;
+    uint8_t flags = 0;
     if (is_wired) {
-        size_t base = ((buf[0] == 0x06u || buf[0] == 0x09u) && len >= 9u) ? 1u : 0u;
-        if (base + 8u > len) return 0;
+        size_t base = ((buf[0] == 0x06u || buf[0] == 0x09u) && len >= 10u) ? 1u : 0u;
+        if (base + 9u > len) return 0;
         if (buf[base] != 0x87u) return 0;
-        v = buf[base + 7u];
+        lvl = buf[base + 7u];
+        flags = buf[base + 8u];
     } else {
-        size_t base = (buf[0] == 0x13u && len >= 3u) ? 1u : 0u;
-        if (base + 2u > len) return 0;
-        if (buf[base] != 0x4Au) return 0;
-        v = buf[base + 1u];
+        size_t base = (buf[0] == 0x13u && len >= 7u) ? 1u : 0u;
+        if (base + 6u > len) return 0;
+        if (buf[base] != 0x4Au || buf[base + 1u] < 1u || buf[base + 2u] != 0u) return 0;
+        lvl = buf[base + 4u];
+        flags = buf[base + 5u];
     }
-    uint8_t lo = (uint8_t)(v & 0x0Fu);
-    uint8_t hi = (uint8_t)((v >> 4) & 0x0Fu);
-    if (lo == 0u || lo > 10u) return 0;
-    out->battery_percent = (int8_t)(lo * 10u);
-    out->is_estimated = 1;
-    out->power_state = (hi == 1u) ? OCTANS_PWR_CHARGING
-                     : (hi == 2u ? OCTANS_PWR_FULL : OCTANS_PWR_DISCHARGING);
+    if (lvl == 0u || lvl > 100u) return 0;
+    uint8_t full = (uint8_t)((flags >> 4) & 0x0Fu);
+    uint8_t chg  = (uint8_t)(flags & 0x0Fu);
+    out->battery_percent = (int8_t)lvl;
+    out->is_estimated = 0;
+    out->power_state = (chg == 1u) ? OCTANS_PWR_CHARGING
+                     : ((full == 1u && lvl >= 100u) ? OCTANS_PWR_FULL : OCTANS_PWR_DISCHARGING);
+    out->valid = 1;
+    return 1;
+}
+
+void octans_proto_build_leobog_20b(uint8_t out20[20]) {
+    if (!out20) return;
+    memset(out20, 0, 20u);
+    out20[0] = 0x13u;
+    out20[1] = 0xCAu;
+    out20[19] = (uint8_t)((0x13u + 0xCAu) & 0xFFu); /* 0xDD */
+}
+
+int octans_proto_parse_leobog_20b(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 20u) return 0;
+    const uint8_t *d = (buf[0] == 0x00u && len >= 21u && buf[1] == 0x13u && buf[2] == 0x4Au) ? (buf + 1) : buf;
+    size_t n = (d == buf) ? len : (len - 1u);
+    if (n < 20u || d[0] != 0x13u || d[1] != 0x4Au || d[2] != 0x01u || d[3] != 0x00u || d[4] != 0x02u) {
+        return 0;
+    }
+    uint32_t sum = 0;
+    for (size_t i = 0; i < 19u; ++i) sum += d[i];
+    if (d[19] != (uint8_t)(sum & 0xFFu)) return 0;
+    if (d[5] > 100u) return 0;
+    out->battery_percent = (int8_t)d[5];
+    out->power_state = (d[6] == 0x10u) ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+void octans_proto_build_leobog_bytech(uint8_t report_id, uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = report_id;
+    out64[1] = 0x87u; /* cmd 135 = getBatteryStatus */
+    out64[2] = 0x00u; /* param */
+    out64[3] = 0x00u;
+    out64[4] = 0x01u; /* totalPackets = 1 */
+    out64[5] = 0x00u; /* currentPacket = 0 */
+    out64[6] = 0x00u; /* dataLen = 0 */
+    uint32_t sum = report_id;
+    for (size_t i = 1u; i < 63u; ++i) sum += out64[i];
+    out64[63] = (uint8_t)(255u - (sum & 0xFFu));
+}
+
+int octans_proto_parse_leobog_bytech(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 8u) return 0;
+    const uint8_t *d = buf;
+    size_t n = len;
+    if (buf[0] != 0x87u && len >= 9u && buf[1] == 0x87u) {
+        d = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 8u || d[0] != 0x87u || d[1] != 0x00u || d[3] != 0x01u || d[4] != 0x00u) {
+        return 0;
+    }
+    uint8_t lvl = d[6];
+    uint8_t flags = d[7];
+    if (lvl > 100u) return 0;
+    int full = ((flags & 0x0Fu) != 0u);
+    int chg = (((flags & 0xF0u) >> 4) != 0u);
+    out->battery_percent = (int8_t)lvl;
+    out->power_state = full ? OCTANS_PWR_FULL : (chg ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    out->valid = 1;
+    return 1;
+}
+
+void octans_proto_build_darmoshark_nordic(int wireless, uint8_t out64[64]) {
+    if (!out64) return;
+    memset(out64, 0, 64u);
+    out64[0] = (uint8_t)(0x01u | (wireless ? 0x40u : 0x00u));
+    out64[2] = 0x81u; /* DS_OP_BASE_INFO = 129 */
+    out64[3] = 0x01u; /* DS_POWER_SUB = 1 */
+    uint32_t sum = 0;
+    for (size_t i = 0; i < 63u; ++i) sum += out64[i];
+    out64[63] = (uint8_t)((0xA1u - (sum & 0xFFu)) & 0xFFu);
+}
+
+int octans_proto_parse_darmoshark_nordic(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 12u) return 0;
+    const uint8_t *d = buf;
+    size_t n = len;
+    if (buf[0] == 0x00u && len >= 13u && ((buf[1] & 0x3Fu) == 0x01u) && buf[4] == 0x01u) {
+        d = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 12u || (d[0] & 0x3Fu) != 0x01u || d[3] != 0x01u) return 0;
+
+    int is_v2 = ((d[6] == 0x15u && d[7] == 0x19u) ||
+                 (d[6] == 0x2Du && d[7] == 0x36u) ||
+                 (d[6] == 0xDAu && d[7] == 0x0Bu) ||
+                 (d[6] == 0x8Au && d[7] == 0x24u) ||
+                 (d[6] > 100u && d[11] <= 100u));
+    uint8_t pct = is_v2 ? d[11] : d[6];
+    if (pct > 100u) return 0;
+    if (pct == 0u && (!is_v2 || d[10] == 0u)) return 0;
+    out->battery_percent = (int8_t)pct;
+    if (is_v2) {
+        uint8_t st = (d[10] == 3u) ? 0u : d[10];
+        out->power_state = (st == 2u) ? OCTANS_PWR_FULL
+                         : (st == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+    } else {
+        out->power_state = OCTANS_PWR_DISCHARGING;
+    }
+    out->valid = 1;
+    return 1;
+}
+
+void octans_proto_build_darmoshark_telink(uint8_t opcode, uint8_t out21[21]) {
+    if (!out21) return;
+    memset(out21, 0, 21u);
+    out21[0] = 0x51u;
+    out21[1] = opcode;
+}
+
+int octans_proto_parse_darmoshark_telink(const uint8_t *buf, size_t len, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 11u) return 0;
+    const uint8_t *body = buf;
+    size_t n = len;
+    if (buf[0] == 0x51u && len >= 12u && buf[1] == 0x06u) {
+        body = buf + 1;
+        n = len - 1u;
+    }
+    if (n < 11u || body[0] != 0x06u || body[1] != 0x01u) return 0;
+    uint8_t pct = body[10];
+    if (pct == 0u || pct > 100u) return 0;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = OCTANS_PWR_DISCHARGING;
     out->valid = 1;
     return 1;
 }
@@ -1724,6 +1896,12 @@ int octans_proto_parse_indep(const uint8_t *buf,
     case VAR_INDEP_SONY_PULSE3D:
         return octans_proto_parse_sony_pulse3d(buf, len, out);
 
+    case VAR_INDEP_DARMOSHARK_NORDIC:
+        return octans_proto_parse_darmoshark_nordic(buf, len, out);
+
+    case VAR_INDEP_DARMOSHARK_TELINK:
+        return octans_proto_parse_darmoshark_telink(buf, len, out);
+
     default:
         return 0;
     }
@@ -1773,24 +1951,57 @@ static int run_razer90_live(const proto_entry_t *e, const octans_hid_info_t *inf
     if (octans_hid_open(info->path, info->is_system_exclusive ? 0 : 1, 0, &dev) < 0) return 0;
 
     int ok = 0;
-    uint8_t tx_id = (e->variant == VAR_RAZER90_KB_WIRELESS) ? 0x9Fu
-                  : (e->variant == VAR_RAZER90_KB_WIRED ? 0x3Fu : 0x1Fu);
+    uint8_t tx_list[3];
+    int tx_cnt = 1;
+    if (e->variant == VAR_RAZER90_KB_WIRELESS) {
+        tx_list[0] = 0x9Fu;
+    } else if (e->variant == VAR_RAZER90_KB_WIRED) {
+        tx_list[0] = 0x3Fu;
+    } else {
+        /* Try modern 0x1F first, then 0x3F (Mamba/Lancehead/DA V2 Pro) and 0xFF (Viper Ult/Basilisk X) */
+        tx_list[0] = 0x1Fu;
+        tx_list[1] = 0x3Fu;
+        tx_list[2] = 0xFFu;
+        tx_cnt = 3;
+    }
+
     uint8_t req[91];
     uint8_t resp[128];
-    size_t flen = dev.feature_len >= 91 ? dev.feature_len : 91;
+    size_t flen = (dev.feature_len == 90u) ? 90u : (dev.feature_len >= 91u ? dev.feature_len : 91u);
     if (flen > sizeof(resp)) flen = sizeof(resp);
+    int send_90 = (flen == 90u) ? 1 : 0;
+    uint8_t used_tx = tx_list[0];
 
-    octans_proto_build_razer90(tx_id, 0x80u, req);
-    if (octans_hid_set_feature(&dev, req, 91u) == 0) {
-        for (int attempt = 0; attempt < 3; ++attempt) {
-            Sleep(12);
+    static const DWORD wait_ms[4] = {20u, 45u, 85u, 140u};
+    for (int ti = 0; ti < tx_cnt && !ok; ++ti) {
+        uint8_t tx_id = tx_list[ti];
+        octans_proto_build_razer90(tx_id, 0x80u, req);
+        const uint8_t *send_ptr = send_90 ? (req + 1) : req;
+        size_t send_len = send_90 ? 90u : 91u;
+        if (octans_hid_set_feature(&dev, send_ptr, send_len) != 0) break;
+
+        for (int attempt = 0; attempt < 4; ++attempt) {
+            Sleep(wait_ms[attempt]);
             if (octans_hid_get_feature(&dev, 0x00u, resp, flen) < 0) continue;
             uint8_t st = 0, val = 0;
             if (!octans_proto_parse_razer90(resp, flen, 0x80u, &st, &val)) continue;
-            if (st == 0x01u) continue;
+            if (st == 0x05u) break; /* Not supported on this tx_id */
+            if (st == 0x01u) {
+                if (attempt == 3 && val > 0u) {
+                    /* OpenRazer / Synapse treats 0x01 busy with non-zero level as valid */
+                    out->battery_percent = (int8_t)octans_clamp_percent(octans_round_div((uint32_t)val * 100u, 255u));
+                    out->power_state = OCTANS_PWR_DISCHARGING;
+                    out->valid = 1;
+                    used_tx = tx_id;
+                    ok = 1;
+                    break;
+                }
+                continue;
+            }
             if (st == 0x04u) {
                 out->asleep = 1;
                 out->power_state = OCTANS_PWR_SLEEPING;
+                used_tx = tx_id;
                 ok = 1;
                 break;
             }
@@ -1798,6 +2009,7 @@ static int run_razer90_live(const proto_entry_t *e, const octans_hid_info_t *inf
                 out->battery_percent = (int8_t)octans_clamp_percent(octans_round_div((uint32_t)val * 100u, 255u));
                 out->power_state = OCTANS_PWR_DISCHARGING;
                 out->valid = 1;
+                used_tx = tx_id;
                 ok = 1;
                 break;
             }
@@ -1805,12 +2017,15 @@ static int run_razer90_live(const proto_entry_t *e, const octans_hid_info_t *inf
     }
 
     if (ok && out->valid) {
-        octans_proto_build_razer90(tx_id, 0x84u, req);
-        if (octans_hid_set_feature(&dev, req, 91u) == 0) {
-            Sleep(12);
+        octans_proto_build_razer90(used_tx, 0x84u, req);
+        const uint8_t *send_ptr = send_90 ? (req + 1) : req;
+        size_t send_len = send_90 ? 90u : 91u;
+        if (octans_hid_set_feature(&dev, send_ptr, send_len) == 0) {
+            Sleep(25);
             if (octans_hid_get_feature(&dev, 0x00u, resp, flen) >= 0) {
                 uint8_t st = 0, val = 0;
-                if (octans_proto_parse_razer90(resp, flen, 0x84u, &st, &val) && st == 0x02u && val != 0u) {
+                if (octans_proto_parse_razer90(resp, flen, 0x84u, &st, &val) &&
+                    (st == 0x02u || st == 0x01u) && val != 0u) {
                     out->power_state = OCTANS_PWR_CHARGING;
                 }
             }
@@ -1996,7 +2211,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
     int need_read = (e->tx != TX_FEATURE) || (e->variant == VAR_COMPX_B_FEATURE) ||
                     (e->variant == VAR_KB_KEYCHRON) || (e->variant == VAR_INDEP_ALIENWARE) ||
                     (e->variant == VAR_INDEP_LENOVO_VOIP);
-    if (octans_hid_open(info->path, 1, need_read, &dev) < 0 || !dev.can_write) {
+    int need_write = (e->tx != TX_FEATURE);
+    if (octans_hid_open(info->path, 1, need_read, &dev) < 0 || (need_write && !dev.can_write)) {
         octans_hid_close(&dev);
         return 0;
     }
@@ -2011,18 +2227,25 @@ static int run_feature_or_output_live(const proto_entry_t *e,
     memset(req, 0, sizeof(req));
     octans_proto_variant_t var = e->variant;
 
-    if (e->family == FAM_SINOWEALTH && dev.feature_len >= 65) {
+    if (e->family == FAM_SINOWEALTH && dev.feature_len >= 64) {
+        size_t flen = (dev.feature_len <= sizeof(req)) ? dev.feature_len : 65u;
         octans_proto_build_sinowealth(0x00u, 0x83u, req);
-        if (octans_hid_set_feature(&dev, req, 65u) == 0) {
+        const uint8_t *sptr = (flen == 64u) ? (req + 1) : req;
+        if (octans_hid_set_feature(&dev, sptr, flen) == 0) {
             Sleep(90);
-            if (octans_hid_get_feature(&dev, 0x00u, resp, 65u) >= 65 &&
-                octans_proto_parse_sinowealth(resp, 65u, out)) {
+            int n = octans_hid_get_feature(&dev, 0x00u, resp, flen);
+            if (n >= 64 && octans_proto_parse_sinowealth(resp, (size_t)n, out)) {
                 ok = 1;
             }
         }
-    } else if (e->family == FAM_COMPX && dev.output_len >= 17) {
+    } else if (e->family == FAM_COMPX &&
+               ((e->tx == TX_FEATURE && dev.feature_len >= 17u) ||
+                (e->tx != TX_FEATURE && dev.output_len >= 17u && dev.output_len != 20u))) {
         octans_proto_build_compx(0x04u, req);
-        if (e->tx == TX_OUTPUT_INTR) {
+        if (e->tx == TX_FEATURE) {
+            size_t flen = dev.feature_len <= sizeof(req) ? dev.feature_len : 17u;
+            ok = send_and_read_loop(&dev, 1, req, flen, 4, 120u, wrap_parse_compx, NULL, out);
+        } else if (e->tx == TX_OUTPUT_INTR) {
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 17u;
             if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
                 octans_hid_write_output(&dev, req, olen) == 0) {
@@ -2032,16 +2255,18 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else {
-            ok = send_and_read_loop(&dev, e->tx == TX_FEATURE, req, 17u, 4, 120u,
-                                    wrap_parse_compx, NULL, out);
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 17u;
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_compx, NULL, out);
         }
     } else if (e->family == FAM_ATK_NORDIC) {
         if (e->variant == VAR_ATK_54L15_64B && dev.output_len >= 64) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             octans_proto_build_atk_54l15(req);
-            ok = send_and_read_loop(&dev, 0, req, 64u, 4, 120u, wrap_parse_atk54, NULL, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_atk54, NULL, out);
         } else if (e->variant == VAR_ATK_52840_17B && dev.output_len >= 17) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 17u;
             octans_proto_build_atk_52840(req);
-            ok = send_and_read_loop(&dev, 0, req, 17u, 4, 120u, wrap_parse_atk52, NULL, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_atk52, NULL, out);
         } else if (e->variant == VAR_ATK_MOUSEINFO && dev.output_len >= 64u && dev.can_read) {
             static const uint8_t rids[3] = {11u, 8u, 6u};
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
@@ -2049,7 +2274,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 memset(req, 0, olen);
                 req[0] = rids[ri];
                 req[1] = 0x13u; /* cmd 19 = MouseInfo */
-                if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                    octans_hid_write_output(&dev, req, olen) == 0) {
                     for (int a = 0; a < 4; ++a) {
                         int n = octans_hid_read_input(&dev, resp, sizeof(resp), 160u);
                         if (n >= 20 && octans_proto_parse_atk_mouseinfo(resp, (size_t)n, out)) { ok = 1; break; }
@@ -2064,8 +2290,12 @@ static int run_feature_or_output_live(const proto_entry_t *e,
         if (rlen > dev.output_len) rlen = dev.output_len;
         ok = send_and_read_loop(&dev, 0, req, rlen, 4, 120u, wrap_parse_rog, &var, out);
     } else if (e->family == FAM_CORSAIR && e->variant == VAR_CORSAIR_BRAGI && dev.output_len >= 64) {
-        octans_proto_build_corsair_bragi(0x09u, 0x0Fu, req);
-        if (octans_hid_write_output(&dev, req, 64u) == 0) {
+        size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+        size_t off = (olen >= 65u) ? 1u : 0u;
+        memset(req, 0, olen);
+        octans_proto_build_corsair_bragi(0x09u, 0x0Fu, req + off);
+        if (octans_hid_write_output(&dev, req, olen) == 0 ||
+            octans_hid_write_output_intr(&dev, req, olen) == 0) {
             for (int t = 0; t < 4; ++t) {
                 int n = octans_hid_read_input(&dev, resp, sizeof(resp), 120);
                 uint16_t raw = 0;
@@ -2076,6 +2306,27 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     ok = 1;
                     break;
                 }
+            }
+        }
+    } else if (e->family == FAM_CORSAIR && e->variant == VAR_CORSAIR_VOID_ELITE && dev.output_len >= 2u && dev.can_read) {
+        size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+        memset(req, 0, olen);
+        req[0] = 0xC9u;
+        req[1] = 0x64u;
+        int wrc = octans_hid_write_output(&dev, req, olen);
+        if (wrc != 0) wrc = octans_hid_write_output_intr(&dev, req, olen);
+        if (wrc != 0 && olen >= 3u) {
+            memset(req, 0, olen);
+            req[0] = 0x00u;
+            req[1] = 0xC9u;
+            req[2] = 0x64u;
+            wrc = octans_hid_write_output(&dev, req, olen);
+            if (wrc != 0) wrc = octans_hid_write_output_intr(&dev, req, olen);
+        }
+        if (wrc == 0) {
+            for (int t = 0; t < 4; ++t) {
+                int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                if (n >= 5 && octans_proto_parse_corsair_void_elite(resp, (size_t)n, out)) { ok = 1; break; }
             }
         }
     } else if (e->family == FAM_CORSAIR && e->variant == VAR_CORSAIR_LEGACY_NXP && dev.output_len >= 64u && dev.can_read) {
@@ -2091,10 +2342,11 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             }
         }
     } else if (e->family == FAM_STEELSERIES && e->variant == VAR_SS_ARCTIS1 && dev.output_len >= 8u) {
-        size_t rlen = (dev.output_len >= 31u) ? 31u : dev.output_len;
+        size_t rlen = dev.output_len <= sizeof(req) ? dev.output_len : 31u;
         req[0] = 0x06u; req[1] = 0x12u;
         ok = send_and_read_loop(&dev, 0, req, rlen, 4, 150u, wrap_parse_ss, &var, out);
     } else if (e->family == FAM_STEELSERIES && dev.output_len >= 64) {
+        size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
         if (e->variant == VAR_SS_NOVA_ELITE) {
             req[0] = 0x01u;
             req[1] = 0xB0u;
@@ -2103,18 +2355,31 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             req[1] = (e->variant == VAR_SS_RIVAL3) ? 0xAAu : (e->variant == VAR_SS_AEROX ? 0xD2u : 0xB0u);
             if (e->variant == VAR_SS_RIVAL3) req[2] = 0x01u;
         }
-        ok = send_and_read_loop(&dev, 0, req, 64u, 4, 150u, wrap_parse_ss, &var, out);
+        ok = send_and_read_loop(&dev, 0, req, olen, 4, 150u, wrap_parse_ss, &var, out);
     } else if (e->family == FAM_HYPERX) {
         if (e->variant == VAR_HX_FLIGHT && dev.output_len >= 20u) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 20u;
             req[0] = 0x21u; req[1] = 0xFFu; req[2] = 0x05u;
-            ok = send_and_read_loop(&dev, 0, req, 20u, 4, 200u, wrap_parse_hx, &var, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 200u, wrap_parse_hx, &var, out);
         } else if (e->variant == VAR_HX_ALPHA_WIRELESS && dev.output_len >= 31) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 31u;
             req[0] = 0x21u; req[1] = 0xBBu; req[2] = 0x0Bu;
-            if (send_and_read_loop(&dev, 0, req, 31u, 5, 200u, wrap_parse_hx, &var, out)) {
+            if (send_and_read_loop(&dev, 0, req, olen, 5, 200u, wrap_parse_hx, &var, out)) {
                 ok = 1;
                 req[2] = 0x0Cu;
-                if (octans_hid_write_output(&dev, req, 31u) == 0) {
+                if (octans_hid_write_output(&dev, req, olen) == 0) {
                     int cn = octans_hid_read_input(&dev, resp, sizeof(resp), 200);
+                    if (cn > 0) octans_proto_parse_hyperx(resp, (size_t)cn, var, out);
+                }
+            }
+        } else if (e->variant == VAR_HX_CLOUD3S && dev.output_len >= 64u) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            req[0] = 0x0Cu; req[1] = 0x02u; req[2] = 0x03u; req[3] = 0x01u; req[4] = 0x00u; req[5] = 0x06u;
+            if (send_and_read_loop(&dev, 0, req, olen, 4, 150u, wrap_parse_hx, &var, out)) {
+                ok = 1;
+                req[5] = 0x48u;
+                if (octans_hid_write_output(&dev, req, olen) == 0) {
+                    int cn = octans_hid_read_input(&dev, resp, sizeof(resp), 150u);
                     if (cn > 0) octans_proto_parse_hyperx(resp, (size_t)cn, var, out);
                 }
             }
@@ -2151,7 +2416,7 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (dev.output_len >= 52) {
-            size_t rlen = dev.output_len > 64 ? 64u : dev.output_len;
+            size_t rlen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             if (e->variant == VAR_HX_GEN1) { req[0]=0x06; req[1]=0xFF; req[2]=0xBB; req[3]=0x02; }
             else if (e->variant == VAR_HX_GEN2) { req[0]=0x66; req[1]=0x89; }
             else { req[0]=0x50; req[1]=0x02; }
@@ -2163,7 +2428,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             octans_proto_build_rapoo_vision(req);
             static const uint32_t tms[2] = { 300u, 120u };
             for (int a = 0; a < 2 && !ok; ++a) {
-                if (octans_hid_write_output_intr(&dev, req, olen) != 0) break;
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) break;
                 for (int r = 0; r < 3; ++r) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), tms[a]);
                     if (n >= 9 && octans_proto_parse_rapoo(resp, (size_t)n, var, out)) { ok = 1; break; }
@@ -2179,7 +2445,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     req[0] = rids[ri];
                     req[1] = 0xAAu;
                     req[2] = sels[si];
-                    if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+                    if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                        octans_hid_write_output(&dev, req, olen) == 0) {
                         int n = octans_hid_read_input(&dev, resp, sizeof(resp), 160u);
                         if (n >= 5 && octans_proto_parse_rapoo(resp, (size_t)n, var, out)) { ok = 1; break; }
                     }
@@ -2200,15 +2467,27 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     if (n >= 40 && octans_proto_parse_ajazz_mkbms(resp, (size_t)n, out)) { ok = 1; break; }
                 }
             }
-        } else if (e->variant == VAR_EWEADN_0X30 && dev.output_len >= 33) {
-            octans_proto_build_eweadn(0x30u, req);
-            ok = send_and_read_loop(&dev, 0, req, 33u, 4, 120u, wrap_parse_eweadn, NULL, out);
+        } else if (e->variant == VAR_EWEADN_0X30 && dev.output_len >= 32u) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 33u;
+            uint8_t cmds[2];
+            if (info->vid == 0x249Au || info->vid == 0x248Au) {
+                cmds[0] = 0x10u; cmds[1] = 0x30u;
+            } else {
+                cmds[0] = 0x30u; cmds[1] = 0x10u;
+            }
+            for (int ci = 0; ci < 2 && !ok; ++ci) {
+                octans_proto_build_eweadn(cmds[ci], req);
+                const uint8_t *sptr = (olen == 32u) ? (req + 1) : req;
+                ok = send_and_read_loop(&dev, 0, sptr, olen, 4, 140u, wrap_parse_eweadn, NULL, out);
+            }
         } else if (e->variant == VAR_AJAZZ_0X10 && dev.output_len >= 33) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 33u;
             req[0] = 0x10u; req[2] = 0x01u; req[3] = 0x0Bu;
-            ok = send_and_read_loop(&dev, 0, req, 33u, 4, 120u, wrap_parse_aj10, NULL, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_aj10, NULL, out);
         } else if (e->variant == VAR_AJAZZ_0X05 && dev.output_len >= 64) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             req[0] = 0xF7u;
-            ok = send_and_read_loop(&dev, 0, req, 64u, 4, 120u, wrap_parse_aj05, NULL, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_aj05, NULL, out);
         }
     } else if (e->family == FAM_JIELI_TLV && dev.output_len >= 64) {
         size_t rlen = dev.output_len >= 65 ? 65u : 64u;
@@ -2250,11 +2529,13 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if ((e->variant == VAR_KB_ATK_EVISION || e->variant == VAR_KB_LOFREE_HYZEN) && dev.output_len >= 32) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 32u;
             req[0] = 0x04u; req[1] = 0x01u; req[5] = 0x1Au;
-            ok = send_and_read_loop(&dev, 0, req, 32u, 4, 120u, wrap_parse_kb, &var, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 4, 120u, wrap_parse_kb, &var, out);
         } else if (e->variant == VAR_KB_KEYCHRON && dev.feature_len >= 64) {
+            size_t flen = dev.feature_len <= sizeof(req) ? dev.feature_len : 64u;
             req[0] = 0xB3u; req[1] = 0x06u;
-            ok = send_and_read_loop(&dev, 1, req, 64u, 3, 120u, wrap_parse_kb, &var, out);
+            ok = send_and_read_loop(&dev, 1, req, flen, 3, 120u, wrap_parse_kb, &var, out);
         } else if (e->variant == VAR_KB_VIA_RAW && dev.output_len >= 32) {
             size_t len = dev.output_len >= 33 ? 33u : 32u;
             octans_proto_build_via_battery(req);
@@ -2282,11 +2563,17 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 int n = octans_hid_get_feature(&dev, 0x00u, resp, flen);
                 if (n >= 4 && octans_proto_parse_keyboard(resp, (size_t)n, var, 0u, out)) { ok = 1; }
             }
-        } else if (e->variant == VAR_KB_MCHOSE_BY && is_mchose_by_kb_name(info->product)) {
+        } else if (e->variant == VAR_KB_MCHOSE_BY &&
+                   (is_mchose_by_exact_pid(info->vid, info->pid) ||
+                    is_mchose_by_kb_name(info->product) ||
+                    ((info->vid == 0x3837u || info->vid == 0x41E4u) &&
+                     (wstr_contains_nocase(info->product, L"MCHOSE 2.4G Wireless") ||
+                      wstr_contains_nocase(info->product, L"2.4G Wireless Receiver"))) ||
+                    (info->vid == 0x3837u && dev.output_len == 20u && dev.input_len == 20u))) {
             if (dev.feature_len >= 519u) {
                 uint8_t by_req[520];
                 uint8_t by_resp[600];
-                static const uint8_t rids[2] = {0x06u, 0x09u};
+                static const uint8_t rids[2] = {0x09u, 0x06u};
                 for (int ri = 0; ri < 2 && !ok; ++ri) {
                     size_t flen = (dev.feature_len <= sizeof(by_req)) ? dev.feature_len : 520u;
                     memset(by_req, 0, flen);
@@ -2295,20 +2582,19 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     if (octans_hid_set_feature(&dev, by_req, flen) == 0) {
                         Sleep(60);
                         int n = octans_hid_get_feature(&dev, rids[ri], by_resp, flen);
-                        if (n >= 8 && octans_proto_parse_mchose_by(by_resp, (size_t)n, 1, out)) {
+                        if (n >= 9 && octans_proto_parse_mchose_by(by_resp, (size_t)n, 1, out)) {
                             out->conn = OCTANS_CONN_WIRED;
                             ok = 1;
                         }
                     }
                 }
-            } else if (dev.output_len >= 20u && dev.can_read) {
-                size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 20u;
-                memset(req, 0, olen);
-                req[0] = 0x13u; req[1] = 0x4Au; req[2] = 0x01u;
-                if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            } else if (dev.output_len >= 20u && dev.output_len <= 32u && dev.can_read) {
+                octans_proto_build_mchose_by_wireless(req);
+                if (octans_hid_write_output_intr(&dev, req, 20u) == 0 ||
+                    octans_hid_write_output(&dev, req, 20u) == 0) {
                     for (int a = 0; a < 6; ++a) {
-                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
-                        if (n >= 2 && octans_proto_parse_mchose_by(resp, (size_t)n, 0, out)) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 250u);
+                        if (n >= 6 && octans_proto_parse_mchose_by(resp, (size_t)n, 0, out)) {
                             ok = 1;
                             break;
                         }
@@ -2359,6 +2645,30 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 int n = octans_hid_get_feature(&dev, 0x00u, resp, flen);
                 if (n >= 7 && octans_proto_parse_rongyuan_f7(resp, (size_t)n, out)) { ok = 1; }
             }
+        } else if (e->variant == VAR_KB_LEOBOG_20B && dev.output_len == 20u && dev.input_len == 20u && dev.can_read) {
+            octans_proto_build_leobog_20b(req);
+            if (octans_hid_write_output_intr(&dev, req, 20u) == 0 ||
+                octans_hid_write_output(&dev, req, 20u) == 0) {
+                for (int a = 0; a < 6; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
+                    if (n >= 20 && octans_proto_parse_leobog_20b(resp, (size_t)n, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_KB_LEOBOG_BYTECH && dev.output_len >= 63u && dev.can_read) {
+            uint8_t rids[8];
+            size_t rcnt = octans_hid_collect_output_rids(&dev, rids, 8u);
+            size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+            for (size_t ri = 0; ri < rcnt && !ok; ++ri) {
+                octans_proto_build_leobog_bytech(rids[ri], req);
+                const uint8_t *sptr = (olen == 63u) ? (req + 1) : req;
+                if (octans_hid_write_output_intr(&dev, sptr, olen) == 0 ||
+                    octans_hid_write_output(&dev, sptr, olen) == 0) {
+                    for (int a = 0; a < 4; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                        if (n >= 8 && octans_proto_parse_leobog_bytech(resp, (size_t)n, out)) { ok = 1; break; }
+                    }
+                }
+            }
         }
     } else if (e->family == FAM_INDEP) {
         /* Skip MCHOSE wired-only OY headsets (G20 / G20 PRO / K20 / K20 PRO) */
@@ -2384,7 +2694,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             /* Primary: cmd 0x0900 (deviceInfo), up to 5 attempts with 30ms busy retry */
             for (int a = 0; a < 5 && !ok; ++a) {
                 octans_proto_build_mchose_hid4d(0x4Du, 0x0900u, req, olen);
-                if (octans_hid_write_output_intr(&dev, req, olen) != 0) break;
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) break;
                 int busy = 0;
                 for (int r = 0; r < 3; ++r) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
@@ -2403,7 +2714,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             /* Fallback: cmd 0x0904 (CZ keyboard dedicated battery command) */
             for (int a = 0; a < 3 && !ok; ++a) {
                 octans_proto_build_mchose_hid4d(0x4Du, 0x0904u, req, olen);
-                if (octans_hid_write_output_intr(&dev, req, olen) != 0) break;
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) break;
                 for (int r = 0; r < 2; ++r) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
                     if (n <= 0) break;
@@ -2431,8 +2743,10 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (e->variant == VAR_INDEP_MCHOSE_G7MAX && dev.feature_len >= 63u &&
-                   wstr_contains_nocase(info->product, L"G7 MAX")) {
-            size_t flen = dev.feature_len >= 64u ? 64u : dev.feature_len;
+                   (wstr_contains_nocase(info->product, L"G7 MAX") ||
+                    wstr_contains_nocase(info->product, L"G7_MAX") ||
+                    wstr_contains_nocase(info->product, L"G7MAX"))) {
+            size_t flen = dev.feature_len <= sizeof(req) ? dev.feature_len : 64u;
             octans_proto_build_mchose_g7max(0x03u, req);
             if (octans_hid_set_feature(&dev, req, flen) == 0) {
                 Sleep(50);
@@ -2442,20 +2756,23 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         } else if (e->variant == VAR_INDEP_NORDIC_GEN && dev.feature_len >= 32) {
+            size_t flen = dev.feature_len <= sizeof(req) ? dev.feature_len : 32u;
             req[0] = 0x05u; req[1] = 0x15u; req[4] = 0x01u;
-            if (octans_hid_set_feature(&dev, req, 32u) == 0) {
+            if (octans_hid_set_feature(&dev, req, flen) == 0) {
                 Sleep(80);
-                if (octans_hid_get_feature(&dev, 0x05u, resp, 32u) >= 10 &&
-                    octans_proto_parse_indep(resp, 32u, var, out)) {
+                int n = octans_hid_get_feature(&dev, 0x05u, resp, flen);
+                if (n >= 10 && octans_proto_parse_indep(resp, (size_t)n, var, out)) {
                     ok = 1;
                 }
             }
         } else if (e->variant == VAR_INDEP_NZXT && dev.output_len >= 64) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             req[0] = 0x4Eu; req[1] = 0x02u; req[2] = 0x81u; req[4] = 0xB0u;
-            ok = send_and_read_loop(&dev, 0, req, 64u, 3, 120u, wrap_parse_indep, &var, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 3, 120u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_ALIENWARE && dev.feature_len >= 65) {
+            size_t flen = dev.feature_len <= sizeof(req) ? dev.feature_len : 65u;
             req[0] = 0x00u; req[1] = 0x0Eu; req[2] = 0xA1u;
-            ok = send_and_read_loop(&dev, 1, req, 65u, 4, 120u, wrap_parse_indep, &var, out);
+            ok = send_and_read_loop(&dev, 1, req, flen, 4, 120u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_MCHOSE_G7 && dev.output_len >= 64u && dev.can_read) {
             static const uint8_t enc_g7[9] = {
                 OCTANS_ENC8(0x00, 40), OCTANS_ENC8(0x55, 41), OCTANS_ENC8(0x30, 42),
@@ -2464,7 +2781,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             };
             size_t olen = dev.output_len >= 65u ? 65u : 64u;
             octans_dec_bytes(req, enc_g7, sizeof(enc_g7), 40u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 for (int a = 0; a < 5; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
                     if (n >= 10 && octans_proto_parse_indep(resp, (size_t)n, var, out)) {
@@ -2478,8 +2796,9 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 OCTANS_ENC8(0x05, 50), OCTANS_ENC8(0x5D, 51), OCTANS_ENC8(0x04, 52),
                 OCTANS_ENC8(0x00, 53), OCTANS_ENC8(0xD6, 54), OCTANS_ENC8(0x0C, 55)
             };
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             octans_dec_bytes(req, enc_aud, sizeof(enc_aud), 50u);
-            ok = send_and_read_loop(&dev, 0, req, 64u, 3, 120u, wrap_parse_indep, &var, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 3, 120u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_MCHOSE_V9 && dev.output_len >= 64u && dev.can_read) {
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             memset(req, 0, olen);
@@ -2487,6 +2806,7 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             req[1] = octans_dec8(OCTANS_ENC8(0x65u, 59), 59u);
             req[2] = 0x01u;
             int wrc = octans_hid_write_output_intr(&dev, req, olen);
+            if (wrc != 0) wrc = octans_hid_write_output(&dev, req, olen);
             if (wrc != 0 && olen >= 65u) {
                 memset(req, 0, olen);
                 req[0] = 0x00u;
@@ -2494,6 +2814,7 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 req[2] = octans_dec8(OCTANS_ENC8(0x65u, 59), 59u);
                 req[3] = 0x01u;
                 wrc = octans_hid_write_output_intr(&dev, req, olen);
+                if (wrc != 0) wrc = octans_hid_write_output(&dev, req, olen);
             }
             if (wrc == 0) {
                 for (int a = 0; a < 5; ++a) {
@@ -2513,7 +2834,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             memset(req, 0, olen);
             octans_dec_bytes(req, enc_mc, sizeof(enc_mc), 60u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 for (int a = 0; a < 5; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 260u);
                     if (n >= 9 && octans_proto_parse_mchose_audio_mc(resp, (size_t)n, out)) {
@@ -2527,15 +2849,17 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 OCTANS_ENC8(0x02, 70), OCTANS_ENC8(0x0C, 71), OCTANS_ENC8(0x03, 72),
                 OCTANS_ENC8(0x00, 73), OCTANS_ENC8(0x06, 74), OCTANS_ENC8(0x0C, 75)
             };
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
             octans_dec_bytes(req, enc_astro, sizeof(enc_astro), 70u);
-            ok = send_and_read_loop(&dev, 0, req, 64u, 6, 200u, wrap_parse_indep, &var, out);
+            ok = send_and_read_loop(&dev, 0, req, olen, 6, 200u, wrap_parse_indep, &var, out);
         } else if (e->variant == VAR_INDEP_AULA_GEN64 && dev.output_len >= 64u && dev.can_read) {
             static const uint8_t enc_ag[2] = { OCTANS_ENC8(0x0D, 110), OCTANS_ENC8(0x01, 111) };
             size_t olen = dev.output_len >= 65u ? 65u : 64u;
             size_t off = (olen >= 65u) ? 1u : 0u;
             memset(req, 0, olen);
             octans_dec_bytes(req + off, enc_ag, sizeof(enc_ag), 110u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 for (int a = 0; a < 3; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
                     if (n >= 5 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
@@ -2547,7 +2871,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             size_t off = (olen >= 33u) ? 1u : 0u;
             memset(req, 0, olen);
             octans_dec_bytes(req + off, enc_aa, sizeof(enc_aa), 114u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 for (int a = 0; a < 4; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
                     if (n >= 27 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
@@ -2558,7 +2883,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             memset(req, 0, olen);
             req[0] = 11u;
             req[1] = octans_dec8(OCTANS_ENC8(0x81u, 118), 118u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 for (int a = 0; a < 4; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
                     if (n >= 18 && octans_proto_parse_indep(resp, (size_t)n, var, out)) { ok = 1; break; }
@@ -2589,7 +2915,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
             size_t off = (olen >= 33u) ? 1u : 0u;
             memset(req, 0, olen);
             octans_dec_bytes(req + off, enc_iq, sizeof(enc_iq), 126u);
-            if (octans_hid_write_output_intr(&dev, req, olen) == 0) {
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
                 int n = octans_hid_read_input(&dev, resp, sizeof(resp), 260u);
                 if (n >= 4 && octans_proto_parse_iqunix_texthex(resp, (size_t)n, out)) { ok = 1; }
             }
@@ -2646,6 +2973,45 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 for (int a = 0; a < 6; ++a) {
                     int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
                     if (n >= 19 && octans_proto_parse_epos_h3pro(resp, (size_t)n, is_wired, out)) { ok = 1; break; }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_DARMOSHARK_NORDIC && dev.output_len >= 64u && dev.can_read) {
+            size_t olen = (dev.output_len <= sizeof(req)) ? dev.output_len : 64u;
+            size_t off = (olen >= 65u) ? 1u : 0u;
+            static const int modes[2] = { 1, 0 }; /* Try 2.4G wireless (0x41) first, then wired (0x01) */
+            for (int mi = 0; mi < 2 && !ok; ++mi) {
+                memset(req, 0, olen);
+                octans_proto_build_darmoshark_nordic(modes[mi], req + off);
+                if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                    octans_hid_write_output(&dev, req, olen) == 0) {
+                    for (int a = 0; a < 5; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
+                        if (n >= 12 && octans_proto_parse_darmoshark_nordic(resp, (size_t)n, out)) {
+                            if (modes[mi] == 0) out->conn = OCTANS_CONN_WIRED;
+                            ok = 1;
+                            break;
+                        }
+                    }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_DARMOSHARK_TELINK && dev.feature_len >= 21u) {
+            size_t flen = (dev.feature_len <= sizeof(req)) ? dev.feature_len : 21u;
+            /* Prime buffer with opcode 0x03 (bond info), then query opcode 0x06 (identity + battery) */
+            memset(req, 0, flen);
+            octans_proto_build_darmoshark_telink(0x03u, req);
+            if (octans_hid_set_feature(&dev, req, flen) == 0) {
+                Sleep(15);
+                octans_hid_get_feature(&dev, 0x51u, resp, flen);
+            }
+            memset(req, 0, flen);
+            octans_proto_build_darmoshark_telink(0x06u, req);
+            if (octans_hid_set_feature(&dev, req, flen) == 0) {
+                for (int a = 0; a < 5 && !ok; ++a) {
+                    Sleep(20);
+                    int n = octans_hid_get_feature(&dev, 0x51u, resp, flen);
+                    if (n >= 12 && octans_proto_parse_darmoshark_telink(resp, (size_t)n, out)) {
+                        ok = 1;
+                    }
                 }
             }
         }

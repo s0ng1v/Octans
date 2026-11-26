@@ -179,3 +179,31 @@ size_t octans_hid_collect_feature_rids(octans_hid_dev_t *dev, uint8_t *out_rids,
     }
     return count;
 }
+
+size_t octans_hid_collect_output_rids(octans_hid_dev_t *dev, uint8_t *out_rids, size_t max_rids) {
+    if (!out_rids || max_rids == 0) return 0;
+    size_t count = 0;
+    if (dev && dev->preparsed) {
+        USHORT cnt = 0;
+        HidP_GetValueCaps(HidP_Output, NULL, &cnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
+        if (cnt > 0) {
+            HIDP_VALUE_CAPS caps[64];
+            USHORT cap_n = cnt > 64 ? 64 : cnt;
+            if (HidP_GetValueCaps(HidP_Output, caps, &cap_n,
+                                  (PHIDP_PREPARSED_DATA)dev->preparsed) == HIDP_STATUS_SUCCESS) {
+                for (USHORT c = 0; c < cap_n && count < max_rids; ++c) {
+                    uint8_t rid = caps[c].ReportID;
+                    int dup = 0;
+                    for (size_t k = 0; k < count; ++k) {
+                        if (out_rids[k] == rid) { dup = 1; break; }
+                    }
+                    if (!dup) out_rids[count++] = rid;
+                }
+            }
+        }
+    }
+    if (count == 0) {
+        out_rids[count++] = 0x00u;
+    }
+    return count;
+}
