@@ -1,0 +1,28 @@
+name: 问题反馈 / Bug Report
+description: 反馈闪退、托盘异常、界面显示或更新失败等问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: input
+    id: env
+    attributes:
+      label: 软件与系统版本 / Version & OS
+      placeholder: 例如：Octans v1.0.0，Windows 11 24H2
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Description
+      placeholder: 简要说明遇到了什么问题，以及触发步骤
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图或补充信息（可选）/ Screenshots or Extra Info (Optional)
+      placeholder: 可直接拖入截图
+    validations:
+      required: false

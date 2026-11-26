@@ -1,0 +1,61 @@
+name: 新设备适配 / Device Support
+description: 提交未识别或电量显示异常的无线外设
+title: "[设备适配] "
+labels: ["enhancement"]
+body:
+  - type: input
+    id: brand
+    attributes:
+      label: 厂商 / Brand
+      placeholder: 例如：罗技 Logitech / 迈从 MCHOSE / 狼蛛 AULA
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device_type
+    attributes:
+      label: 外设类型 / Device Type
+      options:
+        - 鼠标 / Mouse
+        - 键盘 / Keyboard
+        - 耳机 / Headset
+        - 手柄 / Gamepad
+        - 其他 / Other
+    validations:
+      required: true
+
+  - type: input
+    id: model
+    attributes:
+      label: 设备名称与型号 / Device Model
+      placeholder: 例如：G PRO X Superlight 2 / Rainy75 V2 / V9 Turbo+
+    validations:
+      required: true
+
+  - type: dropdown
+    id: connection
+    attributes:
+      label: 连接方式 / Connection
+      options:
+        - 2.4G 接收器 / 2.4G Dongle
+        - 蓝牙 / Bluetooth
+        - 有线 / Wired
+    validations:
+      required: true
+
+  - type: textarea
+    id: probe_output
+    attributes:
+      label: 诊断输出（可选）/ CLI Output (Optional)
+      description: 在安装目录打开终端运行 `.\octans-cli.exe probe --dump`，粘贴相关输出即可（不方便可留空）。
+      render: text
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: 补充说明（可选）/ Notes (Optional)
+      placeholder: 例如：完全识别不到 / 电量不准 / 充电状态异常，以及官方驱动名称等
+    validations:
+      required: false
