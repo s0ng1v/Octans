@@ -5,9 +5,12 @@
 
 namespace octans_ui {
 
+struct UpdateInfo;
+
 /* Show Apple-style "关于 Octans" modal sheet with version, author, and in-app SHA256 auto-updater.
+ * If prefetched_update has an available newer version, opens directly on the update-ready view.
  * Returns true if the silent installer was launched and Octans should quit immediately to upgrade. */
-bool ShowAboutDialog(HWND owner, bool is_dark);
+bool ShowAboutDialog(HWND owner, bool is_dark, const UpdateInfo *prefetched_update = nullptr);
 
 } /* namespace octans_ui */
 

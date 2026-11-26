@@ -41,6 +41,7 @@ static constexpr UINT WM_APP_DEVICES_UPDATED  = WM_APP + 11;
 static constexpr UINT WM_APP_SHOW_PANEL       = WM_APP + 12;
 static constexpr UINT WM_APP_HIDE_PANEL       = WM_APP + 13;
 static constexpr UINT WM_APP_THEME_CHANGED    = WM_APP + 14;
+static constexpr UINT WM_APP_BG_UPDATE_DONE   = WM_APP + 15;
 
 enum TrayStyle : uint8_t {
     TRAY_STYLE_OCTANS = 0, /* Scheme 1 (Default): Liquid silhouette fill with 3-stop gradient (+ flowing wave in panel) */
@@ -298,6 +299,13 @@ struct UiState {
     int custom_panel_x = 0;
     int custom_panel_y = 0;
 
+    /* Lightweight daily background version check (read-only, user-toggleable) */
+    bool auto_check_updates = true;
+    uint64_t last_update_check_sec = 0;
+    bool update_available = false;
+    bool update_check_running = false;
+    char update_version[32] = {};
+
     octans_backend_ops_t ops = {};
     void *backend_ctx = nullptr;
 
@@ -340,6 +348,7 @@ void ActionToggleTrayStyle(TrayStyle style);
 void ActionSetTrayScale(float scale);
 void ActionSavePanelPosition(int x, int y);
 void ActionToggleAutostart();
+void ActionToggleAutoCheckUpdates();
 void ActionShowAboutDialog();
 void ActionRunDemoAction(int action_id);
 void ActionRequestQuit();

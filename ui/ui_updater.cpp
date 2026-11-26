@@ -6,6 +6,7 @@
 namespace octans_ui {
 
 /* Default dual-source update endpoints (CN fast AtomGit primary + GitHub fallback) */
+static constexpr const wchar_t *kUrlAtomGitApi     = L"https://atomgit.com/api/v5/repos/gcw_dkdsv0bD/Octans/releases/latest";
 static constexpr const wchar_t *kUrlManifestCn     = L"https://raw.atomgit.com/gcw_dkdsv0bD/Octans/raw/main/latest.json";
 static constexpr const wchar_t *kUrlManifestGlobal = L"https://raw.githubusercontent.com/s0ng1v/Octans/main/latest.json";
 static constexpr const wchar_t *kUrlGithubApi      = L"https://api.github.com/repos/s0ng1v/Octans/releases/latest";
@@ -19,13 +20,14 @@ static constexpr const wchar_t *kDefaultPageGlobal = L"https://github.com/s0ng1v
 typedef LPVOID HINTERNET;
 typedef WORD INTERNET_PORT;
 
-static constexpr DWORD kWinHttpAccessDefaultProxy = 0;
-static constexpr DWORD kWinHttpFlagSecure         = 0x00800000;
-static constexpr DWORD kWinHttpQueryStatusCode    = 19;
-static constexpr DWORD kWinHttpQueryContentLen    = 5;
-static constexpr DWORD kWinHttpQueryFlagNumber    = 0x20000000;
-static constexpr DWORD kWinHttpOptionRedirect     = 63;
-static constexpr DWORD kWinHttpRedirectAlways     = 2;
+static constexpr DWORD kWinHttpAccessDefaultProxy   = 0;
+static constexpr DWORD kWinHttpAccessAutomaticProxy = 4;  /* WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY: honors system/Clash proxy */
+static constexpr DWORD kWinHttpFlagSecure           = 0x00800000;
+static constexpr DWORD kWinHttpQueryStatusCode      = 19;
+static constexpr DWORD kWinHttpQueryContentLen      = 5;
+static constexpr DWORD kWinHttpQueryFlagNumber      = 0x20000000;
+static constexpr DWORD kWinHttpOptionRedirect       = 88; /* WINHTTP_OPTION_REDIRECT_POLICY (63 was DISABLE_FEATURE!) */
+static constexpr DWORD kWinHttpRedirectAlways       = 2;  /* WINHTTP_OPTION_REDIRECT_POLICY_ALWAYS */
 
 struct WinHttpUrlComponents {
     DWORD dwStructSize;
@@ -228,9 +230,28 @@ static void Utf8ToWide(const char *u8, wchar_t *out, size_t cap) {
     out[cap - 1] = L'\0';
 }
 
+uint64_t GetCurrentUnixTimeSec() {
+    FILETIME ft = {};
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER uli = {};
+    uli.LowPart  = ft.dwLowDateTime;
+    uli.HighPart = ft.dwHighDateTime;
+    /* FILETIME is 100ns intervals since 1601-01-01; Unix epoch offset is 11644473600s. */
+    uint64_t sec1601 = uli.QuadPart / 10000000ULL;
+    return (sec1601 > 11644473600ULL) ? (sec1601 - 11644473600ULL) : 0ULL;
+}
+
 /* ============================================================================
  * WinHTTP GET (Text or Streaming File Download)
  * ============================================================================ */
+
+static HINTERNET OpenWinHttpSession(WinHttpApi &api) {
+    HINTERNET hSes = api.Open(L"Octans/" OCTANS_VERSION_WSTR, kWinHttpAccessAutomaticProxy, nullptr, nullptr, 0);
+    if (!hSes) {
+        hSes = api.Open(L"Octans/" OCTANS_VERSION_WSTR, kWinHttpAccessDefaultProxy, nullptr, nullptr, 0);
+    }
+    return hSes;
+}
 
 static bool HttpGetToBuffer(WinHttpApi &api, const wchar_t *url, char *out_buf, size_t max_bytes, size_t *out_len) {
     if (!url || !url[0] || !out_buf || max_bytes < 2) return false;
@@ -238,17 +259,17 @@ static bool HttpGetToBuffer(WinHttpApi &api, const wchar_t *url, char *out_buf, 
     if (out_len) *out_len = 0;
 
     wchar_t host[256] = {};
-    wchar_t path[512] = {};
+    wchar_t path[1024] = {};
     WinHttpUrlComponents uc = {};
     uc.dwStructSize = sizeof(uc);
     uc.lpszHostName = host;
     uc.dwHostNameLength = 255;
     uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = 511;
+    uc.dwUrlPathLength = 1023;
     if (!api.CrackUrl(url, 0, 0, &uc)) return false;
 
     bool is_https = (uc.nScheme == 2);
-    HINTERNET hSes = api.Open(L"Octans/" OCTANS_VERSION_WSTR, kWinHttpAccessDefaultProxy, nullptr, nullptr, 0);
+    HINTERNET hSes = OpenWinHttpSession(api);
     if (!hSes) return false;
     api.SetTimeouts(hSes, 3500, 3500, 4000, 5000);
 
@@ -297,19 +318,19 @@ static bool HttpDownloadToFile(
     if (!url || !url[0] || !dest_path || !dest_path[0]) return false;
 
     wchar_t host[256] = {};
-    wchar_t path[512] = {};
+    wchar_t path[1024] = {};
     WinHttpUrlComponents uc = {};
     uc.dwStructSize = sizeof(uc);
     uc.lpszHostName = host;
     uc.dwHostNameLength = 255;
     uc.lpszUrlPath = path;
-    uc.dwUrlPathLength = 511;
+    uc.dwUrlPathLength = 1023;
     if (!api.CrackUrl(url, 0, 0, &uc)) return false;
 
     bool is_https = (uc.nScheme == 2);
-    HINTERNET hSes = api.Open(L"Octans/" OCTANS_VERSION_WSTR, kWinHttpAccessDefaultProxy, nullptr, nullptr, 0);
+    HINTERNET hSes = OpenWinHttpSession(api);
     if (!hSes) return false;
-    api.SetTimeouts(hSes, 5000, 6000, 15000, 20000);
+    api.SetTimeouts(hSes, 5000, 6000, 15000, 30000);
 
     bool ok = false;
     HINTERNET hCon = api.Connect(hSes, host, uc.nPort, 0);
@@ -381,6 +402,23 @@ static bool HttpDownloadToFile(
  * Public Update API
  * ============================================================================ */
 
+static void ExtractSha256FromDigestField(const char *obj_start, char out_sha[65]) {
+    if (!obj_start || !out_sha) return;
+    const char *obj_end = strchr(obj_start, '}');
+    char dig[80] = {};
+    if (JsonExtractString(obj_start, "digest", dig, sizeof(dig))) {
+        const char *dig_pos = strstr(obj_start, "\"digest\"");
+        if (dig_pos && (!obj_end || dig_pos < obj_end)) {
+            const char *hex = dig;
+            if (_strnicmp(hex, "sha256:", 7) == 0) hex += 7;
+            if (strlen(hex) == 64) {
+                strncpy(out_sha, hex, 64);
+                out_sha[64] = '\0';
+            }
+        }
+    }
+}
+
 bool CheckForUpdatesSync(UpdateInfo *out) {
     if (!out) return false;
     *out = {};
@@ -393,26 +431,36 @@ bool CheckForUpdatesSync(UpdateInfo *out) {
         return false;
     }
 
-    char *body = static_cast<char *>(malloc(32768));
+    static constexpr size_t kManifestBufCap = 65536;
+    char *body = static_cast<char *>(malloc(kManifestBufCap));
     if (!body) return false;
 
     bool fetched = false;
-    bool is_gh_api = false;
+    bool is_release_api = false;
+    bool is_atomgit_api = false;
 
-    /* 1. Primary: AtomGit CN raw latest.json (fast in China, no login required) */
-    if (HttpGetToBuffer(api, kUrlManifestCn, body, 32768, nullptr) && strstr(body, "\"version\"")) {
+    /* 1. Primary: AtomGit public v5 Releases API (fast in China, no login, no 403) */
+    if (HttpGetToBuffer(api, kUrlAtomGitApi, body, kManifestBufCap, nullptr) && strstr(body, "\"tag_name\"")) {
+        fetched = true;
+        is_release_api = true;
+        is_atomgit_api = true;
+        out->used_cn_mirror = true;
+    }
+    /* 2. Secondary CN: AtomGit raw latest.json */
+    if (!fetched && HttpGetToBuffer(api, kUrlManifestCn, body, kManifestBufCap, nullptr) && strstr(body, "\"version\"")) {
         fetched = true;
         out->used_cn_mirror = true;
     }
-    /* 2. Secondary: GitHub raw latest.json */
-    if (!fetched && HttpGetToBuffer(api, kUrlManifestGlobal, body, 32768, nullptr) && strstr(body, "\"version\"")) {
+    /* 3. Tertiary Global: GitHub raw latest.json */
+    if (!fetched && HttpGetToBuffer(api, kUrlManifestGlobal, body, kManifestBufCap, nullptr) && strstr(body, "\"version\"")) {
         fetched = true;
         out->used_cn_mirror = false;
     }
-    /* 3. Tertiary: GitHub Releases REST API */
-    if (!fetched && HttpGetToBuffer(api, kUrlGithubApi, body, 32768, nullptr) && strstr(body, "\"tag_name\"")) {
+    /* 4. Quaternary Global: GitHub Releases REST API */
+    if (!fetched && HttpGetToBuffer(api, kUrlGithubApi, body, kManifestBufCap, nullptr) && strstr(body, "\"tag_name\"")) {
         fetched = true;
-        is_gh_api = true;
+        is_release_api = true;
+        is_atomgit_api = false;
         out->used_cn_mirror = false;
     }
 
@@ -430,7 +478,7 @@ bool CheckForUpdatesSync(UpdateInfo *out) {
     char pg_cn[256] = {};
     char pg_gl[256] = {};
 
-    if (!is_gh_api) {
+    if (!is_release_api) {
         JsonExtractString(body, "version", ver, sizeof(ver));
         JsonExtractString(body, "notes", notes, sizeof(notes));
         JsonExtractString(body, "sha256", sha, sizeof(sha));
@@ -441,14 +489,22 @@ bool CheckForUpdatesSync(UpdateInfo *out) {
     } else {
         JsonExtractString(body, "tag_name", ver, sizeof(ver));
         JsonExtractString(body, "body", notes, sizeof(notes));
-        JsonExtractString(body, "html_url", pg_gl, sizeof(pg_gl));
-        /* Find first .exe browser_download_url */
-        const char *scan = body;
+        if (!is_atomgit_api) {
+            JsonExtractString(body, "html_url", pg_gl, sizeof(pg_gl));
+        }
+        /* Find first .exe browser_download_url inside assets and its sha256 digest */
+        const char *assets_pos = strstr(body, "\"assets\"");
+        const char *scan = assets_pos ? assets_pos : body;
         while ((scan = strstr(scan, "\"browser_download_url\"")) != nullptr) {
             char cand[256] = {};
             if (JsonExtractString(scan, "browser_download_url", cand, sizeof(cand))) {
                 if (strstr(cand, ".exe") != nullptr) {
-                    strncpy(dl_gl, cand, sizeof(dl_gl) - 1);
+                    if (is_atomgit_api) {
+                        strncpy(dl_cn, cand, sizeof(dl_cn) - 1);
+                    } else {
+                        strncpy(dl_gl, cand, sizeof(dl_gl) - 1);
+                    }
+                    ExtractSha256FromDigestField(scan, sha);
                     break;
                 }
             }
@@ -466,6 +522,15 @@ bool CheckForUpdatesSync(UpdateInfo *out) {
     const char *clean_v = ver;
     while (*clean_v == 'v' || *clean_v == 'V') ++clean_v;
     strncpy(out->latest_version, clean_v, sizeof(out->latest_version) - 1);
+
+    /* Ensure global GitHub URL fallback exists when fetched from AtomGit API */
+    if (is_atomgit_api && !dl_gl[0]) {
+        _snprintf(dl_gl, sizeof(dl_gl) - 1,
+                  "https://github.com/s0ng1v/Octans/releases/download/v%s/Octans-Setup-v%s.exe",
+                  out->latest_version, out->latest_version);
+        dl_gl[sizeof(dl_gl) - 1] = '\0';
+    }
+
     Utf8ToWide(notes, out->release_notes, 512);
     strncpy(out->sha256, sha, sizeof(out->sha256) - 1);
     if (dl_cn[0]) Utf8ToWide(dl_cn, out->download_cn, 256);

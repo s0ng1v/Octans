@@ -1,9 +1,9 @@
 {
-  "version": "1.2.1",
-  "notes": "v1.2.1：新增鸽鸽电竞（Dovetek）雀98（带屏版/无屏版，2.4G 接收器 258A:0150 及有线 258A:01B7/01C0）以及同平台 Bytech 916/8815 无线与有线三模键盘（含 VGN V98Pro V3 / V87 V2 / N75 V2 / V108、RK M87 / R98Pro V2、GravaStar 等）支持，并完善 20B 无线协议充/满电解析。",
-  "sha256": "45AC89F957B44B074E34637C31A1CCAC88E42CE590BBFE2BCA06EA5C5686735D",
-  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe",
+  "version": "1.2.2",
+  "notes": "v1.2.2：修复 WinHTTP 重定向选项(88)与 Clash/系统代理兼容(AUTOMATIC_PROXY)，切至 AtomGit 免登录 v5 接口并支持双源 302 跳转 + SHA256 自动更新；新增每日最多一次轻量级只读版本提醒（右上角「↑ 新版」提示，右键菜单可一键关闭）。",
+  "sha256": "E5E54B38CD5ECF40A7665080E5C5C94829ECB6173E6D0DAAAC603FD8DDF3BD39",
+  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

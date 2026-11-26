@@ -541,7 +541,7 @@ static LRESULT CALLBACK AboutSheetProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp
     return DefWindowProcW(hwnd, msg, wp, lp);
 }
 
-bool ShowAboutDialog(HWND owner, bool is_dark) {
+bool ShowAboutDialog(HWND owner, bool is_dark, const UpdateInfo *prefetched_update) {
     static const wchar_t *kClassName = L"OctansAboutSheetWnd";
     static bool registered = false;
     HINSTANCE hinst = GetModuleHandleW(nullptr);
@@ -562,8 +562,26 @@ bool ShowAboutDialog(HWND owner, bool is_dark) {
     st.dpi = GetWindowDpiSafe(owner);
     float scale = static_cast<float>(st.dpi) / 96.0f;
 
-    wcscpy(st.status_line, L"\u8f7b\u91cf\u539f\u751f Windows \u65e0\u7ebf\u5916\u8bbe\u7535\u91cf\u6258\u76d8");
-    wcscpy(st.detail_line, L"\u9759\u9ed8\u9a7b\u7559 0% \u540e\u53f0\u8054\u7f51 \u00b7 \u4ec5\u624b\u52a8\u70b9\u51fb\u68c0\u67e5\u66f4\u65b0\u65f6\u8bbf\u95ee\u7f51\u7edc");
+    if (prefetched_update && prefetched_update->has_update &&
+        CompareSemver(prefetched_update->latest_version, OCTANS_VERSION_STR) > 0) {
+        st.upd = *prefetched_update;
+        st.phase = ABOUT_AVAILABLE;
+        wchar_t vw[32] = {};
+        MultiByteToWideChar(CP_UTF8, 0, st.upd.latest_version, -1, vw, 32);
+        _snwprintf(st.status_line, 159, L"\u53d1\u73b0\u65b0\u7248\u672c v%ls", vw);
+        if (st.upd.release_notes[0]) {
+            wcsncpy(st.detail_line, st.upd.release_notes, 255);
+        } else {
+            wcscpy(st.detail_line, L"\u70b9\u51fb\u4e0b\u65b9\u6309\u94ae\u81ea\u52a8\u4e0b\u8f7d\u3001\u6821\u9a8c SHA256 \u5e76\u9759\u9ed8\u5347\u7ea7");
+        }
+    } else {
+        wcscpy(st.status_line, L"\u8f7b\u91cf\u539f\u751f Windows \u65e0\u7ebf\u5916\u8bbe\u7535\u91cf\u6258\u76d8");
+        if (GetState().auto_check_updates) {
+            wcscpy(st.detail_line, L"\u6bcf\u65e5\u4ec5\u53ea\u8bfb\u67e5\u8be2\u4e00\u6b21\u516c\u5f00\u7248\u672c\u53f7 \u00b7 \u7edd\u4e0d\u9759\u9ed8\u4e0b\u8f7d\u4e0e\u4e0a\u4f20\u4fe1\u606f");
+        } else {
+            wcscpy(st.detail_line, L"\u5df2\u5173\u95ed\u81ea\u52a8\u68c0\u67e5 \u00b7 \u4ec5\u624b\u52a8\u70b9\u51fb\u68c0\u67e5\u66f4\u65b0\u65f6\u8bbf\u95ee\u7f51\u7edc");
+        }
+    }
 
     st.card_rc      = MakeRect(20.0f, 124.0f, st.logical_w - 20.0f, 218.0f);
     st.sec_btn_rc   = MakeRect(20.0f, 234.0f, 134.0f, 266.0f);
@@ -629,8 +647,8 @@ bool ShowAboutDialog(HWND owner, bool is_dark) {
         return b;
     };
 
-    st.btn_secondary = mk_btn(st.sec_btn_rc, IDC_ABOUT_SECONDARY, L"\u9879\u76ee\u4e3b\u9875");
-    st.btn_primary   = mk_btn(st.pri_btn_rc, IDC_ABOUT_PRIMARY, L"\u68c0\u67e5\u66f4\u65b0");
+    st.btn_secondary = mk_btn(st.sec_btn_rc, IDC_ABOUT_SECONDARY, GetSecondaryBtnLabel(st));
+    st.btn_primary   = mk_btn(st.pri_btn_rc, IDC_ABOUT_PRIMARY, GetPrimaryBtnLabel(st));
     st.btn_close     = mk_btn(st.close_btn_rc, IDC_ABOUT_CLOSE, L"\u00d7");
 
     ShowWindow(hwnd, SW_SHOW);

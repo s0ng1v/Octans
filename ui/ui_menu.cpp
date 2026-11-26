@@ -21,6 +21,7 @@ enum HitZone : int {
     HIT_SEG_PULSAR,
     HIT_SLIDER,
     HIT_AUTOSTART,
+    HIT_AUTO_UPDATE,
     HIT_DEMO_DRAIN,
     HIT_DEMO_CHARGE,
     HIT_DEMO_THEME,
@@ -63,6 +64,8 @@ struct MenuState {
     float seg_target = 0.0f;
     float auto_pos = 0.0f;        /* 0.0 = Off, 1.0 = On */
     float auto_target = 0.0f;
+    float upd_pos = 1.0f;         /* 0.0 = Off, 1.0 = On */
+    float upd_target = 1.0f;
 
     /* Layout rects (DIPs) */
     D2D1_RECT_F rc_refresh = {};
@@ -80,6 +83,7 @@ struct MenuState {
     float slider_label_y = 0.0f;
     float div2_y = 0.0f;
     D2D1_RECT_F rc_autostart = {};
+    D2D1_RECT_F rc_auto_update = {};
     float div3_y = 0.0f;
     float demo_label_y = 0.0f;
     D2D1_RECT_F rc_demo[4] = {};
@@ -213,6 +217,7 @@ static void LayoutMenu(MenuState &m) {
         m.rc_slider_track = {};
         m.div2_y = 0.0f;
         m.rc_autostart = {};
+        m.rc_auto_update = {};
         m.div3_y = 0.0f;
         for (int i = 0; i < 4; ++i) m.rc_demo[i] = {};
         m.div4_y = 0.0f;
@@ -256,8 +261,10 @@ static void LayoutMenu(MenuState &m) {
     m.div2_y = y;
     y += 7.0f;
 
-    /* Autostart switch row */
+    /* Autostart & Auto-Check Updates switch rows */
     m.rc_autostart = MakeRect(pad, y, w - pad, y + row_h);
+    y += row_h + 2.0f;
+    m.rc_auto_update = MakeRect(pad, y, w - pad, y + row_h);
     y += row_h + 2.0f;
 
     if (m.has_demo) {
@@ -555,17 +562,17 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
 
                 draw_div(m.div2_y);
 
-                /* 6. Autostart with animated Apple iOS Pill Toggle Switch */
-                draw_row_bg(m.rc_autostart, HIT_AUTOSTART);
-                b->SetColor(pal.text_primary);
-                rt->DrawText(L"\u5f00\u673a\u81ea\u542f\u52a8", 5, m.fmt_item.Get(),
-                             MakeRect(m.rc_autostart.left + 10.0f, m.rc_autostart.top, m.rc_autostart.right - 50.0f, m.rc_autostart.bottom), b.Get());
-                {
-                    float ap = ClampF(m.auto_pos, 0.0f, 1.0f);
+                /* 6. Autostart & Auto-Check Updates with animated Apple iOS Pill Toggle Switches */
+                auto draw_toggle_row = [&](const D2D1_RECT_F &r, int zone, const wchar_t *label, float pos) {
+                    draw_row_bg(r, zone);
+                    b->SetColor(pal.text_primary);
+                    rt->DrawText(label, static_cast<UINT32>(wcslen(label)), m.fmt_item.Get(),
+                                 MakeRect(r.left + 10.0f, r.top, r.right - 50.0f, r.bottom), b.Get());
+                    float ap = ClampF(pos, 0.0f, 1.0f);
                     float sw_w = 34.0f, sw_h = 19.0f;
-                    float sw_r = m.rc_autostart.right - 8.0f;
+                    float sw_r = r.right - 8.0f;
                     float sw_l = sw_r - sw_w;
-                    float sw_cy = (m.rc_autostart.top + m.rc_autostart.bottom) * 0.5f;
+                    float sw_cy = (r.top + r.bottom) * 0.5f;
                     D2D1_RECT_F sw_rc = MakeRect(sw_l, sw_cy - sw_h * 0.5f, sw_r, sw_cy + sw_h * 0.5f);
                     D2D1_COLOR_F off_col = dk ? MakeColor(1, 1, 1, 0.18f) : MakeColor(0, 0, 0, 0.16f);
                     b->SetColor(LerpColor(off_col, accent, ap));
@@ -575,7 +582,9 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                     float knob_cx = LerpF(sw_l + knob_r + 2.3f, sw_r - knob_r - 2.3f, ap);
                     b->SetColor(HexColor(0xFFFFFF, 0.99f));
                     rt->FillEllipse(MakeEllipse(knob_cx, sw_cy, knob_r, knob_r), b.Get());
-                }
+                };
+                draw_toggle_row(m.rc_autostart, HIT_AUTOSTART, L"\u5f00\u673a\u81ea\u542f\u52a8", m.auto_pos);
+                draw_toggle_row(m.rc_auto_update, HIT_AUTO_UPDATE, L"\u81ea\u52a8\u68c0\u67e5\u66f4\u65b0", m.upd_pos);
 
                 /* 7. Optional Demo Quick Chips (2x2) */
                 if (m.has_demo) {
@@ -616,7 +625,12 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                 }
                 b->SetColor(pal.text_primary);
                 rt->DrawText(L"\u5173\u4e8e Octans", 9, m.fmt_item.Get(),
-                             MakeRect(m.rc_about.left + 32.0f, m.rc_about.top, m.rc_about.right - 8.0f, m.rc_about.bottom), b.Get());
+                             MakeRect(m.rc_about.left + 32.0f, m.rc_about.top, m.rc_about.right - 56.0f, m.rc_about.bottom), b.Get());
+                if (st.update_available) {
+                    b->SetColor(accent);
+                    rt->DrawText(L"\u6709\u65b0\u7248", 3, m.fmt_right.Get(),
+                                 MakeRect(m.rc_about.right - 56.0f, m.rc_about.top, m.rc_about.right - 10.0f, m.rc_about.bottom), b.Get());
+                }
 
                 /* 9. Quit Octans */
                 draw_row_bg(m.rc_quit, HIT_QUIT, true);
@@ -673,19 +687,17 @@ static void StepMenuAnim(MenuState &m) {
     float k = 1.0f - expf(-dt * 22.0f);
     bool active = false;
 
-    if (fabsf(m.seg_pos - m.seg_target) > 0.003f) {
-        m.seg_pos = LerpF(m.seg_pos, m.seg_target, k);
-        active = true;
-    } else {
-        m.seg_pos = m.seg_target;
-    }
-
-    if (fabsf(m.auto_pos - m.auto_target) > 0.003f) {
-        m.auto_pos = LerpF(m.auto_pos, m.auto_target, k);
-        active = true;
-    } else {
-        m.auto_pos = m.auto_target;
-    }
+    auto step_val = [&](float &pos, float target) {
+        if (fabsf(pos - target) > 0.003f) {
+            pos = LerpF(pos, target, k);
+            active = true;
+        } else {
+            pos = target;
+        }
+    };
+    step_val(m.seg_pos, m.seg_target);
+    step_val(m.auto_pos, m.auto_target);
+    step_val(m.upd_pos, m.upd_target);
 
     RepaintMenu(m);
     if (!active) {
@@ -705,6 +717,7 @@ static int HitTestMenu(const MenuState &m, float dx, float dy) {
         if (PtInR(m.rc_seg[2], dx, dy)) return HIT_SEG_PULSAR;
         if (PtInR(m.rc_slider_hit, dx, dy)) return HIT_SLIDER;
         if (PtInR(m.rc_autostart, dx, dy)) return HIT_AUTOSTART;
+        if (PtInR(m.rc_auto_update, dx, dy)) return HIT_AUTO_UPDATE;
         if (m.has_demo) {
             if (PtInR(m.rc_demo[0], dx, dy)) return HIT_DEMO_DRAIN;
             if (PtInR(m.rc_demo[1], dx, dy)) return HIT_DEMO_CHARGE;
@@ -876,6 +889,12 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                         StartMenuAnim(*m);
                         break;
                     }
+                    case HIT_AUTO_UPDATE: {
+                        ActionToggleAutoCheckUpdates();
+                        m->upd_target = GetState().auto_check_updates ? 1.0f : 0.0f;
+                        StartMenuAnim(*m);
+                        break;
+                    }
                     case HIT_DEMO_DRAIN:
                         ActionRunDemoAction(1);
                         break;
@@ -1007,6 +1026,7 @@ void ShowApplePopoverMenu(HWND owner, int screen_x, int screen_y, int device_ind
     m.seg_pos = m.seg_target = static_cast<float>(static_cast<int>(st.tray_style));
     bool auto_on = (st.ops.get_autostart && st.ops.get_autostart(st.backend_ctx) != 0);
     m.auto_pos = m.auto_target = auto_on ? 1.0f : 0.0f;
+    m.upd_pos = m.upd_target = st.auto_check_updates ? 1.0f : 0.0f;
     LayoutMenu(m);
 
     if (m.logical_h < 24.0f) return;

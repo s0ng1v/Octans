@@ -26,6 +26,9 @@ int CompareSemver(const char *a, const char *b);
  * Returns true if check completed (even if already up-to-date), false on network error. */
 bool CheckForUpdatesSync(UpdateInfo *out);
 
+/* Return current UTC-based system time in seconds (for 24h update check throttling). */
+uint64_t GetCurrentUnixTimeSec();
+
 typedef void (*UpdateProgressFn)(int percent, bool verifying_sha, void *user_ctx);
 
 /* Blocking download + SHA256 verification (bcrypt.dll dynamically loaded on demand).

@@ -17,7 +17,7 @@
   ·
   <a href="README_EN.md">English</a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><b>国内高速下载</b></a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe"><b>国内高速下载</b></a>
   ·
   <a href="https://github.com/s0ng1v/Octans/releases/latest"><b>GitHub Releases</b></a>
   ·
@@ -25,7 +25,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><img alt="Download v1.2.1" src="https://img.shields.io/badge/download-v1.2.1-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe"><img alt="Download v1.2.2" src="https://img.shields.io/badge/download-v1.2.2-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -45,23 +45,23 @@
 ## 功能亮点
 
 - **任务栏右下角一眼看电量**：点击面板中任意设备卡片，即可将其直接固定到 Windows 任务栏托盘，支持同时固定多台外设到任务栏。
-- **常驻性能消耗极低**：静默驻留托盘时 0% CPU、< 5 MB 内存，不加载任何显卡 3D 驱动或浏览器内核，闲置自动释放面板内存，全程零后台联网、零遥测，跟没有似的。
+- **常驻性能消耗极低**：静默驻留托盘时 0% CPU、< 5 MB 内存，不加载任何显卡 3D 驱动或浏览器内核，闲置自动释放面板内存，全程零遥测（默认每日最多仅只读检查一次公开版本号，绝不静默下载且不上传任何信息，可在右键菜单一键关闭）。
 - **即装即用**：支持 30+ 主流品牌的 2.4G 无线鼠标、键盘、耳机与手柄，自动监听 USB 2.4G 接收器热插拔与电脑休眠唤醒，无需运行驱动程序。
 
 
 
 ## 下载与安装
 
-推荐直接下载安装程序 **`Octans-Setup-v1.2.1.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
+推荐直接下载安装程序 **`Octans-Setup-v1.2.2.exe`**，双击一键完成安装（自动配置开机静默启动并支持 Windows 系统标准卸载）：
 
 | 下载通道 | 说明 | 地址 |
 |---|---|---|
-| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.2.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
-| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.2.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
+| **国内高速下载（推荐）** | AtomGit 官方 CDN 免登录直下，国内网络流畅 | [直接下载 Octans-Setup-v1.2.2.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe) · [全部版本](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub 官方发布** | 全球主发布页与完整版本归档 | [直接下载 Octans-Setup-v1.2.2.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe) · [Releases 页面](https://github.com/s0ng1v/Octans/releases/latest) |
 
 > **使用提示**：
 > 1. 首次安装运行后，若任务栏图标被系统折叠进右下角 `^` 箭头内，直接将其拖出到任务栏即可永久常驻显示。
-> 2. 后续升级无需重新找网页，直接在右键菜单点击「关于 Octans → 检查更新」即可自动下载并完成升级。
+> 2. 当有新版本发布时，主面板右上角会出现「↑ 新版」提示，也可随时在右键菜单点击「关于 Octans → 检查更新」自动下载、校验 SHA256 并静默升级（可在右键菜单关闭「自动检查更新」）。
 
 
 
@@ -98,8 +98,8 @@
 ### 技术实现与极致轻量设计
 
 - **纯原生零依赖**：后端协议引擎采用纯 C11，界面采用 Win32 + Direct2D / DirectWrite 轻量软件渲染（彻底避免常驻加载 D3D11 / GPU 驱动模块，同时对非输入窗口解绑 IME 防止输入法 DLL 注入）；无 Electron / Chromium / WebView2 / .NET / `libstdc++` 运行时依赖。
-- **超小体积**：桌面主程序 `Octans.exe` 仅约 **375 KB**，独立命令行工具 `octans-cli.exe` 约 **178 KB**。
-- **按需释放与零静态网络导入**：面板关闭后自动释放离屏缓冲并触发工作集回收；PE 导入表零网络 DLL 静态依赖，仅在用户手动点击检查更新时按需动态加载 `winhttp.dll` 与 `bcrypt.dll`。
+- **超小体积**：桌面主程序 `Octans.exe` 仅约 **381 KB**，独立命令行工具 `octans-cli.exe` 约 **178 KB**。
+- **按需释放与零静态网络导入**：面板关闭后自动释放离屏缓冲并触发工作集回收；PE 导入表零网络 DLL 静态依赖，仅在检查或下载更新时按需动态加载 `winhttp.dll` 与 `bcrypt.dll` 并在完成后立即卸载。
 
 ### 目录结构
 
@@ -123,7 +123,7 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 # 一键编译命令行工具、运行 661 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.2.1.exe）
+# 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.2.2.exe）
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # 单独编译并预览无硬件 UI Demo

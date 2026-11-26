@@ -32,6 +32,9 @@ void PanelOnScanStateChanged();
 /* Update light/dark theme and DWM backdrop immediately. */
 void PanelOnThemeChanged(bool is_dark);
 
+/* Refresh header/layout when background update availability changes. */
+void PanelOnUpdateStateChanged();
+
 /* Trigger header refresh icon spin animation & subtle completion feedback. */
 void PanelTriggerRefreshSpin();
 void PanelOnRefreshCompleted();

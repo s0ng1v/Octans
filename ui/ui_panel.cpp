@@ -91,7 +91,7 @@ struct PanelContext {
 
     /* Interaction & inertial scroll state */
     int hover_card = -1;
-    int hover_header_btn = 0; /* 0=none, 1=refresh, 2=more */
+    int hover_header_btn = 0; /* 0=none, 1=refresh, 2=more, 3=discover, 4=update_pill */
     bool mouse_tracked = false;
     int tooltip_card = -1;
     float tooltip_t = 0.0f;
@@ -100,6 +100,7 @@ struct PanelContext {
     float max_scroll_y = 0.0f;
 
     /* Cached hit rects (DIPs) */
+    D2D1_RECT_F update_pill_rc = {};
     D2D1_RECT_F refresh_btn_rc = {};
     D2D1_RECT_F more_btn_rc = {};
     D2D1_RECT_F discover_btn_rc = {};
@@ -375,7 +376,7 @@ static void ComputeLayoutMetrics() {
         grid_view_h = grid_content_h;
     } else if (count == 1) {
         cols = 1;
-        grid_w = kCardW + 76.0f; /* Comfortable header clearance for brand wordmark + "· 1 台设备" */
+        grid_w = kCardW + (st.update_available ? 108.0f : 76.0f); /* Comfortable header clearance */
         g_panel.logical_w = kPanelPadX * 2.0f + grid_w;
         grid_content_h = (st.scan_phase != SCAN_IDLE) ? 156.0f : kCardH;
         grid_view_h = grid_content_h;
@@ -401,6 +402,15 @@ static void ComputeLayoutMetrics() {
     g_panel.more_btn_rc = MakeRect(more_r - btn_sz, btn_y, more_r, btn_y + btn_sz);
     float ref_r = g_panel.more_btn_rc.left - 4.0f;
     g_panel.refresh_btn_rc = MakeRect(ref_r - btn_sz, btn_y, ref_r, btn_y + btn_sz);
+    if (st.update_available && st.scan_phase == SCAN_IDLE && !(st.demo_hooks.on_action != nullptr)) {
+        float pill_w = 54.0f;
+        float pill_h = 21.0f;
+        float pill_r = g_panel.refresh_btn_rc.left - 6.0f;
+        float pill_y = kPanelPadTop + (kHeaderH - pill_h) * 0.5f;
+        g_panel.update_pill_rc = MakeRect(pill_r - pill_w, pill_y, pill_r, pill_y + pill_h);
+    } else {
+        g_panel.update_pill_rc = {};
+    }
 
     g_panel.grid_hit_rc = MakeRect(
         kPanelPadX,
@@ -873,7 +883,10 @@ static void RenderPanel(HDC paint_dc = nullptr) {
     } else {
         wcscpy(count_buf, L"\u00b7 \u65e0\u8bbe\u5907");
     }
-    D2D1_RECT_F sub_rc = MakeRect(kPanelPadX + 79.0f, header_top + 3.0f, g_panel.refresh_btn_rc.left - 6.0f, header_bot);
+    float sub_right = (g_panel.update_pill_rc.right > g_panel.update_pill_rc.left)
+        ? (g_panel.update_pill_rc.left - 6.0f)
+        : (g_panel.refresh_btn_rc.left - 6.0f);
+    D2D1_RECT_F sub_rc = MakeRect(kPanelPadX + 79.0f, header_top + 3.0f, sub_right, header_bot);
 
     /* Subtle whisper-quiet header cross-fade ("· 已刷新") when manual refresh completes */
     float ref_badge_a = 0.0f;
@@ -896,6 +909,29 @@ static void RenderPanel(HDC paint_dc = nullptr) {
         D2D1_RECT_F done_rc = MakeRect(sub_rc.left, sub_rc.top + (1.0f - ref_badge_a) * 2.5f, sub_rc.right, sub_rc.bottom + (1.0f - ref_badge_a) * 2.5f);
         set_col(st.is_dark ? HexColor(0x34D399, 0.95f) : HexColor(0x10B981, 0.95f), ref_badge_a);
         ctx->DrawText(L"\u00b7 \u5df2\u5237\u65b0", 5, g_panel.fmt_subtitle.Get(), done_rc, brush.Get());
+    }
+
+    /* Optional top-right new-version notification pill ("↑ 新版") */
+    if (g_panel.update_pill_rc.right > g_panel.update_pill_rc.left) {
+        const D2D1_RECT_F &ur = g_panel.update_pill_rc;
+        bool hov = (g_panel.hover_header_btn == 4);
+        D2D1_COLOR_F up_fg = st.is_dark ? HexColor(0x34D399, 1.0f) : HexColor(0x059669, 1.0f);
+        D2D1_COLOR_F up_bg = st.is_dark
+            ? (hov ? HexColor(0x34D399, 0.24f) : HexColor(0x34D399, 0.14f))
+            : (hov ? HexColor(0x10B981, 0.18f) : HexColor(0x10B981, 0.10f));
+        D2D1_COLOR_F up_bd = st.is_dark
+            ? HexColor(0x34D399, hov ? 0.65f : 0.36f)
+            : HexColor(0x059669, hov ? 0.55f : 0.30f);
+
+        set_col(up_bg);
+        ctx->FillRoundedRectangle(MakeRoundedRect(ur, 10.5f, 10.5f), brush.Get());
+        set_col(up_bd);
+        ctx->DrawRoundedRectangle(
+            MakeRoundedRect(MakeRect(ur.left + 0.5f, ur.top + 0.5f, ur.right - 0.5f, ur.bottom - 0.5f), 10.0f, 10.0f),
+            brush.Get(), 1.0f
+        );
+        set_col(up_fg);
+        ctx->DrawText(L"\u2191 \u65b0\u7248", 4, g_panel.fmt_tooltip.Get(), ur, brush.Get());
     }
 
     /* Refresh button */
@@ -1339,6 +1375,13 @@ static void RenderPanel(HDC paint_dc = nullptr) {
             FormatTooltipDetail(td, tip_text, 160);
             set_col(pal.text_primary, ClampF(g_panel.tooltip_t, 0.0f, 1.0f) * 0.92f);
             ctx->DrawText(tip_text, static_cast<UINT32>(wcslen(tip_text)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
+        } else if (g_panel.hover_header_btn == 4 && st.update_available) {
+            wchar_t vw[32] = {};
+            MultiByteToWideChar(CP_UTF8, 0, st.update_version, -1, vw, 32);
+            wchar_t up_hint[96] = {};
+            _snwprintf(up_hint, 95, L"\u53d1\u73b0\u65b0\u7248\u672c v%ls \u00b7 \u70b9\u51fb\u67e5\u770b\u5e76\u66f4\u65b0", vw[0] ? vw : L"");
+            set_col(st.is_dark ? HexColor(0x34D399, 0.96f) : HexColor(0x059669, 0.96f));
+            ctx->DrawText(up_hint, static_cast<UINT32>(wcslen(up_hint)), g_panel.fmt_tooltip.Get(), ftr, brush.Get(), D2D1_DRAW_TEXT_OPTIONS_CLIP);
         } else {
             wchar_t idle_hint[96] = {};
             size_t active_pins = CountActivePinnedDevices(st);
@@ -1611,6 +1654,11 @@ static void HitTestAt(float dip_x, float dip_y, int *out_card, int *out_header_b
     *out_card = -1;
     *out_header_btn = 0;
 
+    if (g_panel.update_pill_rc.right > g_panel.update_pill_rc.left &&
+        PtInD2DRect(g_panel.update_pill_rc, dip_x, dip_y)) {
+        *out_header_btn = 4;
+        return;
+    }
     if (PtInD2DRect(g_panel.refresh_btn_rc, dip_x, dip_y)) {
         *out_header_btn = 1;
         return;
@@ -1806,6 +1854,8 @@ static LRESULT CALLBACK PanelWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) 
                 ActionShowContextMenu(pt.x, pt.y, -1, MENU_MODE_PANEL_GENERAL);
             } else if (btn == 3) {
                 ActionTriggerFullScan();
+            } else if (btn == 4) {
+                ActionShowAboutDialog();
             } else if (card >= 0) {
                 const UiState &st = GetState();
                 if (static_cast<size_t>(card) < st.device_count) {
@@ -2158,6 +2208,20 @@ void PanelOnThemeChanged(bool is_dark) {
     if (!g_panel.hwnd) return;
     g_panel.backdrop_supported = ApplyWin11Backdrop(g_panel.hwnd, is_dark);
     if (PanelIsVisible()) {
+        RenderPanel();
+    }
+}
+
+void PanelOnUpdateStateChanged() {
+    float prev_w = g_panel.logical_w;
+    float prev_h = g_panel.logical_h;
+    ComputeLayoutMetrics();
+    if (PanelIsVisible()) {
+        if ((fabsf(prev_w - g_panel.logical_w) > 0.5f || fabsf(prev_h - g_panel.logical_h) > 0.5f) &&
+            g_panel.has_anchor) {
+            ComputeTargetPosition(g_panel.anchor_x, g_panel.anchor_y);
+            ApplyWindowBoundsForAnim();
+        }
         RenderPanel();
     }
 }

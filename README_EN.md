@@ -17,15 +17,15 @@
   ·
   <b>English</b>
   ·
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><b>Download (v1.2.1)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe"><b>Download (v1.2.2)</b></a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe">CN Mirror</a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe">CN Mirror</a>
   ·
   <a href="#supported-brands--devices">Supported Devices</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><img alt="Download v1.2.1" src="https://img.shields.io/badge/download-v1.2.1-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe"><img alt="Download v1.2.2" src="https://img.shields.io/badge/download-v1.2.2-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -46,23 +46,23 @@
 
 - **At-a-Glance Taskbar Battery**: Click any device card in the panel to pin it directly to the Windows system tray, supporting multiple pinned peripherals simultaneously. Unpinning the last device automatically restores the minimal transparent Octans tray icon.
 - **Three Switchable Styles**: Built-in **`Octans`** (liquid gradient wave, default), **`Nebula`** (classic battery ring), and **`Pulsar`** (large numeric battery readout), plus a smooth slider to fine-tune tray icon size.
-- **Ultra-Low Resource Footprint**: Uses **0% CPU** and **< 5 MB RAM** while sitting quietly in the tray, without loading GPU 3D drivers or heavy browser runtimes. Panel buffers are released when hidden, with zero background telemetry or unrequested network traffic.
+- **Ultra-Low Resource Footprint**: Uses **0% CPU** and **< 5 MB RAM** while sitting quietly in the tray, without loading GPU 3D drivers or heavy browser runtimes. Panel buffers are released when hidden, with zero telemetry (optionally performs a read-only check for public version tags at most once per 24h without silent downloads, toggleable in the right-click menu).
 - **Plug-and-Play Without Vendor Bloat**: Automatically tracks USB 2.4G receiver hot-plug events and Windows sleep/wake cycles so you no longer need to keep Logitech G HUB, Razer Synapse, or multiple heavy driver suites running in the background.
 
 ---
 
 ## Download & Install
 
-Download the installer **`Octans-Setup-v1.2.1.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
+Download the installer **`Octans-Setup-v1.2.2.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
 
 | Channel | Description | Link |
 |---|---|---|
-| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
-| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.2.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
+| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.2.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.2/Octans-Setup-v1.2.2.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 
 > **Tips**:
 > 1. If Windows hides the newly installed tray icon inside the `^` overflow menu, drag it out to the taskbar once to keep it permanently visible.
-> 2. Future updates can be installed directly inside the app via right-click menu **"About Octans → Check for Updates"**.
+> 2. When a new version is available, a subtle **"↑ 新版"** badge appears in the top-right corner of the panel, or install anytime via **"About Octans → Check for Updates"** (auto-check can be toggled off in the context menu).
 
 ---
 
@@ -99,8 +99,8 @@ See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) f
 ### Architecture & Lightweight Design
 
 - **Pure Native Zero-Dependency Stack**: C11 backend protocol engine with Win32 + Direct2D / DirectWrite lightweight software rendering (avoiding persistent D3D11/GPU module loading and unbinding IME from non-input windows); zero Electron / Chromium / WebView2 / .NET / `libstdc++` runtime dependencies.
-- **Tiny Footprint**: `Octans.exe` is only ~**375 KB**, and the standalone CLI `octans-cli.exe` is ~**178 KB**.
-- **On-Demand Cleanup & Zero Static Network Imports**: Releases off-screen panel surfaces and trims working set when collapsed; zero static network DLL imports in PE tables (`winhttp.dll` and `bcrypt.dll` are dynamically loaded only when the user checks for updates).
+- **Tiny Footprint**: `Octans.exe` is only ~**381 KB**, and the standalone CLI `octans-cli.exe` is ~**178 KB**.
+- **On-Demand Cleanup & Zero Static Network Imports**: Releases off-screen panel surfaces and trims working set when collapsed; zero static network DLL imports in PE tables (`winhttp.dll` and `bcrypt.dll` are dynamically loaded only during update checks/downloads and immediately unloaded afterward).
 
 ### Repository Layout
 
@@ -124,7 +124,7 @@ Requires Windows 10/11 and the LLVM-MinGW (UCRT) toolchain (plus Inno Setup 6 fo
 # Build CLI, run all 661 unit tests, and build build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.1.exe)
+# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.2.exe)
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # Build and launch the hardware-free UI preview demo

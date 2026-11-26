@@ -6,18 +6,31 @@
 #include "ui_menu.h"
 #include "ui_rename_dlg.h"
 #include "ui_about_dlg.h"
+#include "ui_updater.h"
+#include "octans_version.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 namespace octans_ui {
 
 static UiState g_state;
 static UINT g_msg_taskbar_created = 0;
-static constexpr UINT_PTR TIMER_SCAN_SETTLE    = 2;
-static constexpr UINT_PTR TIMER_SCAN_DONE_FADE = 3;
-static constexpr UINT_PTR TIMER_STARTUP_TRIM   = 4;
+static constexpr UINT_PTR TIMER_SCAN_SETTLE      = 2;
+static constexpr UINT_PTR TIMER_SCAN_DONE_FADE   = 3;
+static constexpr UINT_PTR TIMER_STARTUP_TRIM     = 4;
+static constexpr UINT_PTR TIMER_AUTO_UPDATE_BOOT = 5;
+static constexpr UINT_PTR TIMER_AUTO_UPDATE_POLL = 6;
+static constexpr uint64_t kAutoUpdateIntervalSec = 86400ULL;
 static octans_device_view_t g_deferred_devices[MAX_DEVICES] = {};
 static size_t g_deferred_count = 0;
 static bool g_has_deferred = false;
+
+static UpdateInfo g_cached_update = {};
+static UpdateInfo g_bg_update_result = {};
+static bool g_bg_update_ok = false;
+static SRWLOCK g_bg_update_lock = SRWLOCK_INIT;
+static HANDLE g_bg_update_thread = nullptr;
+static volatile LONG g_bg_cancel = 0;
 
 static void GetUiIniPath(wchar_t out_dir[MAX_PATH], wchar_t out_ini[MAX_PATH]) {
     wchar_t appdata[MAX_PATH] = {};
@@ -52,6 +65,11 @@ static void LoadUiConfig() {
     g_state.custom_panel_x = _wtoi(pos_w);
     GetPrivateProfileStringW(L"UI", L"PanelPosY", L"0", pos_w, 32, ini);
     g_state.custom_panel_y = _wtoi(pos_w);
+
+    g_state.auto_check_updates = (GetPrivateProfileIntW(L"UI", L"AutoCheckUpdates", 1, ini) != 0);
+    wchar_t chk_w[32] = {};
+    GetPrivateProfileStringW(L"UI", L"LastUpdateCheckSec", L"0", chk_w, 32, ini);
+    g_state.last_update_check_sec = static_cast<uint64_t>(_wcstoui64(chk_w, nullptr, 10));
 
     wchar_t pins_w[1024] = {};
     GetPrivateProfileStringW(L"UI", L"PinnedIds", L"", pins_w, 1024, ini);
@@ -121,6 +139,10 @@ static void SaveUiConfig() {
     WritePrivateProfileStringW(L"UI", L"PanelPosX", buf, ini);
     _snwprintf(buf, 31, L"%d", g_state.custom_panel_y);
     WritePrivateProfileStringW(L"UI", L"PanelPosY", buf, ini);
+
+    WritePrivateProfileStringW(L"UI", L"AutoCheckUpdates", g_state.auto_check_updates ? L"1" : L"0", ini);
+    _snwprintf(buf, 31, L"%llu", static_cast<unsigned long long>(g_state.last_update_check_sec));
+    WritePrivateProfileStringW(L"UI", L"LastUpdateCheckSec", buf, ini);
 
     char pins_u8[1024] = {};
     size_t pos = 0;
@@ -481,16 +503,60 @@ void ActionSavePanelPosition(int x, int y) {
     SaveUiConfig();
 }
 
+static DWORD WINAPI BgUpdateWorkerProc(LPVOID param) {
+    (void)param;
+    UpdateInfo info = {};
+    bool ok = CheckForUpdatesSync(&info);
+    if (InterlockedCompareExchange(&g_bg_cancel, 0, 0) == 0 && g_state.host_hwnd) {
+        AcquireSRWLockExclusive(&g_bg_update_lock);
+        g_bg_update_result = info;
+        g_bg_update_ok = ok;
+        ReleaseSRWLockExclusive(&g_bg_update_lock);
+        PostMessageW(g_state.host_hwnd, WM_APP_BG_UPDATE_DONE, 0, 0);
+    }
+    return 0;
+}
+
+static void MaybeStartBackgroundUpdateCheck() {
+    if (!g_state.auto_check_updates || g_state.demo_hooks.on_action != nullptr ||
+        g_state.update_check_running || !g_state.host_hwnd) {
+        return;
+    }
+    uint64_t now_sec = GetCurrentUnixTimeSec();
+    if (g_state.last_update_check_sec > 0 && now_sec >= g_state.last_update_check_sec &&
+        (now_sec - g_state.last_update_check_sec) < kAutoUpdateIntervalSec) {
+        return;
+    }
+    if (g_bg_update_thread) {
+        CloseHandle(g_bg_update_thread);
+        g_bg_update_thread = nullptr;
+    }
+    g_state.update_check_running = true;
+    g_bg_update_thread = CreateThread(nullptr, 65536u, BgUpdateWorkerProc, nullptr, 0, nullptr);
+    if (!g_bg_update_thread) {
+        g_state.update_check_running = false;
+    }
+}
+
 void ActionToggleAutostart() {
     if (!g_state.ops.set_autostart) return;
     int cur = g_state.ops.get_autostart ? g_state.ops.get_autostart(g_state.backend_ctx) : 0;
     g_state.ops.set_autostart(g_state.backend_ctx, cur ? 0 : 1);
 }
 
+void ActionToggleAutoCheckUpdates() {
+    g_state.auto_check_updates = !g_state.auto_check_updates;
+    SaveUiConfig();
+    if (g_state.auto_check_updates && !g_state.update_available) {
+        MaybeStartBackgroundUpdateCheck();
+    }
+}
+
 void ActionShowAboutDialog() {
     HWND owner = PanelIsVisible() ? PanelGetHwnd() : g_state.host_hwnd;
     g_state.modal_open = true;
-    bool should_quit = ShowAboutDialog(owner, g_state.is_dark);
+    const UpdateInfo *prefetched = (g_state.update_available && g_cached_update.has_update) ? &g_cached_update : nullptr;
+    bool should_quit = ShowAboutDialog(owner, g_state.is_dark, prefetched);
     g_state.modal_open = false;
 
     if (should_quit) {
@@ -605,7 +671,51 @@ static LRESULT CALLBACK HostWndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
                 }
                 return 0;
             }
+            if (wp == TIMER_AUTO_UPDATE_BOOT) {
+                KillTimer(hwnd, TIMER_AUTO_UPDATE_BOOT);
+                MaybeStartBackgroundUpdateCheck();
+                return 0;
+            }
+            if (wp == TIMER_AUTO_UPDATE_POLL) {
+                MaybeStartBackgroundUpdateCheck();
+                return 0;
+            }
             break;
+
+        case WM_APP_BG_UPDATE_DONE: {
+            if (g_bg_update_thread) {
+                CloseHandle(g_bg_update_thread);
+                g_bg_update_thread = nullptr;
+            }
+            g_state.update_check_running = false;
+
+            UpdateInfo info = {};
+            bool ok = false;
+            AcquireSRWLockExclusive(&g_bg_update_lock);
+            info = g_bg_update_result;
+            ok = g_bg_update_ok;
+            ReleaseSRWLockExclusive(&g_bg_update_lock);
+
+            if (ok) {
+                g_state.last_update_check_sec = GetCurrentUnixTimeSec();
+                SaveUiConfig();
+                if (info.has_update && CompareSemver(info.latest_version, OCTANS_VERSION_STR) > 0) {
+                    g_cached_update = info;
+                    g_state.update_available = true;
+                    strncpy(g_state.update_version, info.latest_version, sizeof(g_state.update_version) - 1);
+                    g_state.update_version[sizeof(g_state.update_version) - 1] = '\0';
+                    PanelOnUpdateStateChanged();
+                } else if (g_state.update_available) {
+                    g_state.update_available = false;
+                    g_state.update_version[0] = '\0';
+                    PanelOnUpdateStateChanged();
+                }
+            }
+            if (!PanelIsVisible() && !g_state.modal_open) {
+                SetTimer(hwnd, TIMER_STARTUP_TRIM, 800u, nullptr);
+            }
+            return 0;
+        }
 
         case WM_APP_TRAY_CALLBACK: {
             UINT ev = LOWORD(lp);
@@ -721,6 +831,13 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
     st.has_custom_panel_pos = false;
     st.custom_panel_x = 0;
     st.custom_panel_y = 0;
+    st.auto_check_updates = true;
+    st.last_update_check_sec = 0;
+    st.update_available = false;
+    st.update_check_running = false;
+    st.update_version[0] = '\0';
+    g_cached_update = {};
+    InterlockedExchange(&g_bg_cancel, 0);
     st.device_count = 0;
     st.pinned_count = 0;
     for (size_t i = 0; i < MAX_DEVICES; ++i) st.pinned_ids[i][0] = '\0';
@@ -783,6 +900,10 @@ extern "C" int octans_ui_init(const octans_backend_ops_t *ops, void *backend_ctx
     }
 
     TrayInit(st.host_hwnd);
+    if (st.demo_hooks.on_action == nullptr) {
+        SetTimer(st.host_hwnd, TIMER_AUTO_UPDATE_BOOT, 30000u, nullptr);
+        SetTimer(st.host_hwnd, TIMER_AUTO_UPDATE_POLL, 21600000u, nullptr);
+    }
     st.initialized = true;
     return 0;
 }
@@ -791,6 +912,17 @@ extern "C" void octans_ui_shutdown(void) {
     using namespace octans_ui;
     UiState &st = GetState();
     if (!st.initialized) return;
+
+    InterlockedExchange(&g_bg_cancel, 1);
+    if (st.host_hwnd) {
+        KillTimer(st.host_hwnd, TIMER_AUTO_UPDATE_BOOT);
+        KillTimer(st.host_hwnd, TIMER_AUTO_UPDATE_POLL);
+    }
+    if (g_bg_update_thread) {
+        WaitForSingleObject(g_bg_update_thread, 1500u);
+        CloseHandle(g_bg_update_thread);
+        g_bg_update_thread = nullptr;
+    }
 
     TrayShutdown();
     PanelShutdown();
