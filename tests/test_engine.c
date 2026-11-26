@@ -1837,6 +1837,31 @@ static void test_v120_edifier_hecate(void) {
     ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_EC, first_matching_variant(0x2D99u, 0xE049u, 0xFF14u, 0x0001u, 3));
     ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_EC, first_matching_variant(0x2D99u, 0xE057u, 0xFF14u, 0x0001u, 3));
     ASSERT_EQ_INT((int)VAR_INDEP_EDIFIER_KBM, first_matching_variant(0x0E8Du, 0x0001u, 0xFF14u, 0x0001u, 1));
+
+    /* 7. Dovetek 雀98 / Bytech 916 & 8815 (258A:0150 2.4G 20B + 258A:01B7/01C0 wired 520B) */
+    const uint8_t s98_wl_chg[20] = {0x13, 0x4A, 0x01, 0x00, 0x02, 72, 0x10};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(s98_wl_chg, sizeof(s98_wl_chg), 0, &r));
+    ASSERT_EQ_INT(72, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* Reject request echo (byte 4 == 0x00) */
+    const uint8_t s98_echo[20] = {0x13, 0x4A, 0x01, 0x00, 0x00, 72, 0x10};
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_by(s98_echo, sizeof(s98_echo), 0, &r));
+
+    /* Real hardware capture: VGN V98Pro V3 / Bytech916 wired 09 87 00 00 01 00 02 00 64 11 -> 100% FULL */
+    const uint8_t by916_full[12] = {0x09, 0x87, 0x00, 0x00, 0x01, 0x00, 0x02, 0x00, 0x64, 0x11};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_by(by916_full, sizeof(by916_full), 1, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x0150u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x01B7u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x01C0u, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x0233u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x379Au, 0xA002u, 0xFF02u, 0x0002u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x024Eu, 0xFF02u, 0x0001u, 1));
 }
 
 int main(void) {

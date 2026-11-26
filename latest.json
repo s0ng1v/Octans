@@ -1,9 +1,9 @@
 {
-  "version": "1.2.0",
-  "notes": "v1.2.0：新增漫步者（EDIFIER / 花再）与漫步者电竞（HECATE）全系官方驱动协议支持：覆盖 HECATE G5 MAX / G5 MAX V2 / G5 MAX 底座版 / G4 MAX / G3 MAX / G3 / G2 MAX / V5 MAX / V3 MAX 无线头戴耳机、GX03 ULTRA / GX05 大师版无线 TWS 耳机、G5M PRO / G5M ULTRA / G3M PRO 升级版 / G3M ULTRA / G2M PRO 无线鼠标，以及花再 Halo Space / Evo Space 与 TempoHub 无线键鼠。",
-  "sha256": "96BC4952BE7B8C59436A2A644E0C0DE6D6D81F6A1A7123DCF8BF2B09408D6050",
-  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe",
+  "version": "1.2.1",
+  "notes": "v1.2.1：新增鸽鸽电竞（Dovetek）雀98（带屏版/无屏版，2.4G 接收器 258A:0150 及有线 258A:01B7/01C0）以及同平台 Bytech 916/8815 无线与有线三模键盘（含 VGN V98Pro V3 / V87 V2 / N75 V2 / V108、RK M87 / R98Pro V2、GravaStar 等）支持，并完善 20B 无线协议充/满电解析。",
+  "sha256": "45AC89F957B44B074E34637C31A1CCAC88E42CE590BBFE2BCA06EA5C5686735D",
+  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

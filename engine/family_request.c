@@ -1012,6 +1012,14 @@ static int is_mchose_cz_kb_name(const wchar_t *name) {
 static int is_mchose_by_exact_pid(uint16_t vid, uint16_t pid) {
     if (vid == 0x3837u && (pid == 0x201Au || pid == 0x201Bu)) return 1;
     if (vid == 0x41E4u && (pid == 0x2001u || pid == 0x2201u)) return 1;
+    if (vid == 0x258Au &&
+        (pid == 0x0150u || pid == 0x01B7u || pid == 0x01C0u || pid == 0x0233u ||
+         pid == 0x010Cu || pid == 0x01B9u || pid == 0x01BBu || pid == 0x01A2u ||
+         pid == 0x024Eu || pid == 0x027Eu || pid == 0x026Au || pid == 0x019Du)) {
+        return 1;
+    }
+    if (vid == 0x379Au && (pid == 0xA002u || pid == 0xA006u || pid == 0xA009u)) return 1;
+    if (vid == 0x391Du && (pid >= 0x2003u && pid <= 0x2006u)) return 1;
     return 0;
 }
 
@@ -1194,17 +1202,22 @@ int octans_proto_parse_mchose_by(const uint8_t *buf, size_t len, int is_wired, o
     } else {
         size_t base = (buf[0] == 0x13u && len >= 7u) ? 1u : 0u;
         if (base + 6u > len) return 0;
-        if (buf[base] != 0x4Au || buf[base + 1u] < 1u || buf[base + 2u] != 0u) return 0;
+        if (buf[base] != 0x4Au || buf[base + 1u] < 1u || buf[base + 2u] != 0u || buf[base + 3u] < 2u) return 0;
         lvl = buf[base + 4u];
         flags = buf[base + 5u];
     }
     if (lvl == 0u || lvl > 100u) return 0;
-    uint8_t full = (uint8_t)((flags >> 4) & 0x0Fu);
-    uint8_t chg  = (uint8_t)(flags & 0x0Fu);
+    int hi = ((flags & 0xF0u) != 0u);
+    int lo = ((flags & 0x0Fu) != 0u);
     out->battery_percent = (int8_t)lvl;
     out->is_estimated = 0;
-    out->power_state = (chg == 1u) ? OCTANS_PWR_CHARGING
-                     : ((full == 1u && lvl >= 100u) ? OCTANS_PWR_FULL : OCTANS_PWR_DISCHARGING);
+    if ((hi || lo) && lvl >= 100u && lo) {
+        out->power_state = OCTANS_PWR_FULL;
+    } else if (hi || lo) {
+        out->power_state = OCTANS_PWR_CHARGING;
+    } else {
+        out->power_state = OCTANS_PWR_DISCHARGING;
+    }
     out->valid = 1;
     return 1;
 }
@@ -2935,8 +2948,8 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     ((info->vid == 0x3837u || info->vid == 0x41E4u) &&
                      (wstr_contains_nocase(info->product, L"MCHOSE 2.4G Wireless") ||
                       wstr_contains_nocase(info->product, L"2.4G Wireless Receiver"))) ||
-                    (info->vid == 0x3837u && dev.output_len == 20u && dev.input_len == 20u))) {
-            if (dev.feature_len >= 519u) {
+                    (dev.output_len == 20u && dev.input_len == 20u && info->usage_page == 0xFF02u))) {
+            if (dev.feature_len >= 519u && dev.feature_len <= 520u) {
                 uint8_t by_req[520];
                 uint8_t by_resp[600];
                 static const uint8_t rids[2] = {0x09u, 0x06u};
@@ -2955,14 +2968,22 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     }
                 }
             } else if (dev.output_len >= 20u && dev.output_len <= 32u && dev.can_read) {
-                octans_proto_build_mchose_by_wireless(req);
-                if (octans_hid_write_output_intr(&dev, req, 20u) == 0 ||
-                    octans_hid_write_output(&dev, req, 20u) == 0) {
-                    for (int a = 0; a < 6; ++a) {
-                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 250u);
-                        if (n >= 6 && octans_proto_parse_mchose_by(resp, (size_t)n, 0, out)) {
-                            ok = 1;
-                            break;
+                /* Try standard BY/Bytech916/CDev3632 (13 4A 01 ... 5E), then LEOBOG (13 CA ... DD),
+                 * then khub916 7-byte header (13 4A 01 00 00 00 00 00 5E) for maximum receiver coverage. */
+                uint8_t by_cmds[3][20];
+                octans_proto_build_mchose_by_wireless(by_cmds[0]);
+                octans_proto_build_leobog_20b(by_cmds[1]);
+                memset(by_cmds[2], 0, 20u);
+                by_cmds[2][0] = 0x13u; by_cmds[2][1] = 0x4Au; by_cmds[2][2] = 0x01u; by_cmds[2][8] = 0x5Eu;
+                for (int ci = 0; ci < 3 && !ok; ++ci) {
+                    if (octans_hid_write_output_intr(&dev, by_cmds[ci], 20u) == 0 ||
+                        octans_hid_write_output(&dev, by_cmds[ci], 20u) == 0) {
+                        for (int a = 0; a < 5; ++a) {
+                            int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                            if (n >= 7 && octans_proto_parse_mchose_by(resp, (size_t)n, 0, out)) {
+                                ok = 1;
+                                break;
+                            }
                         }
                     }
                 }

@@ -17,15 +17,15 @@
   ·
   <b>English</b>
   ·
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe"><b>Download (v1.2.0)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><b>Download (v1.2.1)</b></a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe">CN Mirror</a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe">CN Mirror</a>
   ·
   <a href="#supported-brands--devices">Supported Devices</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe"><img alt="Download v1.2.0" src="https://img.shields.io/badge/download-v1.2.0-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe"><img alt="Download v1.2.1" src="https://img.shields.io/badge/download-v1.2.1-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -53,12 +53,12 @@
 
 ## Download & Install
 
-Download the installer **`Octans-Setup-v1.2.0.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
+Download the installer **`Octans-Setup-v1.2.1.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
 
 | Channel | Description | Link |
 |---|---|---|
-| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.0.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
-| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.0.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.0/Octans-Setup-v1.2.0.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.1.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
+| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.1.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.1/Octans-Setup-v1.2.1.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 
 > **Tips**:
 > 1. If Windows hides the newly installed tray icon inside the `^` overflow menu, drag it out to the taskbar once to keep it permanently visible.
@@ -85,7 +85,7 @@ Supports wireless mice, keyboards, headsets, and gamepads from 20+ mainstream br
 | **Machenike / ThundeRobot** | Machenike L8 MAX, ThundeRobot ML9 mini, X7s Pro / Pro Max / Ultra wireless mice and wireless controllers |
 | **WOB / Akko / MonsGeek** | WOB Rainy75 V2, Zen65 keyboards and Rainy S1 mouse; Akko / MonsGeek tri-mode keyboards (including FUN60 Pro series) |
 | **Darmoshark** | M3 / M3S / M3 Pro / M3S Pro / M2 / M5 / N3 / N5 2.4G & 4K/8K wireless mice and tri-mode keyboards |
-| **INCOTT / Attack Shark / Bloody** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice |
+| **INCOTT / Attack Shark / Bloody / Dovetek** | INCOTT G23 / G24 / Ghero / Zero series; Attack Shark X11 / X3 / X6 / R1 series; A4Tech Bloody SG5 Pro 8K wireless mice; Dovetek Sparrow 98 & Bytech 916 tri-mode keyboards (RK M87 / R98Pro V2, VGN V98Pro V3 / V87 V2 / V108, GravaStar) |
 | **Controllers & Bluetooth Peripherals** | Xbox wireless controllers, Flydigi / GameSir / Beitong / 8BitDo controllers; Sony DualSense / DualShock 4; Nintendo Switch Pro / Joy-Con; plus most standard Bluetooth mice, keyboards, and headsets |
 
 See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) for the detailed device list and hardware verification notes (in Chinese).
@@ -99,7 +99,7 @@ See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) f
 ### Architecture & Lightweight Design
 
 - **Pure Native Zero-Dependency Stack**: C11 backend protocol engine with Win32 + Direct2D / DirectWrite lightweight software rendering (avoiding persistent D3D11/GPU module loading and unbinding IME from non-input windows); zero Electron / Chromium / WebView2 / .NET / `libstdc++` runtime dependencies.
-- **Tiny Footprint**: `Octans.exe` is only ~**373 KB**, and the standalone CLI `octans-cli.exe` is ~**175 KB**.
+- **Tiny Footprint**: `Octans.exe` is only ~**375 KB**, and the standalone CLI `octans-cli.exe` is ~**178 KB**.
 - **On-Demand Cleanup & Zero Static Network Imports**: Releases off-screen panel surfaces and trims working set when collapsed; zero static network DLL imports in PE tables (`winhttp.dll` and `bcrypt.dll` are dynamically loaded only when the user checks for updates).
 
 ### Repository Layout
@@ -113,7 +113,7 @@ cli/        Standalone headless CLI tool (list --json, test-rule, probe --dump)
 include/    Stable C ABI headers and version definitions
 assets/     Octans brand visual assets and multi-DPI icons
 installer/  Inno Setup script and one-click packaging script
-tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (648 assertions)
+tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (661 assertions)
 ```
 
 ### Build from Source
@@ -121,10 +121,10 @@ tests/      Unit tests covering protocol parsing, table lookup, deduplication & 
 Requires Windows 10/11 and the LLVM-MinGW (UCRT) toolchain (plus Inno Setup 6 for packaging):
 
 ```powershell
-# Build CLI, run all 648 unit tests, and build build\Octans.exe
+# Build CLI, run all 661 unit tests, and build build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.0.exe)
+# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.1.exe)
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # Build and launch the hardware-free UI preview demo
