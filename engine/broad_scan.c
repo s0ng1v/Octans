@@ -65,9 +65,13 @@ static octans_device_kind_t infer_kind(const octans_hid_info_t *info,
     if (var == VAR_INDEP_HECATE_TWS) {
         return OCTANS_DEV_EARBUDS;
     }
+    if (var == VAR_INDEP_FLYDIGI_V2) {
+        return OCTANS_DEV_GAMEPAD;
+    }
     if (var == VAR_KB_ATK_EVISION || var == VAR_KB_VIA_RAW ||
         var == VAR_KB_KEYCHRON || var == VAR_KB_SEMICO_AA55 ||
         var == VAR_KB_LOFREE_HYZEN || var == VAR_KB_MCHOSE_BY ||
+        var == VAR_KB_MCHOSE_QHW || var == VAR_KB_MCHOSE_GLW ||
         var == VAR_KB_LEOBOG_20B || var == VAR_KB_LEOBOG_BYTECH ||
         var == VAR_INDEP_AULA_KBD_AA) {
         return OCTANS_DEV_KEYBOARD;
@@ -171,7 +175,10 @@ static size_t select_candidates(const octans_hid_info_t *info,
         if (out_l >= 63u) out[n++] = VAR_KB_LEOBOG_BYTECH;
         out[n++] = VAR_KB_VIA_RAW;
     } else if (up == 0xFF80u && out_l >= 32u && in_l >= 32u) {
+        out[n++] = VAR_KB_MCHOSE_QHW;
         out[n++] = VAR_INDEP_AULA_KBD_AA;
+    } else if (up == 0xFFA0u && u == 0x0001u && out_l >= 32u && out_l <= 65u && in_l >= 32u) {
+        out[n++] = VAR_INDEP_FLYDIGI_V2;
     } else if (up == 0xFFA0u && feat_l >= 32u && feat_l < 65u) {
         out[n++] = VAR_INDEP_NORDIC_GEN;
     } else if (up == 0xFF42u && out_l >= 64u && in_l >= 64u) {

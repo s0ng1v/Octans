@@ -82,6 +82,21 @@ int octans_proto_parse_keyboard(const uint8_t *buf,
 void octans_proto_build_mchose_hid4d(uint8_t report_id, uint16_t cmd, uint8_t *out_buf, size_t len);
 int octans_proto_parse_mchose_hid4d(const uint8_t *buf, size_t len, uint16_t expected_vid, octans_proto_reading_t *out);
 int octans_proto_parse_mchose_hid4d_batt(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
+void octans_proto_build_mchose_qhw(uint16_t cmd, uint8_t seq, uint8_t *out_buf, size_t len);
+int octans_proto_parse_mchose_qhw(const uint8_t *buf,
+                                  size_t len,
+                                  uint16_t expected_cmd,
+                                  uint8_t expected_seq,
+                                  octans_proto_reading_t *out);
+void octans_proto_build_mchose_glw(uint8_t cmd, uint16_t offset, uint8_t count, int with_rid0, uint8_t *out_buf, size_t len);
+int octans_proto_parse_mchose_glw_slot(const uint8_t *buf, size_t len, uint8_t *out_slot);
+int octans_proto_parse_mchose_glw(const uint8_t *buf, size_t len, uint16_t expected_offset, octans_proto_reading_t *out);
+void octans_proto_build_flydigi_v2(uint8_t report_id, uint8_t cmd, uint8_t arg, uint8_t *out_buf, size_t len);
+int octans_proto_parse_flydigi_v2(const uint8_t *buf,
+                                  size_t len,
+                                  uint16_t pid,
+                                  int is_new_arch,
+                                  octans_proto_reading_t *out);
 void octans_proto_build_mchose_m7(uint8_t report_id, uint8_t cmd, uint8_t *out_buf, size_t len);
 int octans_proto_parse_mchose_m7(const uint8_t *buf, size_t len, uint8_t expected_cmd, octans_proto_reading_t *out);
 void octans_proto_build_mchose_g7max(uint8_t report_id, uint8_t out64[64]);

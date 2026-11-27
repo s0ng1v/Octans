@@ -1108,6 +1108,212 @@ int octans_proto_parse_mchose_hid4d_batt(const uint8_t *buf, size_t len, octans_
     return 1;
 }
 
+/* MCHOSE QHW V3 Keyboards (G87 V3 / K87 V3 / G98 V3 on UP=0xFF80:0x0001, Report 0x4D, flags=0x03) */
+void octans_proto_build_mchose_qhw(uint16_t cmd, uint8_t seq, uint8_t *out_buf, size_t len) {
+    if (!out_buf || len < 9u) return;
+    memset(out_buf, 0, len);
+    out_buf[0] = 0x4Du; /* Report ID 77 */
+    out_buf[1] = 0x01u; /* version = 1 */
+    out_buf[2] = 0x03u; /* flags = 3 (QhwCmdQueueItem) */
+    out_buf[3] = 0x00u; /* data length = 0 */
+    out_buf[4] = (uint8_t)(cmd & 0xFFu);
+    out_buf[5] = (uint8_t)((cmd >> 8) & 0xFFu);
+    out_buf[6] = 0x00u; /* bizCode = 0 */
+    out_buf[7] = seq;
+    out_buf[8] = octans_crc_xor(out_buf, 2u, 7u);
+}
+
+int octans_proto_parse_mchose_qhw(const uint8_t *buf,
+                                  size_t len,
+                                  uint16_t expected_cmd,
+                                  uint8_t expected_seq,
+                                  octans_proto_reading_t *out) {
+    if (!buf || !out || len < 10u) return 0;
+    const uint8_t *p = (buf[0] == 0x4Du && len >= 11u) ? (buf + 1) : buf;
+    size_t n = (p == buf) ? len : (len - 1u);
+    if (n < 10u) return 0;
+    if (p[0] != 0x01u || (p[1] != 0x03u && p[1] != 0x01u)) return 0;
+    uint8_t dlen = p[2];
+    if (dlen == 0u || (size_t)dlen + 8u > n) return 0;
+    uint16_t cmd = (uint16_t)p[3] | ((uint16_t)p[4] << 8);
+    if (cmd != expected_cmd || p[5] != 0x00u) return 0;
+    if (expected_seq != 0u && p[6] != expected_seq) return 0;
+    uint8_t x = octans_crc_xor(p, 1u, 6u + (size_t)dlen);
+    if (x != p[7u + (size_t)dlen]) return 0;
+
+    if (cmd == 0x0904u) {
+        if (dlen < 2u) return 0;
+        uint8_t chg = p[7];
+        uint8_t lvl = p[8];
+        if (chg > 2u || lvl == 0u || lvl > 100u) return 0;
+        out->battery_percent = (int8_t)lvl;
+        out->power_state = (chg == 1u) ? OCTANS_PWR_CHARGING
+                         : (chg == 2u ? OCTANS_PWR_FULL : OCTANS_PWR_DISCHARGING);
+        out->valid = 1;
+        return 1;
+    }
+
+    if (cmd == 0x0900u) {
+        if (dlen < 13u) return 0;
+        uint8_t conn_st = p[17]; /* 1=wired, 2=wireless, 0=offline/asleep */
+        uint8_t chg = p[18];
+        uint8_t lvl = p[19];
+        if (conn_st == 0u) {
+            out->asleep = 1;
+            out->power_state = OCTANS_PWR_SLEEPING;
+            return 1;
+        }
+        if (chg > 2u || lvl == 0u || lvl > 100u) return 0;
+        if (conn_st == 1u) out->conn = OCTANS_CONN_WIRED;
+        else if (conn_st == 2u) out->conn = OCTANS_CONN_DONGLE_24G;
+        out->battery_percent = (int8_t)lvl;
+        out->power_state = (chg == 1u) ? OCTANS_PWR_CHARGING
+                         : (chg == 2u ? OCTANS_PWR_FULL : OCTANS_PWR_DISCHARGING);
+        out->valid = 1;
+        return 1;
+    }
+
+    return 0;
+}
+
+/* MCHOSE GLW Keyboards (K99 V3 / G87 V2 8K / G75 V2 8K / K87S: 0x55 0x04/0x05 -> 0xAA) */
+void octans_proto_build_mchose_glw(uint8_t cmd,
+                                   uint16_t offset,
+                                   uint8_t count,
+                                   int with_rid0,
+                                   uint8_t *out_buf,
+                                   size_t len) {
+    size_t off = with_rid0 ? 1u : 0u;
+    if (!out_buf || len < off + 8u) return;
+    memset(out_buf, 0, len);
+    uint8_t *f = out_buf + off;
+    f[0] = 0x55u;
+    f[1] = cmd;
+    f[2] = 0x00u;
+    f[3] = (uint8_t)((count + (offset & 0xFFu) + ((offset >> 8) & 0xFFu)) & 0xFFu);
+    f[4] = count;
+    f[5] = (uint8_t)(offset & 0xFFu);
+    f[6] = (uint8_t)((offset >> 8) & 0xFFu);
+    f[7] = 0x00u;
+}
+
+int octans_proto_parse_mchose_glw_slot(const uint8_t *buf, size_t len, uint8_t *out_slot) {
+    if (!buf || !out_slot || len < 14u) return 0;
+    const uint8_t *p = (buf[0] == 0x00u && len >= 15u && buf[1] == 0xAAu) ? (buf + 1) : buf;
+    size_t n = (p == buf) ? len : (len - 1u);
+    if (n < 14u || p[0] != 0xAAu || p[1] != 0x04u) return 0;
+    uint8_t sz = p[4];
+    if (sz < 6u || 8u + (size_t)sz > n) return 0;
+    uint8_t sum = octans_crc_sum_range(p, 4u, 7u + (size_t)sz);
+    if (sum != p[3]) return 0;
+    const uint8_t *pay = p + 8;
+    if (pay[0] > 3u) return 0;
+    int seen[4] = {0, 0, 0, 0};
+    int perm = 1;
+    for (int i = 0; i < 4; ++i) {
+        if (pay[2 + i] > 3u || seen[pay[2 + i]]) { perm = 0; break; }
+        seen[pay[2 + i]] = 1;
+    }
+    *out_slot = perm ? pay[2u + pay[0]] : pay[0];
+    return 1;
+}
+
+int octans_proto_parse_mchose_glw(const uint8_t *buf,
+                                  size_t len,
+                                  uint16_t expected_offset,
+                                  octans_proto_reading_t *out) {
+    if (!buf || !out || len < 4u) return 0;
+    const uint8_t *p = (buf[0] == 0x00u && len >= 5u && (buf[1] == 0xAAu || buf[1] == 0xFAu))
+                     ? (buf + 1) : buf;
+    size_t n = (p == buf) ? len : (len - 1u);
+
+    /* Passive K87S battery notification: FA FB 07 <level> */
+    if (n >= 4u && p[0] == 0xFAu && p[1] == 0xFBu && p[2] == 0x07u) {
+        uint8_t lvl = p[3];
+        if (lvl == 0u || lvl > 100u) return 0;
+        out->battery_percent = (int8_t)lvl;
+        out->power_state = OCTANS_PWR_DISCHARGING;
+        out->valid = 1;
+        return 1;
+    }
+
+    if (n < 41u || p[0] != 0xAAu || p[1] != 0x05u) return 0;
+    uint8_t sz = p[4];
+    uint16_t off = (uint16_t)p[5] | ((uint16_t)p[6] << 8);
+    if (sz < 33u || off != expected_offset || 8u + (size_t)sz > n) return 0;
+    uint8_t sum = octans_crc_sum_range(p, 4u, 7u + (size_t)sz);
+    if (sum != p[3]) return 0;
+
+    uint8_t raw = p[8u + 32u];
+    uint8_t lvl = (uint8_t)(raw & 0x7Fu);
+    if (lvl == 0u || lvl > 100u) return 0;
+    out->battery_percent = (int8_t)lvl;
+    out->power_state = (raw & 0x80u)
+                     ? ((lvl >= 100u) ? OCTANS_PWR_FULL : OCTANS_PWR_CHARGING)
+                     : OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+/* Flydigi V2 Controllers (Apex 5 / Vader 5 Pro / Apex 6 on VID 0x37D7 UP=0xFFA0:0x0001) */
+void octans_proto_build_flydigi_v2(uint8_t report_id, uint8_t cmd, uint8_t arg, uint8_t *out_buf, size_t len) {
+    if (!out_buf || len < 6u) return;
+    memset(out_buf, 0, len);
+    out_buf[0] = report_id; /* 0x03 for numbered (Apex 5), 0x00 for unnumbered (Vader 5 / Apex 6) */
+    out_buf[1] = 0x5Au;
+    out_buf[2] = 0xA5u;
+    out_buf[3] = cmd;
+    out_buf[4] = arg;
+    out_buf[5] = 0x00u;
+}
+
+int octans_proto_parse_flydigi_v2(const uint8_t *buf,
+                                  size_t len,
+                                  uint16_t pid,
+                                  int is_new_arch,
+                                  octans_proto_reading_t *out) {
+    if (!buf || !out || len < 17u) return 0;
+    const uint8_t *p = (buf[0] == 0x5Au) ? buf : (buf + 1);
+    size_t n = (p == buf) ? len : (len - 1u);
+    if (n < 17u || p[0] != 0x5Au || p[1] != 0xA5u || p[2] != 0x01u) return 0;
+
+    uint8_t dev_id = p[5];
+    if (dev_id == 0u) return 0; /* Reject request echo / non-controller replies */
+
+    int is_apex6 = (pid == 0x2502u || dev_id == 149u || dev_id == 150u || dev_id == 152u);
+    uint8_t st = (uint8_t)((p[11] >> 4) & 0x0Fu);
+    uint8_t step = (uint8_t)(p[11] & 0x0Fu);
+    if (st > 2u || step > (is_apex6 ? 10u : 5u)) return 0;
+
+    int pct = (st == 2u) ? 100 : (int)step * (is_apex6 ? 10 : 20);
+    out->battery_percent = (int8_t)octans_clamp_percent(pct);
+    out->is_estimated = 1;
+    out->power_state = (st == 2u) ? OCTANS_PWR_FULL
+                     : (st == 1u ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING);
+
+    if (is_new_arch == 1) {
+        if (p[6] == 0u) out->conn = OCTANS_CONN_WIRED;
+        else if (p[6] == 1u) out->conn = OCTANS_CONN_DONGLE_24G;
+    } else if (is_new_arch == 0) {
+        if (p[6] == 1u) out->conn = OCTANS_CONN_WIRED;
+        else if (p[6] == 2u) out->conn = OCTANS_CONN_DONGLE_24G;
+    }
+
+    if (dev_id == 128u || dev_id == 129u || dev_id == 133u || dev_id == 134u) {
+        wcsncpy(out->name, L"Flydigi Apex 5", 63);
+        out->name[63] = L'\0';
+    } else if (dev_id == 130u) {
+        wcsncpy(out->name, L"Flydigi Vader 5 Pro", 63);
+        out->name[63] = L'\0';
+    } else if (dev_id == 149u || dev_id == 150u || dev_id == 152u) {
+        wcsncpy(out->name, L"Flydigi Apex 6", 63);
+        out->name[63] = L'\0';
+    }
+
+    out->valid = 1;
+    return 1;
+}
+
 void octans_proto_build_mchose_m7(uint8_t report_id, uint8_t cmd, uint8_t *out_buf, size_t len) {
     if (!out_buf || len < 2u) return;
     memset(out_buf, 0xFF, len);
@@ -2259,6 +2465,9 @@ int octans_proto_parse_indep(const uint8_t *buf,
     case VAR_INDEP_EDIFIER_KBM:
         return octans_proto_parse_edifier_kbm(buf, len, out);
 
+    case VAR_INDEP_FLYDIGI_V2:
+        return octans_proto_parse_flydigi_v2(buf, len, 0u, -1, out);
+
     default:
         return 0;
     }
@@ -2988,6 +3197,115 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     }
                 }
             }
+        } else if (e->variant == VAR_KB_MCHOSE_QHW &&
+                   dev.output_len >= 32u && dev.output_len <= 65u &&
+                   dev.input_len >= 32u && dev.can_read) {
+            static uint8_t s_qhw_seq = 0u;
+            size_t olen = dev.output_len;
+            /* Step 1: Official QHW getBattery (cmd 0x0904, Report 0x4D, flags=0x03) */
+            for (int a = 0; a < 3 && !ok; ++a) {
+                uint8_t seq = (uint8_t)(++s_qhw_seq);
+                if (seq == 0u) seq = ++s_qhw_seq;
+                octans_proto_build_mchose_qhw(0x0904u, seq, req, olen);
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) {
+                    break;
+                }
+                int busy = 0;
+                for (int r = 0; r < 4; ++r) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n <= 0) break;
+                    if (resp[0] == 0xFFu || (n >= 2 && resp[0] == 0x4Du && resp[1] == 0xFFu)) {
+                        busy = 1;
+                        break;
+                    }
+                    if (octans_proto_parse_mchose_qhw(resp, (size_t)n, 0x0904u, seq, out)) {
+                        ok = 1;
+                        break;
+                    }
+                    if (debug_log) {
+                        fprintf(stderr, "[octans] mchose_qhw 0904 raw (%dB):", n);
+                        for (int b = 0; b < n && b < 24; ++b) fprintf(stderr, " %02X", resp[b]);
+                        fprintf(stderr, "\n");
+                    }
+                }
+                if (!ok && busy) Sleep(30);
+            }
+            /* Step 2: Fallback QHW deviceInfo (cmd 0x0900, detects online/sleeping + battery) */
+            for (int a = 0; a < 2 && !ok; ++a) {
+                uint8_t seq = (uint8_t)(++s_qhw_seq);
+                if (seq == 0u) seq = ++s_qhw_seq;
+                octans_proto_build_mchose_qhw(0x0900u, seq, req, olen);
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) {
+                    break;
+                }
+                int busy = 0;
+                for (int r = 0; r < 4; ++r) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n <= 0) break;
+                    if (resp[0] == 0xFFu || (n >= 2 && resp[0] == 0x4Du && resp[1] == 0xFFu)) {
+                        busy = 1;
+                        break;
+                    }
+                    if (octans_proto_parse_mchose_qhw(resp, (size_t)n, 0x0900u, seq, out)) {
+                        ok = 1;
+                        break;
+                    }
+                    if (debug_log) {
+                        fprintf(stderr, "[octans] mchose_qhw 0900 raw (%dB):", n);
+                        for (int b = 0; b < n && b < 24; ++b) fprintf(stderr, " %02X", resp[b]);
+                        fprintf(stderr, "\n");
+                    }
+                }
+                if (!ok && busy) Sleep(30);
+            }
+        } else if (e->variant == VAR_KB_MCHOSE_GLW &&
+                   ((info->usage_page == 0x0001u && info->usage == 0x0000u) ||
+                    (info->usage_page == 0xFF31u && info->usage == 0x0074u)) &&
+                   dev.output_len >= 64u && dev.output_len <= 65u &&
+                   dev.input_len >= 64u && dev.can_read) {
+            size_t olen = dev.output_len;
+            int with_rid0 = (olen >= 65u) ? 1 : 0;
+            uint8_t slot = 0u;
+            /* Step 1: Read active profile slot (cmd 0x04, 56 bytes at offset 0) */
+            octans_proto_build_mchose_glw(0x04u, 0u, 56u, with_rid0, req, olen);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int r = 0; r < 3; ++r) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 180u);
+                    if (n <= 0) break;
+                    if (octans_proto_parse_mchose_glw(resp, (size_t)n, 0u, out)) {
+                        ok = 1;
+                        break;
+                    }
+                    if (octans_proto_parse_mchose_glw_slot(resp, (size_t)n, &slot)) {
+                        break;
+                    }
+                }
+            }
+            /* Step 2: Read func-config block (cmd 0x05, 56 bytes at 64 * slot) */
+            uint16_t blk_off = (uint16_t)(slot * 64u);
+            for (int a = 0; a < 2 && !ok; ++a) {
+                octans_proto_build_mchose_glw(0x05u, blk_off, 56u, with_rid0, req, olen);
+                if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                    octans_hid_write_output(&dev, req, olen) != 0) {
+                    break;
+                }
+                for (int r = 0; r < 4; ++r) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 200u);
+                    if (n <= 0) break;
+                    if (octans_proto_parse_mchose_glw(resp, (size_t)n, blk_off, out)) {
+                        ok = 1;
+                        break;
+                    }
+                    if (debug_log) {
+                        fprintf(stderr, "[octans] mchose_glw raw (%dB):", n);
+                        for (int b = 0; b < n && b < 24; ++b) fprintf(stderr, " %02X", resp[b]);
+                        fprintf(stderr, "\n");
+                    }
+                }
+            }
         } else if (e->variant == VAR_KB_WOB_RAINY75V2 && dev.output_len >= 6u && dev.can_read) {
             static const uint8_t enc_r75[4] = {
                 OCTANS_ENC8(0xBE, 140), OCTANS_ENC8(0xBB, 141),
@@ -3513,6 +3831,76 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                     if (n >= 9 && octans_proto_parse_edifier_kbm(resp, (size_t)n, out)) {
                         ok = 1;
                         break;
+                    }
+                }
+            }
+        } else if (e->variant == VAR_INDEP_FLYDIGI_V2 &&
+                   info->pid != 0x6001u &&
+                   dev.output_len >= 32u && dev.output_len <= 65u &&
+                   dev.input_len >= 32u && dev.can_read) {
+            /* Exclude Flydigi CD2 Charging Dock (37D7:6001); select numbered 0x03 (Apex 5) vs unnumbered 0x00 (Vader 5 / Apex 6) */
+            uint8_t rids[8];
+            size_t rcnt = octans_hid_collect_output_rids(&dev, rids, 8u);
+            int has_rid3 = 0;
+            for (size_t k = 0; k < rcnt; ++k) {
+                if (rids[k] == 0x03u) { has_rid3 = 1; break; }
+            }
+            uint8_t try_rids[2];
+            if (has_rid3 || info->pid == 0x2501u) {
+                try_rids[0] = 0x03u;
+                try_rids[1] = 0x00u;
+            } else {
+                try_rids[0] = 0x00u;
+                try_rids[1] = 0x03u;
+            }
+            size_t olen = dev.output_len;
+            for (int ri = 0; ri < 2 && !ok; ++ri) {
+                uint8_t rid = try_rids[ri];
+                int is_new_arch = -1;
+                octans_hid_drain(&dev, 48);
+
+                /* Step 1: SDL3 check-architecture query (5A A5 07 00 00) for wired/wireless decode */
+                octans_proto_build_flydigi_v2(rid, 0x07u, 0x00u, req, olen);
+                if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                    octans_hid_write_output(&dev, req, olen) == 0) {
+                    ULONGLONG t_end = GetTickCount64() + 150u;
+                    for (int a = 0; a < 128 && GetTickCount64() < t_end; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 25u);
+                        if (n <= 0) break;
+                        const uint8_t *p = (resp[0] == 0x5Au) ? resp : (resp + 1);
+                        size_t pn = (p == resp) ? (size_t)n : ((size_t)n - 1u);
+                        if (pn >= 5u && p[0] == 0x5Au && p[1] == 0xA5u && p[2] == 0x07u) {
+                            is_new_arch = (p[3] == 1u && p[4] == 0u) ? 1 : 0;
+                            break;
+                        }
+                        if (octans_proto_parse_flydigi_v2(resp, (size_t)n, info->pid, is_new_arch, out)) {
+                            ok = 1;
+                            break;
+                        }
+                    }
+                }
+                if (ok) break;
+
+                /* Step 2: GET_INFO query (5A A5 01 02 00); skip high-rate 0xEF input packets */
+                for (int attempt = 0; attempt < 2 && !ok; ++attempt) {
+                    octans_proto_build_flydigi_v2(rid, 0x01u, 0x02u, req, olen);
+                    if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                        octans_hid_write_output(&dev, req, olen) != 0) {
+                        break;
+                    }
+                    ULONGLONG t_end = GetTickCount64() + 450u;
+                    for (int a = 0; a < 512 && GetTickCount64() < t_end; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 35u);
+                        if (n <= 0) break;
+                        if (octans_proto_parse_flydigi_v2(resp, (size_t)n, info->pid, is_new_arch, out)) {
+                            ok = 1;
+                            break;
+                        }
+                        if (debug_log && a < 3) {
+                            fprintf(stderr, "[octans] flydigi_v2 rid=0x%02X raw (%dB):", (unsigned)rid, n);
+                            for (int b = 0; b < n && b < 20; ++b) fprintf(stderr, " %02X", resp[b]);
+                            fprintf(stderr, "\n");
+                        }
                     }
                 }
             }

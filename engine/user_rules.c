@@ -31,6 +31,8 @@ static const tpl_map_entry_t k_tpl_map[] = {
     {"mchose_g7",    VAR_INDEP_MCHOSE_G7},
     {"mchose_g7max", VAR_INDEP_MCHOSE_G7MAX},
     {"mchose_by",    VAR_KB_MCHOSE_BY},
+    {"mchose_qhw",   VAR_KB_MCHOSE_QHW},
+    {"mchose_glw",   VAR_KB_MCHOSE_GLW},
     {"mchose_v9",    VAR_INDEP_MCHOSE_V9},
     {"mchose_mc",    VAR_INDEP_MCHOSE_AUDIO_MC},
     {"jieli",       VAR_JIELI_TLV},
@@ -64,7 +66,8 @@ static const tpl_map_entry_t k_tpl_map[] = {
     {"hecate_tws",        VAR_INDEP_HECATE_TWS},
     {"hecate_mouse04",    VAR_INDEP_HECATE_MOUSE_04},
     {"edifier_ec",        VAR_INDEP_EDIFIER_EC},
-    {"edifier_kbm",       VAR_INDEP_EDIFIER_KBM}
+    {"edifier_kbm",       VAR_INDEP_EDIFIER_KBM},
+    {"flydigi_v2",        VAR_INDEP_FLYDIGI_V2}
 };
 
 const char *octans_variant_to_template_name(octans_proto_variant_t v) {

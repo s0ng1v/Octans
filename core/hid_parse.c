@@ -126,29 +126,50 @@ void octans_hid_dump_caps(octans_hid_dev_t *dev, FILE *out) {
     for (int t = 0; t < 3; ++t) {
         USHORT cnt = 0;
         HidP_GetValueCaps(types[t].rtype, NULL, &cnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
-        if (cnt == 0) continue;
-
-        HIDP_VALUE_CAPS caps[64];
-        USHORT n = cnt > 64 ? 64 : cnt;
-        if (HidP_GetValueCaps(types[t].rtype, caps, &n, (PHIDP_PREPARSED_DATA)dev->preparsed) !=
-            HIDP_STATUS_SUCCESS) {
-            continue;
+        if (cnt > 0) {
+            HIDP_VALUE_CAPS caps[64];
+            USHORT n = cnt > 64 ? 64 : cnt;
+            if (HidP_GetValueCaps(types[t].rtype, caps, &n, (PHIDP_PREPARSED_DATA)dev->preparsed) ==
+                HIDP_STATUS_SUCCESS) {
+                for (USHORT i = 0; i < n; ++i) {
+                    const HIDP_VALUE_CAPS *c = &caps[i];
+                    uint16_t umin = c->IsRange ? c->Range.UsageMin : c->NotRange.Usage;
+                    uint16_t umax = c->IsRange ? c->Range.UsageMax : c->NotRange.Usage;
+                    fprintf(out,
+                            "    %s cap: rid=0x%02X up=0x%04X u=0x%04X..0x%04X bits=%u cnt=%u lmin=%ld lmax=%ld\n",
+                            types[t].label,
+                            (unsigned)c->ReportID,
+                            (unsigned)c->UsagePage,
+                            (unsigned)umin,
+                            (unsigned)umax,
+                            (unsigned)c->BitSize,
+                            (unsigned)c->ReportCount,
+                            (long)c->LogicalMin,
+                            (long)c->LogicalMax);
+                }
+            }
         }
-        for (USHORT i = 0; i < n; ++i) {
-            const HIDP_VALUE_CAPS *c = &caps[i];
-            uint16_t umin = c->IsRange ? c->Range.UsageMin : c->NotRange.Usage;
-            uint16_t umax = c->IsRange ? c->Range.UsageMax : c->NotRange.Usage;
-            fprintf(out,
-                    "    %s cap: rid=0x%02X up=0x%04X u=0x%04X..0x%04X bits=%u cnt=%u lmin=%ld lmax=%ld\n",
-                    types[t].label,
-                    (unsigned)c->ReportID,
-                    (unsigned)c->UsagePage,
-                    (unsigned)umin,
-                    (unsigned)umax,
-                    (unsigned)c->BitSize,
-                    (unsigned)c->ReportCount,
-                    (long)c->LogicalMin,
-                    (long)c->LogicalMax);
+
+        USHORT bcnt = 0;
+        HidP_GetButtonCaps(types[t].rtype, NULL, &bcnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
+        if (bcnt > 0) {
+            HIDP_BUTTON_CAPS bcaps[64];
+            USHORT bn = bcnt > 64 ? 64 : bcnt;
+            if (HidP_GetButtonCaps(types[t].rtype, bcaps, &bn, (PHIDP_PREPARSED_DATA)dev->preparsed) ==
+                HIDP_STATUS_SUCCESS) {
+                for (USHORT i = 0; i < bn; ++i) {
+                    const HIDP_BUTTON_CAPS *b = &bcaps[i];
+                    uint16_t umin = b->IsRange ? b->Range.UsageMin : b->NotRange.Usage;
+                    uint16_t umax = b->IsRange ? b->Range.UsageMax : b->NotRange.Usage;
+                    fprintf(out,
+                            "    %s btn: rid=0x%02X up=0x%04X u=0x%04X..0x%04X\n",
+                            types[t].label,
+                            (unsigned)b->ReportID,
+                            (unsigned)b->UsagePage,
+                            (unsigned)umin,
+                            (unsigned)umax);
+                }
+            }
         }
     }
 }
@@ -161,21 +182,37 @@ size_t octans_hid_collect_feature_rids(octans_hid_dev_t *dev, uint8_t *out_rids,
 
     USHORT cnt = 0;
     HidP_GetValueCaps(HidP_Feature, NULL, &cnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
-    if (cnt == 0) return count;
-
-    HIDP_VALUE_CAPS caps[64];
-    USHORT cap_n = cnt > 64 ? 64 : cnt;
-    if (HidP_GetValueCaps(HidP_Feature, caps, &cap_n,
-                          (PHIDP_PREPARSED_DATA)dev->preparsed) != HIDP_STATUS_SUCCESS) {
-        return count;
-    }
-    for (USHORT c = 0; c < cap_n && count < max_rids; ++c) {
-        uint8_t rid = caps[c].ReportID;
-        int dup = 0;
-        for (size_t k = 0; k < count; ++k) {
-            if (out_rids[k] == rid) { dup = 1; break; }
+    if (cnt > 0) {
+        HIDP_VALUE_CAPS caps[64];
+        USHORT cap_n = cnt > 64 ? 64 : cnt;
+        if (HidP_GetValueCaps(HidP_Feature, caps, &cap_n,
+                              (PHIDP_PREPARSED_DATA)dev->preparsed) == HIDP_STATUS_SUCCESS) {
+            for (USHORT c = 0; c < cap_n && count < max_rids; ++c) {
+                uint8_t rid = caps[c].ReportID;
+                int dup = 0;
+                for (size_t k = 0; k < count; ++k) {
+                    if (out_rids[k] == rid) { dup = 1; break; }
+                }
+                if (!dup) out_rids[count++] = rid;
+            }
         }
-        if (!dup) out_rids[count++] = rid;
+    }
+    USHORT bcnt = 0;
+    HidP_GetButtonCaps(HidP_Feature, NULL, &bcnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
+    if (bcnt > 0) {
+        HIDP_BUTTON_CAPS bcaps[64];
+        USHORT bn = bcnt > 64 ? 64 : bcnt;
+        if (HidP_GetButtonCaps(HidP_Feature, bcaps, &bn,
+                               (PHIDP_PREPARSED_DATA)dev->preparsed) == HIDP_STATUS_SUCCESS) {
+            for (USHORT c = 0; c < bn && count < max_rids; ++c) {
+                uint8_t rid = bcaps[c].ReportID;
+                int dup = 0;
+                for (size_t k = 0; k < count; ++k) {
+                    if (out_rids[k] == rid) { dup = 1; break; }
+                }
+                if (!dup) out_rids[count++] = rid;
+            }
+        }
     }
     return count;
 }
@@ -193,6 +230,23 @@ size_t octans_hid_collect_output_rids(octans_hid_dev_t *dev, uint8_t *out_rids, 
                                   (PHIDP_PREPARSED_DATA)dev->preparsed) == HIDP_STATUS_SUCCESS) {
                 for (USHORT c = 0; c < cap_n && count < max_rids; ++c) {
                     uint8_t rid = caps[c].ReportID;
+                    int dup = 0;
+                    for (size_t k = 0; k < count; ++k) {
+                        if (out_rids[k] == rid) { dup = 1; break; }
+                    }
+                    if (!dup) out_rids[count++] = rid;
+                }
+            }
+        }
+        USHORT bcnt = 0;
+        HidP_GetButtonCaps(HidP_Output, NULL, &bcnt, (PHIDP_PREPARSED_DATA)dev->preparsed);
+        if (bcnt > 0) {
+            HIDP_BUTTON_CAPS bcaps[64];
+            USHORT bn = bcnt > 64 ? 64 : bcnt;
+            if (HidP_GetButtonCaps(HidP_Output, bcaps, &bn,
+                                   (PHIDP_PREPARSED_DATA)dev->preparsed) == HIDP_STATUS_SUCCESS) {
+                for (USHORT c = 0; c < bn && count < max_rids; ++c) {
+                    uint8_t rid = bcaps[c].ReportID;
                     int dup = 0;
                     for (size_t k = 0; k < count; ++k) {
                         if (out_rids[k] == rid) { dup = 1; break; }

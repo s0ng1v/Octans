@@ -1862,6 +1862,271 @@ static void test_v120_edifier_hecate(void) {
     ASSERT_EQ_INT((int)VAR_KB_MCHOSE_BY, first_matching_variant(0x258Au, 0x024Eu, 0xFF02u, 0x0001u, 1));
 }
 
+static void test_v123_mchose_qhw_glw_and_flydigi(void) {
+    octans_proto_reading_t r;
+
+    /* 1. MCHOSE QHW V3 Keyboards (G87 V3 / K87 V3 / G98 V3: UP=0xFF80:0x0001, Report 0x4D, flags=0x03) */
+    uint8_t qhw_req32[32];
+    octans_proto_build_mchose_qhw(0x0904u, 0x01u, qhw_req32, sizeof(qhw_req32));
+    ASSERT_EQ_INT(0x4D, qhw_req32[0]);
+    ASSERT_EQ_INT(0x01, qhw_req32[1]);
+    ASSERT_EQ_INT(0x03, qhw_req32[2]);
+    ASSERT_EQ_INT(0x00, qhw_req32[3]);
+    ASSERT_EQ_INT(0x04, qhw_req32[4]);
+    ASSERT_EQ_INT(0x09, qhw_req32[5]);
+    ASSERT_EQ_INT(0x00, qhw_req32[6]);
+    ASSERT_EQ_INT(0x01, qhw_req32[7]);
+    ASSERT_EQ_INT(0x0F, qhw_req32[8]); /* 03 ^ 00 ^ 04 ^ 09 ^ 00 ^ 01 */
+
+    uint8_t qhw_req64[64];
+    octans_proto_build_mchose_qhw(0x0900u, 0x05u, qhw_req64, sizeof(qhw_req64));
+    ASSERT_EQ_INT(0x4D, qhw_req64[0]);
+    ASSERT_EQ_INT(0x03, qhw_req64[2]);
+    ASSERT_EQ_INT(0x00, qhw_req64[4]);
+    ASSERT_EQ_INT(0x09, qhw_req64[5]);
+    ASSERT_EQ_INT(0x0F, qhw_req64[8]); /* 03 ^ 00 ^ 00 ^ 09 ^ 00 ^ 05 */
+
+    /* QHW 0x0904 reply: discharging 85%, charging 62%, full 100% */
+    uint8_t qhw_rep[32];
+    memset(qhw_rep, 0, sizeof(qhw_rep));
+    qhw_rep[0] = 0x4Du; qhw_rep[1] = 0x01u; qhw_rep[2] = 0x03u; qhw_rep[3] = 0x02u;
+    qhw_rep[4] = 0x04u; qhw_rep[5] = 0x09u; qhw_rep[6] = 0x00u; qhw_rep[7] = 0x01u;
+    qhw_rep[8] = 0x00u; qhw_rep[9] = 85u;
+    qhw_rep[10] = octans_crc_xor(qhw_rep, 2u, 9u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x01u, &r));
+    ASSERT_EQ_INT(85, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Unprefixed (no leading 0x4D) reply works too */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_rep + 1, sizeof(qhw_rep) - 1u, 0x0904u, 0x01u, &r));
+    ASSERT_EQ_INT(85, r.battery_percent);
+
+    /* Charging & full */
+    qhw_rep[8] = 0x01u; qhw_rep[9] = 62u;
+    qhw_rep[10] = octans_crc_xor(qhw_rep, 2u, 9u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x01u, &r));
+    ASSERT_EQ_INT(62, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    qhw_rep[8] = 0x02u; qhw_rep[9] = 100u;
+    qhw_rep[10] = octans_crc_xor(qhw_rep, 2u, 9u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x01u, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* Reject seq mismatch, bad XOR, and level=0 */
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x02u, &r));
+    qhw_rep[10] ^= 0xFFu;
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x01u, &r));
+    qhw_rep[9] = 0u;
+    qhw_rep[10] = octans_crc_xor(qhw_rep, 2u, 9u);
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_qhw(qhw_rep, sizeof(qhw_rep), 0x0904u, 0x01u, &r));
+
+    /* QHW 0x0900 deviceInfo reply: wireless, wired, offline/asleep */
+    uint8_t qhw_info[32];
+    memset(qhw_info, 0, sizeof(qhw_info));
+    qhw_info[0] = 0x4Du; qhw_info[1] = 0x01u; qhw_info[2] = 0x03u; qhw_info[3] = 13u;
+    qhw_info[4] = 0x00u; qhw_info[5] = 0x09u; qhw_info[6] = 0x00u; qhw_info[7] = 0x02u;
+    qhw_info[8] = 0x37u; qhw_info[9] = 0x38u; qhw_info[10] = 0x15u; qhw_info[11] = 0x10u;
+    qhw_info[18] = 0x02u; /* wireless */
+    qhw_info[19] = 0x00u; /* discharging */
+    qhw_info[20] = 76u;
+    qhw_info[21] = octans_crc_xor(qhw_info, 2u, 20u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_info, sizeof(qhw_info), 0x0900u, 0x02u, &r));
+    ASSERT_EQ_INT(76, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_CONN_DONGLE_24G, r.conn);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    qhw_info[18] = 0x01u; qhw_info[19] = 0x01u; qhw_info[20] = 90u;
+    qhw_info[21] = octans_crc_xor(qhw_info, 2u, 20u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_info, sizeof(qhw_info), 0x0900u, 0x02u, &r));
+    ASSERT_EQ_INT(90, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_CONN_WIRED, r.conn);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    qhw_info[18] = 0x00u; /* offline/asleep */
+    qhw_info[21] = octans_crc_xor(qhw_info, 2u, 20u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_qhw(qhw_info, sizeof(qhw_info), 0x0900u, 0x02u, &r));
+    ASSERT_EQ_INT(1, r.asleep);
+    ASSERT_EQ_INT(OCTANS_PWR_SLEEPING, r.power_state);
+
+    /* QHW Protocol Table Routing */
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_QHW, first_matching_variant(0x3837u, 0x1015u, 0xFF80u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_QHW, first_matching_variant(0x3837u, 0x2029u, 0xFF80u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_QHW, first_matching_variant(0x3837u, 0x2023u, 0xFF80u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_QHW, first_matching_variant(0x3837u, 0x2025u, 0xFF80u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_QHW, first_matching_variant(0x3837u, 0x1017u, 0xFF80u, 0x0001u, 1));
+
+    /* 2. MCHOSE GLW Keyboards (K99 V3 / G87 V2 8K / G75 V2 8K / K87S) */
+    uint8_t glw_req65[65];
+    octans_proto_build_mchose_glw(0x04u, 0u, 56u, 1, glw_req65, sizeof(glw_req65));
+    ASSERT_EQ_INT(0x00, glw_req65[0]);
+    ASSERT_EQ_INT(0x55, glw_req65[1]);
+    ASSERT_EQ_INT(0x04, glw_req65[2]);
+    ASSERT_EQ_INT(0x38, glw_req65[4]);
+    ASSERT_EQ_INT(0x38, glw_req65[5]);
+
+    uint8_t glw_req64[64];
+    octans_proto_build_mchose_glw(0x05u, 64u, 56u, 0, glw_req64, sizeof(glw_req64));
+    ASSERT_EQ_INT(0x55, glw_req64[0]);
+    ASSERT_EQ_INT(0x05, glw_req64[1]);
+    ASSERT_EQ_INT(0x78, glw_req64[3]); /* (56 + 64) & 0xFF */
+    ASSERT_EQ_INT(0x38, glw_req64[4]);
+    ASSERT_EQ_INT(0x40, glw_req64[5]);
+
+    /* GLW active slot parser (permutation & direct) */
+    uint8_t glw_slot_rep[64];
+    memset(glw_slot_rep, 0, sizeof(glw_slot_rep));
+    glw_slot_rep[0] = 0xAAu; glw_slot_rep[1] = 0x04u; glw_slot_rep[4] = 56u;
+    glw_slot_rep[8] = 1u; /* active index 1 */
+    glw_slot_rep[9] = 4u;
+    glw_slot_rep[10] = 2u; glw_slot_rep[11] = 3u; glw_slot_rep[12] = 0u; glw_slot_rep[13] = 1u;
+    glw_slot_rep[3] = octans_crc_sum_range(glw_slot_rep, 4u, 63u);
+    uint8_t slot = 0xFFu;
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_glw_slot(glw_slot_rep, sizeof(glw_slot_rep), &slot));
+    ASSERT_EQ_INT(3, slot);
+
+    glw_slot_rep[3] ^= 0x01u;
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_glw_slot(glw_slot_rep, sizeof(glw_slot_rep), &slot));
+
+    /* GLW battery block parser (discharging, charging, full, passive K87S) */
+    uint8_t glw_bat[65];
+    memset(glw_bat, 0, sizeof(glw_bat));
+    glw_bat[0] = 0x00u; /* leading rid 0 */
+    glw_bat[1] = 0xAAu; glw_bat[2] = 0x05u; glw_bat[5] = 56u; glw_bat[6] = 64u; /* offset 64 */
+    glw_bat[9 + 32] = 83u; /* discharging 83% */
+    glw_bat[4] = octans_crc_sum_range(glw_bat + 1, 4u, 63u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_glw(glw_bat, sizeof(glw_bat), 64u, &r));
+    ASSERT_EQ_INT(83, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Reject offset mismatch & bad checksum */
+    ASSERT_EQ_INT(0, octans_proto_parse_mchose_glw(glw_bat, sizeof(glw_bat), 0u, &r));
+    glw_bat[9 + 32] = 0x80u | 55u; /* charging 55% */
+    glw_bat[4] = octans_crc_sum_range(glw_bat + 1, 4u, 63u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_glw(glw_bat, sizeof(glw_bat), 64u, &r));
+    ASSERT_EQ_INT(55, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    glw_bat[9 + 32] = 0x80u | 100u; /* full 100% */
+    glw_bat[4] = octans_crc_sum_range(glw_bat + 1, 4u, 63u);
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_glw(glw_bat, sizeof(glw_bat), 64u, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    const uint8_t glw_k87s_push[8] = {0x00, 0xFA, 0xFB, 0x07, 76, 0x00, 0x00, 0x00};
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_mchose_glw(glw_k87s_push, sizeof(glw_k87s_push), 0u, &r));
+    ASSERT_EQ_INT(76, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* GLW Protocol Table Routing */
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_GLW, first_matching_variant(0x3837u, 0x3033u, 0x0001u, 0x0000u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_GLW, first_matching_variant(0x3837u, 0x3033u, 0xFF31u, 0x0074u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_GLW, first_matching_variant(0x3837u, 0x2020u, 0x0001u, 0x0000u, 1));
+    ASSERT_EQ_INT((int)VAR_KB_MCHOSE_GLW, first_matching_variant(0x3837u, 0x2021u, 0x0001u, 0x0000u, 1));
+
+    /* 3. Flydigi V2 Controllers (Apex 5 / Vader 5 Pro / Apex 6 on VID 0x37D7 UP=0xFFA0:0x0001) */
+    uint8_t fd_req32[32];
+    octans_proto_build_flydigi_v2(0x03u, 0x01u, 0x02u, fd_req32, sizeof(fd_req32));
+    ASSERT_EQ_INT(0x03, fd_req32[0]);
+    ASSERT_EQ_INT(0x5A, fd_req32[1]);
+    ASSERT_EQ_INT(0xA5, fd_req32[2]);
+    ASSERT_EQ_INT(0x01, fd_req32[3]);
+    ASSERT_EQ_INT(0x02, fd_req32[4]);
+    ASSERT_EQ_INT(0x00, fd_req32[5]);
+
+    uint8_t fd_req33[33];
+    octans_proto_build_flydigi_v2(0x00u, 0x01u, 0x02u, fd_req33, sizeof(fd_req33));
+    ASSERT_EQ_INT(0x00, fd_req33[0]);
+    ASSERT_EQ_INT(0x5A, fd_req33[1]);
+    ASSERT_EQ_INT(0xA5, fd_req33[2]);
+
+    /* Apex 5 numbered Input Report 0x04: dev_id=128, new_arch wireless (conn=1), 4/5 = 80% */
+    uint8_t apex5_rep[32];
+    memset(apex5_rep, 0, sizeof(apex5_rep));
+    apex5_rep[0] = 0x04u;
+    apex5_rep[1] = 0x5Au; apex5_rep[2] = 0xA5u; apex5_rep[3] = 0x01u;
+    apex5_rep[6] = 128u;  /* p[5] = deviceID (Apex 5) */
+    apex5_rep[7] = 1u;    /* p[6] = wireless under new_arch */
+    apex5_rep[12] = 0x04u; /* p[11] = state 0 (discharging), step 4 (80%) */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+    ASSERT_EQ_INT(80, r.battery_percent);
+    ASSERT_EQ_INT(1, r.is_estimated);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+    ASSERT_EQ_INT(OCTANS_CONN_DONGLE_24G, r.conn);
+    ASSERT_TRUE(wcscmp(r.name, L"Flydigi Apex 5") == 0);
+
+    /* Apex 5 charging 60% & wired under new_arch (conn=0) */
+    apex5_rep[7] = 0u;
+    apex5_rep[12] = 0x13u; /* state 1 (charging), step 3 (60%) */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+    ASSERT_EQ_INT(60, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+    ASSERT_EQ_INT(OCTANS_CONN_WIRED, r.conn);
+
+    /* Apex 5 full (state=2 -> 100%) */
+    apex5_rep[12] = 0x24u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 0, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* Vader 5 Pro unnumbered frame (starts directly with 5A A5 01): dev_id=130, old_arch wireless (conn=2) */
+    uint8_t vader5_rep[32];
+    memset(vader5_rep, 0, sizeof(vader5_rep));
+    vader5_rep[0] = 0x5Au; vader5_rep[1] = 0xA5u; vader5_rep[2] = 0x01u;
+    vader5_rep[5] = 130u;  /* Vader 5 Pro */
+    vader5_rep[6] = 2u;    /* wireless under old_arch */
+    vader5_rep[11] = 0x05u; /* 100% discharging */
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_flydigi_v2(vader5_rep, sizeof(vader5_rep), 0x2401u, 0, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_CONN_DONGLE_24G, r.conn);
+    ASSERT_TRUE(wcscmp(r.name, L"Flydigi Vader 5 Pro") == 0);
+
+    /* Apex 6 (dev_id=149, x10 scaling: step=7 -> 70%) */
+    uint8_t apex6_rep[32];
+    memset(apex6_rep, 0, sizeof(apex6_rep));
+    apex6_rep[0] = 0x5Au; apex6_rep[1] = 0xA5u; apex6_rep[2] = 0x01u;
+    apex6_rep[5] = 149u;
+    apex6_rep[11] = 0x07u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_flydigi_v2(apex6_rep, sizeof(apex6_rep), 0x2502u, 1, &r));
+    ASSERT_EQ_INT(70, r.battery_percent);
+    ASSERT_TRUE(wcscmp(r.name, L"Flydigi Apex 6") == 0);
+
+    /* Reject echo (dev_id=0), out-of-range step (>5 on Apex 5), invalid state, 0xEF input stream */
+    apex5_rep[6] = 0u;
+    ASSERT_EQ_INT(0, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+    apex5_rep[6] = 128u;
+    apex5_rep[12] = 0x06u; /* step 6 invalid on Apex 5 */
+    ASSERT_EQ_INT(0, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+    apex5_rep[12] = 0x35u; /* state 3 invalid */
+    ASSERT_EQ_INT(0, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+    apex5_rep[3] = 0xEFu; /* normal joystick stream */
+    apex5_rep[12] = 0x04u;
+    ASSERT_EQ_INT(0, octans_proto_parse_flydigi_v2(apex5_rep, sizeof(apex5_rep), 0x2501u, 1, &r));
+
+    /* Flydigi V2 Protocol Table Routing (0xFFA0 and byte-swapped 0xA0FF) */
+    ASSERT_EQ_INT((int)VAR_INDEP_FLYDIGI_V2, first_matching_variant(0x37D7u, 0x2501u, 0xFFA0u, 0x0001u, 2));
+    ASSERT_EQ_INT((int)VAR_INDEP_FLYDIGI_V2, first_matching_variant(0x37D7u, 0x2401u, 0xFFA0u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_FLYDIGI_V2, first_matching_variant(0x37D7u, 0x2502u, 0xFFA0u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_INDEP_FLYDIGI_V2, first_matching_variant(0x37D7u, 0x2599u, 0xA0FFu, 0x0001u, 1));
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -1879,6 +2144,7 @@ int main(void) {
     test_new_vendor_protocols();
     test_v110_leobog_darmoshark_and_audit();
     test_v120_edifier_hecate();
+    test_v123_mchose_qhw_glw_and_flydigi();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);
