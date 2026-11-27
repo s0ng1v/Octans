@@ -112,7 +112,7 @@ cli/        独立无头命令行工具（支持 list --json、test-rule、probe
 include/    后端与 UI 稳定 C ABI 头文件与版本定义
 assets/     Octans 品牌视觉资产与多分辨率图标
 installer/  Inno Setup 安装脚本与一键打包脚本
-tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（661 项断言）
+tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（659 项断言）
 ```
 
 ### 从源码构建
@@ -120,7 +120,7 @@ tests/      协议解析、混淆表匹配、多端去重与 ABI 单元测试（
 需要 Windows 10/11 与 LLVM-MinGW (UCRT) 工具链（打包安装程序需 Inno Setup 6）：
 
 ```powershell
-# 一键编译命令行工具、运行 661 项单元测试并构建 build\Octans.exe
+# 一键编译命令行工具、运行 659 项单元测试并构建 build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
 # 一键构建并打包为 Windows 安装程序（输出 dist\Octans-Setup-v1.2.2.exe）
