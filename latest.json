@@ -1,9 +1,9 @@
 {
-  "version": "1.2.4",
-  "notes": "v1.2.4：新增华硕 ROG 游侠 Strix Scope RX TKL 无线版（0B05:1A07）及 Claymore II / Scope II 96 / Azoth / Falchion 全系独立无线键盘 00 12 01 协议直读；修复公模游戏鼠标（如魔咖等）误识别为键盘的根因；面板卡片与托盘右键菜单新增「设备图标」7 种矢量图标一键切换并持久化（支持一键恢复默认）。",
-  "sha256": "E78FFD0FC6BCE2480F314D657D9EDC08AA8EE5D14686AAACCDB7C67BB618625C",
-  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe",
+  "version": "1.2.5",
+  "notes": "v1.2.5：全面重绘「入耳耳机」矢量图标为经典双侧入耳耳柄形态（同步优化液态灌注、线性轮廓、托盘小尺寸辨识度及声学气孔细节）；同步优化 UI 编译体积，Octans.exe 降至 396.5 KB。",
+  "sha256": "9D39E72A3E4D9E35CD4C9DAC78C87B780772A1A82719987993FB0F8AE342616F",
+  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.5/Octans-Setup-v1.2.5.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.5/Octans-Setup-v1.2.5.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

@@ -296,19 +296,75 @@ static void DrawGamepadGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1
     rt->FillEllipse(MakeEllipse(ox + 17.3f * u, oy + 11.5f * u, dr, dr), brush);
 }
 
-static void DrawEarbudsGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
-    float dx = s * 0.42f;
-    float head_r = s * 0.32f;
-    float stem_w = compact ? (s * 0.24f) : (s * 0.19f);
-    float stem_h = s * 0.76f;
+static void BuildSingleEarbudPath24(
+    ID2D1GeometrySink *sink,
+    float ox, float oy, float u,
+    bool mirror_right
+) {
+    /* Iconic AirPods / TWS silhouette in 24x24 viewBox (compact table keeps footprint tiny). */
+    static const float kBeziers[6][6] = {
+        { 3.1f,  5.0f,  4.9f,  3.5f,  7.4f,  3.7f  }, /* Top dome */
+        { 9.4f,  3.9f, 10.6f,  5.4f, 10.6f,  7.4f  }, /* Upper inward nozzle */
+        {10.6f,  9.5f,  9.2f, 11.1f,  7.2f, 11.2f  }, /* Lower nozzle */
+        { 6.5f, 11.25f, 6.15f,11.6f,  6.15f,12.4f  }, /* Stem inner shoulder */
+        { 6.15f,19.8f,  5.48f,20.4f,  4.62f,20.4f  }, /* Stem bottom right */
+        { 3.76f,20.4f,  3.1f, 19.8f,  3.1f, 18.8f  }  /* Stem bottom left */
+    };
+    auto pt = [&](float x, float y) {
+        return MakePt(ox + (mirror_right ? (24.0f - x) : x) * u, oy + y * u);
+    };
+    sink->BeginFigure(pt(3.1f, 8.0f), D2D1_FIGURE_BEGIN_FILLED);
+    for (int i = 0; i < 6; ++i) {
+        if (i == 4) sink->AddLine(pt(6.15f, 18.8f));
+        D2D1_BEZIER_SEGMENT b = {
+            pt(kBeziers[i][0], kBeziers[i][1]),
+            pt(kBeziers[i][2], kBeziers[i][3]),
+            pt(kBeziers[i][4], kBeziers[i][5])
+        };
+        sink->AddBezier(b);
+    }
+    sink->AddLine(pt(3.1f, 8.0f));
+    sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+}
 
-    rt->FillEllipse(MakeEllipse(cx - dx, cy - s * 0.24f, head_r, head_r * 0.88f), brush);
-    D2D1_RECT_F lstem = MakeRect(cx - dx - stem_w * 0.5f, cy - s * 0.10f, cx - dx + stem_w * 0.5f, cy - s * 0.10f + stem_h);
-    rt->FillRoundedRectangle(MakeRoundedRect(lstem, stem_w * 0.5f, stem_w * 0.5f), brush);
+static void BuildEarbudsPath24(ID2D1Factory *factory, float ox, float oy, float u, ComPtr<ID2D1PathGeometry> &out_geo) {
+    if (!factory || FAILED(factory->CreatePathGeometry(out_geo.Put()))) return;
+    ComPtr<ID2D1GeometrySink> sink;
+    if (FAILED(out_geo->Open(sink.Put()))) return;
+    BuildSingleEarbudPath24(sink.Get(), ox, oy, u, false);
+    BuildSingleEarbudPath24(sink.Get(), ox, oy, u, true);
+    sink->Close();
+}
 
-    rt->FillEllipse(MakeEllipse(cx + dx, cy - s * 0.24f, head_r, head_r * 0.88f), brush);
-    D2D1_RECT_F rstem = MakeRect(cx + dx - stem_w * 0.5f, cy - s * 0.10f, cx + dx + stem_w * 0.5f, cy - s * 0.10f + stem_h);
-    rt->FillRoundedRectangle(MakeRoundedRect(rstem, stem_w * 0.5f, stem_w * 0.5f), brush);
+static void DrawEarbudsGlyph(ID2D1Factory *factory, ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
+    /* Sleek 24x24 AirPods / TWS outline pair matching Mouse/Keyboard/Headset/Gamepad style */
+    float u = s / (compact ? 9.8f : 10.4f);
+    float ox = cx - 12.0f * u;
+    float oy = cy - 12.0f * u;
+    float stroke = (compact ? 1.90f : 1.70f) * u;
+    if (stroke < (compact ? 1.22f : 1.12f)) stroke = compact ? 1.22f : 1.12f;
+
+    ComPtr<ID2D1StrokeStyle> rcap;
+    CreateRoundStroke(factory, rcap);
+
+    ComPtr<ID2D1PathGeometry> geo;
+    BuildEarbudsPath24(factory, ox, oy, u, geo);
+    if (geo) {
+        if (compact && IsDarkContourInk(brush)) {
+            ComPtr<ID2D1SolidColorBrush> wf;
+            if (SUCCEEDED(rt->CreateSolidColorBrush(MakeColor(1.0f, 1.0f, 1.0f, 0.96f), wf.Put()))) {
+                rt->FillGeometry(geo.Get(), wf.Get());
+            }
+        }
+        rt->DrawGeometry(geo.Get(), brush, stroke, rcap.Get());
+    }
+
+    /* Subtle acoustic speaker vent dots centered inside each bulbous ear head */
+    float vr = 0.85f * u;
+    if (vr >= 0.72f && !compact) {
+        rt->FillEllipse(MakeEllipse(ox + 7.2f * u, oy + 7.3f * u, vr, vr * 1.12f), brush);
+        rt->FillEllipse(MakeEllipse(ox + 16.8f * u, oy + 7.3f * u, vr, vr * 1.12f), brush);
+    }
 }
 
 static void DrawStylusGlyph(ID2D1RenderTarget *rt, ID2D1Brush *brush, float cx, float cy, float s, bool compact) {
@@ -378,7 +434,7 @@ void DrawDeviceGlyph(
             DrawHeadsetGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_EARBUDS:
-            DrawEarbudsGlyph(rt, brush, cx, cy, half_size, compact_tray);
+            DrawEarbudsGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
             break;
         case OCTANS_DEV_GAMEPAD:
             DrawGamepadGlyph(factory, rt, brush, cx, cy, half_size, compact_tray);
@@ -468,13 +524,10 @@ static bool BuildSolidSilhouette48(
             return true;
         }
         case OCTANS_DEV_EARBUDS: {
-            ComPtr<ID2D1RoundedRectangleGeometry> l1, r1;
-            if (!rrect(10.0f, 9.0f, 11.0f, 30.0f, 5.5f, l1)) return false;
-            if (!rrect(27.0f, 9.0f, 11.0f, 30.0f, 5.5f, r1)) return false;
-            ID2D1Geometry *parts[2] = { l1.Get(), r1.Get() };
-            ComPtr<ID2D1GeometryGroup> grp;
-            if (FAILED(factory->CreateGeometryGroup(D2D1_FILL_MODE_WINDING, parts, 2, grp.Put()))) return false;
-            out_geo.Reset(grp.Get());
+            ComPtr<ID2D1PathGeometry> eb;
+            BuildEarbudsPath24(factory, ox, oy, u * 2.0f, eb);
+            if (!eb) return false;
+            out_geo.Reset(eb.Get());
             out_geo->AddRef();
             return true;
         }
@@ -523,6 +576,7 @@ static void GetLiquidSilhouetteBounds48(octans_device_kind_t kind, float *out_to
         case OCTANS_DEV_MOUSE:    *out_top = 5.0f;  *out_bot = 43.0f; break;
         case OCTANS_DEV_KEYBOARD: *out_top = 12.0f; *out_bot = 36.0f; break;
         case OCTANS_DEV_HEADSET:  *out_top = 8.0f;  *out_bot = 40.0f; break;
+        case OCTANS_DEV_EARBUDS:  *out_top = 7.6f;  *out_bot = 40.8f; break;
         case OCTANS_DEV_GAMEPAD:  *out_top = 10.5f; *out_bot = 37.8f; break;
         default:                  *out_top = 6.0f;  *out_bot = 43.0f; break;
     }
@@ -696,6 +750,15 @@ void DrawLiquidSilhouetteGlyph(
         if (dr < 1.0f) dr = 1.0f;
         rt->FillEllipse(MakeEllipse(ox + 30.6f * u, oy + 18.8f * u, dr, dr), br.Get());
         rt->FillEllipse(MakeEllipse(ox + 34.6f * u, oy + 22.2f * u, dr, dr), br.Get());
+    } else if (kind == OCTANS_DEV_EARBUDS) {
+        /* Subtle acoustic vent ovals centered on each inward-facing earbud head */
+        float vx = 1.65f * u;
+        float vy = 2.1f * u;
+        if (vx >= 0.85f) {
+            br->SetColor(mul_a(detail_col, 0.84f));
+            rt->FillEllipse(MakeEllipse(ox + 14.8f * u, oy + 14.6f * u, vx, vy), br.Get());
+            rt->FillEllipse(MakeEllipse(ox + 33.2f * u, oy + 14.6f * u, vx, vy), br.Get());
+        }
     } else if (kind == OCTANS_DEV_SPEAKER) {
         br->SetColor(mul_a(detail_col, 0.85f));
         rt->FillEllipse(MakeEllipse(ox + 24.0f * u, oy + 15.0f * u, 3.0f * u, 3.0f * u), br.Get());

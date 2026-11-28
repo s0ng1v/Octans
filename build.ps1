@@ -97,7 +97,7 @@ $uiFlags = @(
 if ($DebugBuild) {
     $uiFlags += @("-O0", "-g")
 } else {
-    $uiFlags += @("-Os", "-ffunction-sections", "-fdata-sections")
+    $uiFlags += @("-Oz", "-ffunction-sections", "-fdata-sections")
 }
 
 $uiObjs = @()
