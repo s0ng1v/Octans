@@ -327,14 +327,25 @@ struct UiState {
     char hidden_ids[MAX_DEVICES][64] = {};
     size_t hidden_count = 0;
 
+    /* Per-device manual icon overrides persisted under [DeviceIcons] in config.ini. */
+    struct DeviceKindOverride {
+        char id[64];
+        octans_device_kind_t kind;
+    };
+    DeviceKindOverride kind_overrides[MAX_DEVICES] = {};
+    size_t kind_override_count = 0;
+    octans_device_kind_t raw_kinds[MAX_DEVICES] = {};
+
     DemoMenuHooks demo_hooks = {};
 };
 
 UiState &GetState();
 
-/* Multi-pin & hidden helpers */
+/* Multi-pin, hidden & custom icon helpers */
 bool IsDevicePinned(const UiState &st, const char *device_id);
 bool IsDeviceHidden(const UiState &st, const char *device_id);
+bool HasDeviceKindOverride(const UiState &st, const char *device_id);
+octans_device_kind_t GetDeviceKindOverride(const UiState &st, const char *device_id);
 size_t CountActivePinnedDevices(const UiState &st);
 
 /* Shared controller actions called by panel & tray. */
@@ -342,6 +353,7 @@ void ActionTriggerRefresh();
 void ActionTriggerFullScan();
 void ActionTogglePinDevice(const char *device_id);
 void ActionRemoveDevice(const char *device_id);
+void ActionSetDeviceKind(const char *device_id, octans_device_kind_t kind);
 void ActionShowContextMenu(int screen_x, int screen_y, int clicked_device_index, MenuMode mode);
 void ActionPromptRenameDevice(int device_index);
 void ActionToggleTrayStyle(TrayStyle style);

@@ -9,12 +9,44 @@ namespace octans_ui {
 
 static constexpr UINT_PTR TIMER_MENU_ANIM = 1;
 
+static constexpr int kKindChoiceCount = 7;
+static constexpr octans_device_kind_t kKindChoices[kKindChoiceCount] = {
+    OCTANS_DEV_MOUSE,
+    OCTANS_DEV_KEYBOARD,
+    OCTANS_DEV_HEADSET,
+    OCTANS_DEV_EARBUDS,
+    OCTANS_DEV_GAMEPAD,
+    OCTANS_DEV_STYLUS,
+    OCTANS_DEV_SPEAKER
+};
+
+static const wchar_t *DescribeKindLabel(octans_device_kind_t k) {
+    switch (k) {
+        case OCTANS_DEV_MOUSE:    return L"\u9f20\u6807";
+        case OCTANS_DEV_KEYBOARD: return L"\u952e\u76d8";
+        case OCTANS_DEV_HEADSET:  return L"\u5934\u6234\u8033\u673a";
+        case OCTANS_DEV_EARBUDS:  return L"\u5165\u8033\u8033\u673a";
+        case OCTANS_DEV_GAMEPAD:  return L"\u6e38\u620f\u624b\u67c4";
+        case OCTANS_DEV_STYLUS:   return L"\u89e6\u63a7\u7b14";
+        case OCTANS_DEV_SPEAKER:  return L"\u97f3\u7bb1";
+        default:                  return L"\u81ea\u52a8";
+    }
+}
+
 enum HitZone : int {
     HIT_NONE = 0,
     HIT_REFRESH,
     HIT_SCAN_DEVICES,
     HIT_PIN_DEVICE,
     HIT_RENAME_DEVICE,
+    HIT_KIND_RESET,
+    HIT_KIND_0,
+    HIT_KIND_1,
+    HIT_KIND_2,
+    HIT_KIND_3,
+    HIT_KIND_4,
+    HIT_KIND_5,
+    HIT_KIND_6,
     HIT_DELETE_DEVICE,
     HIT_SEG_OCTANS,
     HIT_SEG_NEBULA,
@@ -43,6 +75,7 @@ struct MenuState {
     bool has_scan_devices = false;
     bool has_device_pin = false;
     bool has_rename = false;
+    bool has_kind_picker = false;
     bool has_delete_device = false;
     bool has_general = false;
     bool has_demo = false;
@@ -72,6 +105,10 @@ struct MenuState {
     D2D1_RECT_F rc_scan_devices = {};
     D2D1_RECT_F rc_pin = {};
     D2D1_RECT_F rc_rename = {};
+    float div_kind_y = 0.0f;
+    float kind_label_y = 0.0f;
+    D2D1_RECT_F rc_kind_reset = {};
+    D2D1_RECT_F rc_kind[kKindChoiceCount] = {};
     float div_dev_del_y = 0.0f;
     D2D1_RECT_F rc_delete = {};
     float div1_y = 0.0f;
@@ -132,11 +169,12 @@ static void LayoutMenu(MenuState &m) {
     bool valid_dev = (m.device_index >= 0 && static_cast<size_t>(m.device_index) < st.device_count);
 
     if (m.mode == MENU_MODE_PANEL_DEVICE) {
-        m.logical_w         = 200.0f;
+        m.logical_w         = 232.0f;
         m.has_refresh       = false;
         m.has_scan_devices  = false;
         m.has_device_pin    = valid_dev;
         m.has_rename        = valid_dev;
+        m.has_kind_picker   = valid_dev;
         m.has_delete_device = valid_dev;
         m.has_general       = false;
         m.has_demo          = false;
@@ -146,6 +184,7 @@ static void LayoutMenu(MenuState &m) {
         m.has_scan_devices  = (st.demo_hooks.on_action == nullptr);
         m.has_device_pin    = false;
         m.has_rename        = false;
+        m.has_kind_picker   = false;
         m.has_delete_device = false;
         m.has_general       = true;
         m.has_demo          = (st.demo_hooks.on_action != nullptr);
@@ -156,6 +195,7 @@ static void LayoutMenu(MenuState &m) {
         m.has_scan_devices  = (st.demo_hooks.on_action == nullptr);
         m.has_device_pin    = valid_dev;
         m.has_rename        = (st.device_count > 0);
+        m.has_kind_picker   = valid_dev;
         m.has_delete_device = valid_dev;
         m.has_general       = true;
         m.has_demo          = (st.demo_hooks.on_action != nullptr);
@@ -194,8 +234,33 @@ static void LayoutMenu(MenuState &m) {
         m.rc_rename = {};
     }
 
+    if (m.has_kind_picker) {
+        y += 3.0f;
+        m.div_kind_y = y;
+        y += 7.0f;
+        m.kind_label_y = y;
+        m.rc_kind_reset = MakeRect(w - pad - 62.0f, y - 1.0f, w - pad - 2.0f, y + 17.0f);
+        y += 20.0f;
+
+        float inner_l = pad + 2.0f;
+        float inner_r = w - pad - 2.0f;
+        float gap = 4.0f;
+        float btn_w = (inner_r - inner_l - gap * static_cast<float>(kKindChoiceCount - 1)) / static_cast<float>(kKindChoiceCount);
+        float btn_h = 28.0f;
+        for (int i = 0; i < kKindChoiceCount; ++i) {
+            float bx = inner_l + static_cast<float>(i) * (btn_w + gap);
+            m.rc_kind[i] = MakeRect(bx, y, bx + btn_w, y + btn_h);
+        }
+        y += btn_h + 4.0f;
+    } else {
+        m.div_kind_y = 0.0f;
+        m.kind_label_y = 0.0f;
+        m.rc_kind_reset = {};
+        for (int i = 0; i < kKindChoiceCount; ++i) m.rc_kind[i] = {};
+    }
+
     if (m.has_delete_device) {
-        if (!m.has_general) {
+        if (!m.has_general || m.has_kind_picker) {
             y += 3.0f;
             m.div_dev_del_y = y;
             y += 6.0f;
@@ -469,6 +534,66 @@ static void RenderMenuToDC(MenuState &m, HDC target_dc) {
                              MakeRect(m.rc_rename.left + 32.0f, m.rc_rename.top, m.rc_rename.right - 8.0f, m.rc_rename.bottom), b.Get());
             }
 
+            /* 3a. Inline Device Icon Picker (7 crisp glyphs + Reset to Auto) */
+            if (m.has_kind_picker && m.device_index >= 0 && static_cast<size_t>(m.device_index) < st.device_count) {
+                const octans_device_view_t &dev = st.devices[m.device_index];
+                bool has_ov = HasDeviceKindOverride(st, dev.id);
+                if (m.div_kind_y > 0.0f) {
+                    draw_div(m.div_kind_y);
+                }
+
+                b->SetColor(pal.text_secondary);
+                rt->DrawText(L"\u8bbe\u5907\u56fe\u6807", 4, m.fmt_small.Get(),
+                             MakeRect(14.0f, m.kind_label_y, m.logical_w - 72.0f, m.kind_label_y + 18.0f), b.Get());
+
+                int hov_ki = -1;
+                if (m.hover_zone >= HIT_KIND_0 && m.hover_zone <= HIT_KIND_6) {
+                    hov_ki = m.hover_zone - HIT_KIND_0;
+                }
+                if (hov_ki >= 0) {
+                    const wchar_t *klbl = DescribeKindLabel(kKindChoices[hov_ki]);
+                    b->SetColor(accent);
+                    rt->DrawText(klbl, static_cast<UINT32>(wcslen(klbl)), m.fmt_right.Get(),
+                                 MakeRect(m.logical_w - 92.0f, m.kind_label_y, m.logical_w - 12.0f, m.kind_label_y + 18.0f), b.Get());
+                } else if (has_ov) {
+                    bool rst_hov = (m.hover_zone == HIT_KIND_RESET);
+                    if (rst_hov) {
+                        b->SetColor(MakeColor(accent.r, accent.g, accent.b, dk ? 0.16f : 0.12f));
+                        rt->FillRoundedRectangle(MakeRoundedRect(m.rc_kind_reset, 5.0f, 5.0f), b.Get());
+                    }
+                    b->SetColor(accent);
+                    rt->DrawText(L"\u6062\u590d\u9ed8\u8ba4", 4, m.fmt_right.Get(),
+                                 MakeRect(m.rc_kind_reset.left, m.kind_label_y, m.rc_kind_reset.right - 2.0f, m.kind_label_y + 18.0f), b.Get());
+                } else {
+                    const wchar_t *klbl = DescribeKindLabel(dev.kind);
+                    b->SetColor(pal.text_muted);
+                    rt->DrawText(klbl, static_cast<UINT32>(wcslen(klbl)), m.fmt_right.Get(),
+                                 MakeRect(m.logical_w - 92.0f, m.kind_label_y, m.logical_w - 12.0f, m.kind_label_y + 18.0f), b.Get());
+                }
+
+                for (int i = 0; i < kKindChoiceCount; ++i) {
+                    bool active = (dev.kind == kKindChoices[i]);
+                    bool hov = (m.hover_zone == (HIT_KIND_0 + i));
+                    if (active) {
+                        b->SetColor(MakeColor(accent.r, accent.g, accent.b, dk ? 0.22f : 0.15f));
+                        rt->FillRoundedRectangle(MakeRoundedRect(m.rc_kind[i], 7.0f, 7.0f), b.Get());
+                        b->SetColor(MakeColor(accent.r, accent.g, accent.b, dk ? 0.72f : 0.65f));
+                        rt->DrawRoundedRectangle(MakeRoundedRect(m.rc_kind[i], 7.0f, 7.0f), b.Get(), 1.0f);
+                    } else if (hov) {
+                        b->SetColor(row_hov);
+                        rt->FillRoundedRectangle(MakeRoundedRect(m.rc_kind[i], 7.0f, 7.0f), b.Get());
+                    } else {
+                        b->SetColor(dk ? MakeColor(1, 1, 1, 0.045f) : MakeColor(0, 0, 0, 0.035f));
+                        rt->FillRoundedRectangle(MakeRoundedRect(m.rc_kind[i], 7.0f, 7.0f), b.Get());
+                    }
+
+                    float gcx = (m.rc_kind[i].left + m.rc_kind[i].right) * 0.5f;
+                    float gcy = (m.rc_kind[i].top + m.rc_kind[i].bottom) * 0.5f;
+                    b->SetColor(active ? accent : (hov ? pal.text_primary : pal.text_secondary));
+                    DrawDeviceGlyph(m.d2d_factory.Get(), rt, b.Get(), kKindChoices[i], gcx, gcy, 6.8f, false);
+                }
+            }
+
             /* 3b. Delete / Remove Device row */
             if (m.has_delete_device) {
                 if (m.div_dev_del_y > 0.0f) {
@@ -710,6 +835,17 @@ static int HitTestMenu(const MenuState &m, float dx, float dy) {
     if (m.has_scan_devices && PtInR(m.rc_scan_devices, dx, dy)) return HIT_SCAN_DEVICES;
     if (m.has_device_pin && PtInR(m.rc_pin, dx, dy)) return HIT_PIN_DEVICE;
     if (m.has_rename && PtInR(m.rc_rename, dx, dy)) return HIT_RENAME_DEVICE;
+    if (m.has_kind_picker) {
+        const UiState &st = GetState();
+        if (m.device_index >= 0 && static_cast<size_t>(m.device_index) < st.device_count &&
+            HasDeviceKindOverride(st, st.devices[m.device_index].id) &&
+            PtInR(m.rc_kind_reset, dx, dy)) {
+            return HIT_KIND_RESET;
+        }
+        for (int i = 0; i < kKindChoiceCount; ++i) {
+            if (PtInR(m.rc_kind[i], dx, dy)) return HIT_KIND_0 + i;
+        }
+    }
     if (m.has_delete_device && PtInR(m.rc_delete, dx, dy)) return HIT_DELETE_DEVICE;
     if (m.has_general) {
         if (PtInR(m.rc_seg[0], dx, dy)) return HIT_SEG_OCTANS;
@@ -862,6 +998,30 @@ static LRESULT CALLBACK AppleMenuProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
                         m->pending_post_action = 1;
                         DismissMenu(*m, false);
                         break;
+                    case HIT_KIND_RESET: {
+                        const UiState &st = GetState();
+                        if (m->device_index >= 0 && static_cast<size_t>(m->device_index) < st.device_count) {
+                            ActionSetDeviceKind(st.devices[m->device_index].id, OCTANS_DEV_UNKNOWN);
+                            RepaintMenu(*m);
+                        }
+                        break;
+                    }
+                    case HIT_KIND_0:
+                    case HIT_KIND_1:
+                    case HIT_KIND_2:
+                    case HIT_KIND_3:
+                    case HIT_KIND_4:
+                    case HIT_KIND_5:
+                    case HIT_KIND_6: {
+                        const UiState &st = GetState();
+                        int ki = hz - HIT_KIND_0;
+                        if (ki >= 0 && ki < kKindChoiceCount &&
+                            m->device_index >= 0 && static_cast<size_t>(m->device_index) < st.device_count) {
+                            ActionSetDeviceKind(st.devices[m->device_index].id, kKindChoices[ki]);
+                            RepaintMenu(*m);
+                        }
+                        break;
+                    }
                     case HIT_DELETE_DEVICE:
                         m->pending_post_action = 4;
                         DismissMenu(*m, false);

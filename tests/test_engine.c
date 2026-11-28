@@ -2127,6 +2127,114 @@ static void test_v123_mchose_qhw_glw_and_flydigi(void) {
     ASSERT_EQ_INT((int)VAR_INDEP_FLYDIGI_V2, first_matching_variant(0x37D7u, 0x2599u, 0xA0FFu, 0x0001u, 1));
 }
 
+static void test_v124_rog_kb_and_kind_infer(void) {
+    octans_proto_reading_t r;
+
+    /* 1. ASUS ROG Standalone Wireless Keyboards (Scope RX TKL 1A07, Claymore II, Azoth, Falchion, Scope II 96) */
+    uint8_t rog_req[65];
+    octans_proto_build_rog_kb(0x00u, rog_req, sizeof(rog_req));
+    ASSERT_EQ_INT(0x00, rog_req[0]);
+    ASSERT_EQ_INT(0x12, rog_req[1]);
+    ASSERT_EQ_INT(0x01, rog_req[2]);
+    ASSERT_EQ_INT(0x00, rog_req[3]);
+
+    /* Strix Scope RX TKL (0B05:1A07): 65B prefixed response [1]=12 [2]=01 [6]=78% [9]=0 discharging */
+    uint8_t rog_rep[65];
+    memset(rog_rep, 0, sizeof(rog_rep));
+    rog_rep[0] = 0x00u; rog_rep[1] = 0x12u; rog_rep[2] = 0x01u;
+    rog_rep[6] = 78u; rog_rep[9] = 0u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rog_kb(rog_rep, sizeof(rog_rep), 0x1A07u, &r));
+    ASSERT_EQ_INT(OCTANS_DEV_KEYBOARD, r.kind);
+    ASSERT_EQ_INT(78, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_DISCHARGING, r.power_state);
+
+    /* Unprefixed 64B response (hidapi style): [0]=12 [1]=01 [5]=54% [8]=1 charging */
+    rog_rep[6] = 54u; rog_rep[9] = 1u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rog_kb(rog_rep + 1, sizeof(rog_rep) - 1u, 0x1A07u, &r));
+    ASSERT_EQ_INT(54, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_CHARGING, r.power_state);
+
+    /* Full battery */
+    rog_rep[6] = 100u; rog_rep[9] = 1u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rog_kb(rog_rep, sizeof(rog_rep), 0x1A07u, &r));
+    ASSERT_EQ_INT(100, r.battery_percent);
+    ASSERT_EQ_INT(OCTANS_PWR_FULL, r.power_state);
+
+    /* Reject FF AA error/asleep & standby 0% discharging */
+    uint8_t rog_err[65];
+    memset(rog_err, 0, sizeof(rog_err));
+    rog_err[0] = 0x00u; rog_err[1] = 0xFFu; rog_err[2] = 0xAAu;
+    ASSERT_EQ_INT(0, octans_proto_parse_rog_kb(rog_err, sizeof(rog_err), 0x1A07u, &r));
+    rog_rep[6] = 0u; rog_rep[9] = 0u;
+    ASSERT_EQ_INT(0, octans_proto_parse_rog_kb(rog_rep, sizeof(rog_rep), 0x1A07u, &r));
+
+    /* Falchion family (193E): [6]=7 (0..10 gauge), [11]=73 actual percentage */
+    uint8_t fal_rep[65];
+    memset(fal_rep, 0, sizeof(fal_rep));
+    fal_rep[0] = 0x00u; fal_rep[1] = 0x12u; fal_rep[2] = 0x01u;
+    fal_rep[6] = 7u; fal_rep[9] = 0u; fal_rep[11] = 73u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rog_kb(fal_rep, sizeof(fal_rep), 0x193Eu, &r));
+    ASSERT_EQ_INT(73, r.battery_percent);
+
+    /* Falchion RX LP paired over OMNI (0B05:1ACE, reportId 0x02) */
+    fal_rep[0] = 0x02u; fal_rep[6] = 8u; fal_rep[11] = 84u;
+    octans_reading_init(&r);
+    ASSERT_EQ_INT(1, octans_proto_parse_rog(fal_rep, 64u, VAR_ROG_OMNI_KB, &r));
+    ASSERT_EQ_INT(84, r.battery_percent);
+
+    /* Protocol Table Routing for ROG RX TKL + siblings (no collision with OMNI or Mouse) */
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1A07u, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1A07u, 0xFF00u, 0x0001u, 0));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1A07u, 0xFF01u, 0x0001u, 2));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x196Bu, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1AAEu, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1B78u, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1A85u, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1B3Fu, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x193Eu, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1B04u, 0xFF00u, 0x0001u, 1));
+    ASSERT_EQ_INT((int)VAR_ROG_OMNI_KB, first_matching_variant(0x0B05u, 0x1ACEu, 0xFF00u, 0x0002u, 2));
+    ASSERT_EQ_INT((int)VAR_ROG_OMNI_RX, first_matching_variant(0x0B05u, 0x1ACEu, 0xFF01u, 0x0003u, 2));
+    ASSERT_EQ_INT((int)VAR_ROG_DIRECT_1207, first_matching_variant(0x0B05u, 0x1999u, 0xFF00u, 0x0001u, 0));
+    ASSERT_EQ_INT((int)VAR_ROG_KB_1201, first_matching_variant(0x0B05u, 0x1999u, 0xFF00u, 0x0001u, 1));
+
+    /* 2. Smart Mouse-vs-Keyboard Kind Inference (fixes ODM mice like MONKA misclassified as keyboard) */
+    octans_hid_info_t mouse_ifaces[3];
+    memset(mouse_ifaces, 0, sizeof(mouse_ifaces));
+    strcpy(mouse_ifaces[0].group_key, "vid_3151&pid_5010&abc");
+    mouse_ifaces[0].usage_page = 0x0001u; mouse_ifaces[0].usage = 0x0006u; mouse_ifaces[0].interface_num = 1; /* macro KB first! */
+    strcpy(mouse_ifaces[1].group_key, "vid_3151&pid_5010&abc");
+    mouse_ifaces[1].usage_page = 0xFF00u; mouse_ifaces[1].usage = 0x0001u; mouse_ifaces[1].interface_num = 2; /* vendor ctrl */
+    strcpy(mouse_ifaces[2].group_key, "vid_3151&pid_5010&abc");
+    mouse_ifaces[2].usage_page = 0x0001u; mouse_ifaces[2].usage = 0x0002u; mouse_ifaces[2].interface_num = 0; /* primary mouse on MI_00 */
+    ASSERT_EQ_INT((int)OCTANS_DEV_MOUSE, (int)octans_infer_kind_from_group(&mouse_ifaces[1], mouse_ifaces, 3));
+
+    /* Explicit product name "MONKA M1 Wireless Mouse" overrides ambiguous HID collections */
+    octans_hid_info_t monka_named[2];
+    memset(monka_named, 0, sizeof(monka_named));
+    strcpy(monka_named[0].group_key, "vid_320f&pid_1234&xyz");
+    wcscpy(monka_named[0].product, L"MONKA M1 Wireless Mouse");
+    monka_named[0].usage_page = 0x0001u; monka_named[0].usage = 0x0006u; monka_named[0].interface_num = 0;
+    strcpy(monka_named[1].group_key, "vid_320f&pid_1234&xyz");
+    monka_named[1].usage_page = 0xFFE7u; monka_named[1].usage = 0x0001u; monka_named[1].interface_num = 1;
+    ASSERT_EQ_INT((int)OCTANS_DEV_MOUSE, (int)octans_infer_kind_from_group(&monka_named[1], monka_named, 2));
+
+    /* Gaming keyboard with MI_00 KB + MI_01 mouse macro collection still infers KEYBOARD */
+    octans_hid_info_t kb_ifaces[3];
+    memset(kb_ifaces, 0, sizeof(kb_ifaces));
+    strcpy(kb_ifaces[0].group_key, "vid_258a&pid_0150&kb1");
+    kb_ifaces[0].usage_page = 0x0001u; kb_ifaces[0].usage = 0x0002u; kb_ifaces[0].interface_num = 1; /* mouse macro first */
+    strcpy(kb_ifaces[1].group_key, "vid_258a&pid_0150&kb1");
+    kb_ifaces[1].usage_page = 0x0001u; kb_ifaces[1].usage = 0x0006u; kb_ifaces[1].interface_num = 0; /* primary KB on MI_00 */
+    strcpy(kb_ifaces[2].group_key, "vid_258a&pid_0150&kb1");
+    kb_ifaces[2].usage_page = 0xFF02u; kb_ifaces[2].usage = 0x0002u; kb_ifaces[2].interface_num = 1;
+    ASSERT_EQ_INT((int)OCTANS_DEV_KEYBOARD, (int)octans_infer_kind_from_group(&kb_ifaces[2], kb_ifaces, 3));
+}
+
 int main(void) {
     test_checksums_and_curves();
     test_hidpp();
@@ -2145,6 +2253,7 @@ int main(void) {
     test_v110_leobog_darmoshark_and_audit();
     test_v120_edifier_hecate();
     test_v123_mchose_qhw_glw_and_flydigi();
+    test_v124_rog_kb_and_kind_infer();
 
     printf("test_engine: %d/%d assertions passed\n",
            g_tests_run - g_tests_failed, g_tests_run);

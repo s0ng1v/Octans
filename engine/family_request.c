@@ -238,18 +238,137 @@ void octans_proto_build_rog_1207(uint8_t report_id, uint8_t out_buf[65], size_t 
     if (out_len) *out_len = (report_id == 0x00u) ? 65u : 64u;
 }
 
+void octans_proto_build_rog_kb(uint8_t report_id, uint8_t *out_buf, size_t len) {
+    if (!out_buf || len < 3u) return;
+    memset(out_buf, 0, len);
+    out_buf[0] = report_id;
+    out_buf[1] = 0x12u;
+    out_buf[2] = 0x01u;
+}
+
+int octans_proto_parse_rog_kb(const uint8_t *buf, size_t len, uint16_t pid, octans_proto_reading_t *out) {
+    if (!buf || !out || len < 10u) return 0;
+
+    const uint8_t *p = NULL;
+    size_t n = 0u;
+    if (buf[0] == 0x12u && buf[1] == 0x01u) {
+        p = buf;
+        n = len;
+    } else if (len >= 11u && buf[1] == 0x12u && buf[2] == 0x01u) {
+        p = buf + 1;
+        n = len - 1u;
+    } else {
+        return 0;
+    }
+
+    if (n < 9u || (p[0] == 0xFFu && p[1] == 0xAAu)) return 0;
+
+    int is_falchion = (pid == 0x193Cu || pid == 0x193Eu || pid == 0x1B04u);
+    uint8_t pct = p[5]; /* G-Helper response[6] when report_id is at [0] */
+    uint8_t chg = p[8]; /* G-Helper response[9] == 1 */
+    if (is_falchion && n >= 11u) {
+        if (p[10] <= 100u && (p[10] > 0u || chg == 1u)) {
+            pct = p[10]; /* Falchion reports 0..10 gauge at [6] and actual % at [11] */
+        } else if (p[5] <= 10u && p[5] > 0u) {
+            pct = (uint8_t)(p[5] * 10u);
+            out->is_estimated = 1;
+        }
+    } else if (pid == 0x1ACEu && n >= 11u && p[5] <= 10u && p[10] > 10u && p[10] <= 100u) {
+        /* Falchion RX Low Profile paired over OMNI receiver */
+        pct = p[10];
+    }
+
+    if (pct > 100u || (pct == 0u && chg == 0u)) return 0;
+    out->kind = OCTANS_DEV_KEYBOARD;
+    out->battery_percent = (int8_t)pct;
+    out->power_state = (chg == 1u)
+                     ? ((pct >= 100u) ? OCTANS_PWR_FULL : OCTANS_PWR_CHARGING)
+                     : OCTANS_PWR_DISCHARGING;
+    out->valid = 1;
+    return 1;
+}
+
+static int kind_wstr_has(const wchar_t *hay, const wchar_t *needle) {
+    if (!hay || !needle || !hay[0] || !needle[0]) return 0;
+    size_t nlen = wcslen(needle);
+    for (const wchar_t *p = hay; *p; ++p) {
+        if (_wcsnicmp(p, needle, nlen) == 0) return 1;
+    }
+    return 0;
+}
+
+octans_device_kind_t octans_infer_kind_from_group(const octans_hid_info_t *info,
+                                                  const octans_hid_info_t *all,
+                                                  size_t count) {
+    if (!info) return OCTANS_DEV_UNKNOWN;
+    if (info->usage_page == 0x000Du) return OCTANS_DEV_STYLUS;
+    if (info->usage_page == 0x0001u && info->usage == 0x0005u) return OCTANS_DEV_GAMEPAD;
+
+    int name_mouse = 0, name_kb = 0, name_headset = 0, name_earbuds = 0, name_gamepad = 0;
+    int has_mouse = 0, has_kb = 0, has_gamepad = 0, has_stylus = 0;
+    int mi0_mouse = 0, mi0_kb = 0;
+
+    if (!all || count == 0u) {
+        all = info;
+        count = 1u;
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        if (info->group_key[0] && strcmp(all[i].group_key, info->group_key) != 0) continue;
+        const octans_hid_info_t *cur = &all[i];
+        if (cur->product[0]) {
+            if (kind_wstr_has(cur->product, L"mouse") || kind_wstr_has(cur->product, L"mice")) name_mouse = 1;
+            if (kind_wstr_has(cur->product, L"keyboard") || kind_wstr_has(cur->product, L"gaming kb") ||
+                kind_wstr_has(cur->product, L"keychron")) name_kb = 1;
+            if (kind_wstr_has(cur->product, L"earbud") || kind_wstr_has(cur->product, L"buds") ||
+                kind_wstr_has(cur->product, L"tws") || kind_wstr_has(cur->product, L"airpods")) name_earbuds = 1;
+            if (kind_wstr_has(cur->product, L"headset") || kind_wstr_has(cur->product, L"headphone")) name_headset = 1;
+            if (kind_wstr_has(cur->product, L"gamepad") || kind_wstr_has(cur->product, L"controller") ||
+                kind_wstr_has(cur->product, L"joystick")) name_gamepad = 1;
+        }
+        if (cur->usage_page == 0x000Du) has_stylus = 1;
+        if (cur->usage_page == 0x0001u) {
+            if (cur->usage == 0x0002u) {
+                has_mouse = 1;
+                if (cur->interface_num == 0) mi0_mouse = 1;
+            } else if (cur->usage == 0x0006u) {
+                has_kb = 1;
+                if (cur->interface_num == 0) mi0_kb = 1;
+            } else if (cur->usage == 0x0005u) {
+                has_gamepad = 1;
+            }
+        }
+    }
+
+    if (name_mouse && !name_kb) return OCTANS_DEV_MOUSE;
+    if (name_kb && !name_mouse) return OCTANS_DEV_KEYBOARD;
+    if (name_earbuds) return OCTANS_DEV_EARBUDS;
+    if (name_headset) return OCTANS_DEV_HEADSET;
+    if (name_gamepad) return OCTANS_DEV_GAMEPAD;
+
+    if (has_stylus && !has_mouse && !has_kb) return OCTANS_DEV_STYLUS;
+    if (has_gamepad && !has_mouse && !has_kb) return OCTANS_DEV_GAMEPAD;
+    if (has_mouse && !has_kb) return OCTANS_DEV_MOUSE;
+    if (has_kb && !has_mouse) return OCTANS_DEV_KEYBOARD;
+    if (has_mouse && has_kb) {
+        if (mi0_mouse && !mi0_kb) return OCTANS_DEV_MOUSE;
+        if (mi0_kb && !mi0_mouse) return OCTANS_DEV_KEYBOARD;
+    }
+    return OCTANS_DEV_UNKNOWN;
+}
+
 int octans_proto_parse_rog(const uint8_t *buf, size_t len, octans_proto_variant_t var, octans_proto_reading_t *out) {
-    if (!buf || len < 12u || !out) return 0;
+    if (!buf || len < 10u || !out) return 0;
+
+    if (var == VAR_ROG_KB_1201) {
+        return octans_proto_parse_rog_kb(buf, len, 0u, out);
+    }
 
     if ((var == VAR_ROG_OMNI_RX || var == VAR_ROG_OMNI_KB) &&
         buf[0] == 0x02u && buf[1] == 0x12u && buf[2] == 0x01u) {
-        if (buf[6] > 100u) return 0;
-        out->kind = OCTANS_DEV_KEYBOARD;
-        out->battery_percent = (int8_t)buf[6];
-        out->power_state = buf[9] ? OCTANS_PWR_CHARGING : OCTANS_PWR_DISCHARGING;
-        out->valid = 1;
-        return 1;
+        return octans_proto_parse_rog_kb(buf, len, 0x1ACEu, out);
     }
+    if (len < 12u) return 0;
 
     const uint8_t *p = buf;
     if (buf[0] == 0x12u && buf[1] == 0x07u) {
@@ -2871,12 +2990,75 @@ static int run_feature_or_output_live(const proto_entry_t *e,
                 }
             }
         }
-    } else if (e->family == FAM_ASUS && dev.output_len >= 64) {
-        size_t rlen = 64u;
-        octans_proto_build_rog_1207(octans_dec8(e->report_id, 5u), req, &rlen);
-        if (var == VAR_ROG_OMNI_KB) req[2] = 0x01u;
-        if (rlen > dev.output_len) rlen = dev.output_len;
-        ok = send_and_read_loop(&dev, 0, req, rlen, 4, 120u, wrap_parse_rog, &var, out);
+    } else if (e->family == FAM_ASUS && dev.output_len >= 64u && dev.output_len <= 65u && dev.can_read) {
+        if (var == VAR_ROG_KB_1201) {
+            /* Skip known wired-only ASUS ROG/TUF keyboards & AURA motherboard LED controllers */
+            uint16_t ap = info->pid;
+            int wired_only = (ap == 0x1A05u || ap == 0x19AFu || ap == 0x18F3u ||
+                              ap == 0x1951u || ap == 0x1A55u || ap == 0x1B12u ||
+                              ap == 0x1AB3u || ap == 0x1AB5u || ap == 0x1B7Eu ||
+                              ap == 0x1C7Du || ap == 0x1A64u || ap == 0x1945u ||
+                              ap == 0x194Bu || ap == 0x1B30u || ap == 0x1C60u ||
+                              ap == 0x1B3Au || ap == 0x1875u || ap == 0x18AFu ||
+                              ap == 0x18CFu || ap == 0x19FEu || ap == 0x19FCu);
+            if (!wired_only && dev.input_len >= 64u &&
+                (info->usage_page == 0xFF00u || info->usage_page >= 0xFF00u || info->pid == 0x1A07u)) {
+                size_t olen = dev.output_len;
+                uint8_t rids[8];
+                size_t rcnt = octans_hid_collect_output_rids(&dev, rids, 8u);
+                uint8_t try_rids[8];
+                size_t try_n = 0u;
+                try_rids[try_n++] = 0x00u; /* G-Helper AsusKeyboard default reportId = 0x00 */
+                for (size_t k = 0; k < rcnt && try_n < 8u; ++k) {
+                    if (rids[k] != 0x00u) try_rids[try_n++] = rids[k];
+                }
+                for (size_t ri = 0; ri < try_n && !ok; ++ri) {
+                    octans_proto_build_rog_kb(try_rids[ri], req, olen);
+                    /* Prefer Interrupt OUT (WriteFile), matching G-Helper HidSharp HidStream.Write */
+                    if (octans_hid_write_output_intr(&dev, req, olen) != 0 &&
+                        octans_hid_write_output(&dev, req, olen) != 0) {
+                        continue;
+                    }
+                    for (int a = 0; a < 6; ++a) {
+                        int n = octans_hid_read_input(&dev, resp, sizeof(resp), 260u);
+                        if (n <= 0) break;
+                        if ((n >= 3 && resp[1] == 0xFFu && resp[2] == 0xAAu) ||
+                            (n >= 2 && resp[0] == 0xFFu && resp[1] == 0xAAu)) {
+                            break; /* Keyboard asleep or command unsupported on this interface */
+                        }
+                        if (octans_proto_parse_rog_kb(resp, (size_t)n, info->pid, out)) {
+                            ok = 1;
+                            break;
+                        }
+                        if (debug_log && a < 3) {
+                            fprintf(stderr, "[octans] rog_kb rid=0x%02X raw (%dB):", (unsigned)try_rids[ri], n);
+                            for (int b = 0; b < n && b < 20; ++b) fprintf(stderr, " %02X", resp[b]);
+                            fprintf(stderr, "\n");
+                        }
+                    }
+                }
+            }
+        } else if (var == VAR_ROG_OMNI_KB && dev.input_len >= 64u) {
+            size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
+            octans_proto_build_rog_kb(0x02u, req, olen);
+            if (octans_hid_write_output_intr(&dev, req, olen) == 0 ||
+                octans_hid_write_output(&dev, req, olen) == 0) {
+                for (int a = 0; a < 5; ++a) {
+                    int n = octans_hid_read_input(&dev, resp, sizeof(resp), 220u);
+                    if (n <= 0) break;
+                    if (n >= 3 && resp[1] == 0xFFu && resp[2] == 0xAAu) break;
+                    if (octans_proto_parse_rog_kb(resp, (size_t)n, info->pid, out)) {
+                        ok = 1;
+                        break;
+                    }
+                }
+            }
+        } else {
+            size_t rlen = 64u;
+            octans_proto_build_rog_1207(octans_dec8(e->report_id, 5u), req, &rlen);
+            if (rlen > dev.output_len) rlen = dev.output_len;
+            ok = send_and_read_loop(&dev, 0, req, rlen, 4, 150u, wrap_parse_rog, &var, out);
+        }
     } else if (e->family == FAM_CORSAIR && e->variant == VAR_CORSAIR_BRAGI && dev.output_len >= 64) {
         size_t olen = dev.output_len <= sizeof(req) ? dev.output_len : 64u;
         size_t off = (olen >= 65u) ? 1u : 0u;

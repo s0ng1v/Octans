@@ -1,9 +1,9 @@
 {
-  "version": "1.2.3",
-  "notes": "v1.2.3：新增迈从 MCHOSE QHW V3（G87 V3 / K87 V3 / G98 V3，UP=0xFF80:0x0001）与 GLW（K99 V3 / G87 V2 8K / G75 V2 8K / K87S）无线键盘电量支持；新增飞智 Flydigi V2 手柄私有 HID 协议直读（八爪鱼 5 Apex 5 / 黑武士 5 Pro / 八爪鱼 6，2.4G 与有线模式）；修复 ButtonCaps Report ID 采集，单测扩至 770 项。",
-  "sha256": "0D01AB3F38BBB48ABFE7BD27C35ADCDB02290D7F6E5A8DBC18546931BC114629",
-  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe",
-  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe",
+  "version": "1.2.4",
+  "notes": "v1.2.4：新增华硕 ROG 游侠 Strix Scope RX TKL 无线版（0B05:1A07）及 Claymore II / Scope II 96 / Azoth / Falchion 全系独立无线键盘 00 12 01 协议直读；修复公模游戏鼠标（如魔咖等）误识别为键盘的根因；面板卡片与托盘右键菜单新增「设备图标」7 种矢量图标一键切换并持久化（支持一键恢复默认）。",
+  "sha256": "E78FFD0FC6BCE2480F314D657D9EDC08AA8EE5D14686AAACCDB7C67BB618625C",
+  "download_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe",
+  "download_global": "https://github.com/s0ng1v/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe",
   "page_cn": "https://atomgit.com/gcw_dkdsv0bD/Octans/releases",
   "page_global": "https://github.com/s0ng1v/Octans/releases/latest"
 }

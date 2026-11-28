@@ -149,17 +149,7 @@ static void load_persisted_aliases(octans_engine_t *eng) {
 static octans_device_kind_t guess_kind_from_iface(const octans_hid_info_t *info,
                                                   const octans_hid_info_t *all,
                                                   size_t count) {
-    if (info->usage_page == 0x000Du) return OCTANS_DEV_STYLUS;
-    if (info->usage_page == 0x0001u && info->usage == 0x0005u) return OCTANS_DEV_GAMEPAD;
-    for (size_t i = 0; i < count; ++i) {
-        if (strcmp(all[i].group_key, info->group_key) != 0) continue;
-        if (all[i].usage_page == 0x0001u) {
-            if (all[i].usage == 0x0002u) return OCTANS_DEV_MOUSE;
-            if (all[i].usage == 0x0006u) return OCTANS_DEV_KEYBOARD;
-            if (all[i].usage == 0x0005u) return OCTANS_DEV_GAMEPAD;
-        }
-    }
-    return OCTANS_DEV_UNKNOWN;
+    return octans_infer_kind_from_group(info, all, count);
 }
 
 octans_engine_t *octans_engine_create(const octans_config_t *cfg) {
@@ -250,6 +240,15 @@ int octans_engine_poll(octans_engine_t *eng, int force_rescan) {
             octans_proto_reading_t r;
             if (octans_proto_query_iface(&g_protocols[p], info, eng->cfg.passive_listen_ms,
                                          eng->cfg.debug_log, &r)) {
+                /* Refine mouse/keyboard kind on generic wildcard rows using sibling HID collections & product string */
+                if (octans_dec16(g_protocols[p].pid, 2u) == 0xFFFFu &&
+                    (r.kind == OCTANS_DEV_MOUSE || r.kind == OCTANS_DEV_KEYBOARD ||
+                     r.kind == OCTANS_DEV_UNKNOWN || r.kind == OCTANS_DEV_OTHER)) {
+                    octans_device_kind_t inferred = octans_infer_kind_from_group(info, eng->ifaces, eng->iface_count);
+                    if (inferred != OCTANS_DEV_UNKNOWN) {
+                        r.kind = inferred;
+                    }
+                }
                 readings[rcount++] = r;
                 for (size_t k = 0; k < eng->iface_count; ++k) {
                     if (strcmp(eng->ifaces[k].group_key, info->group_key) == 0) {

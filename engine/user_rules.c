@@ -53,6 +53,7 @@ static const tpl_map_entry_t k_tpl_map[] = {
     {"hyperx_c3s",  VAR_HX_CLOUD3S},
     {"steelseries", VAR_SS_AEROX},
     {"rog",         VAR_ROG_DIRECT_1207},
+    {"rog_kb_1201", VAR_ROG_KB_1201},
     {"corsair",     VAR_CORSAIR_BRAGI},
     {"vaxee",       VAR_INDEP_VAXEE},
     {"nzxt",        VAR_INDEP_NZXT},

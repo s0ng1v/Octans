@@ -116,6 +116,38 @@ static void LoadUiConfig() {
             p = comma + 1;
         }
     }
+
+    g_state.kind_override_count = 0;
+    for (size_t i = 0; i < MAX_DEVICES; ++i) {
+        g_state.kind_overrides[i].id[0] = '\0';
+        g_state.kind_overrides[i].kind = OCTANS_DEV_UNKNOWN;
+    }
+    wchar_t icon_sec[2048] = {};
+    if (GetPrivateProfileSectionW(L"DeviceIcons", icon_sec, 2048, ini) > 0) {
+        const wchar_t *p = icon_sec;
+        while (*p != L'\0' && g_state.kind_override_count < MAX_DEVICES) {
+            const wchar_t *eq = wcschr(p, L'=');
+            if (eq && eq > p && eq[1] != L'\0') {
+                int kv = _wtoi(eq + 1);
+                if (kv >= static_cast<int>(OCTANS_DEV_MOUSE) && kv <= static_cast<int>(OCTANS_DEV_OTHER)) {
+                    wchar_t wid[64] = {};
+                    size_t wlen = static_cast<size_t>(eq - p);
+                    if (wlen >= 64) wlen = 63;
+                    wmemcpy(wid, p, wlen);
+                    wid[wlen] = L'\0';
+                    char id_u8[64] = {};
+                    WideCharToMultiByte(CP_UTF8, 0, wid, -1, id_u8, sizeof(id_u8), nullptr, nullptr);
+                    if (id_u8[0]) {
+                        strncpy(g_state.kind_overrides[g_state.kind_override_count].id, id_u8, 63);
+                        g_state.kind_overrides[g_state.kind_override_count].id[63] = '\0';
+                        g_state.kind_overrides[g_state.kind_override_count].kind = static_cast<octans_device_kind_t>(kv);
+                        g_state.kind_override_count++;
+                    }
+                }
+            }
+            p += wcslen(p) + 1;
+        }
+    }
 }
 
 static void SaveUiConfig() {
@@ -205,6 +237,20 @@ bool IsDeviceHidden(const UiState &st, const char *device_id) {
     return false;
 }
 
+bool HasDeviceKindOverride(const UiState &st, const char *device_id) {
+    return GetDeviceKindOverride(st, device_id) != OCTANS_DEV_UNKNOWN;
+}
+
+octans_device_kind_t GetDeviceKindOverride(const UiState &st, const char *device_id) {
+    if (!device_id || !device_id[0]) return OCTANS_DEV_UNKNOWN;
+    for (size_t i = 0; i < st.kind_override_count && i < MAX_DEVICES; ++i) {
+        if (strcmp(st.kind_overrides[i].id, device_id) == 0) {
+            return st.kind_overrides[i].kind;
+        }
+    }
+    return OCTANS_DEV_UNKNOWN;
+}
+
 size_t CountActivePinnedDevices(const UiState &st) {
     size_t n = 0;
     for (size_t i = 0; i < st.device_count && i < MAX_DEVICES; ++i) {
@@ -248,7 +294,13 @@ static void FilterAndStoreDevices(const octans_device_view_t *devices, size_t co
     if (devices) {
         for (size_t i = 0; i < count && out_n < MAX_DEVICES; ++i) {
             if (IsDeviceHidden(g_state, devices[i].id)) continue;
-            g_state.devices[out_n++] = devices[i];
+            g_state.raw_kinds[out_n] = devices[i].kind;
+            g_state.devices[out_n] = devices[i];
+            octans_device_kind_t ov = GetDeviceKindOverride(g_state, devices[i].id);
+            if (ov != OCTANS_DEV_UNKNOWN) {
+                g_state.devices[out_n].kind = ov;
+            }
+            out_n++;
         }
     }
     g_state.device_count = out_n;
@@ -393,6 +445,7 @@ void ActionRemoveDevice(const char *device_id) {
         if (strcmp(g_state.devices[i].id, device_id) == 0) {
             for (size_t j = i; j + 1 < g_state.device_count; ++j) {
                 g_state.devices[j] = g_state.devices[j + 1];
+                g_state.raw_kinds[j] = g_state.raw_kinds[j + 1];
             }
             g_state.device_count--;
             break;
@@ -400,6 +453,67 @@ void ActionRemoveDevice(const char *device_id) {
     }
 
     SaveUiConfig();
+    PanelOnDevicesChanged(g_state.devices, g_state.device_count);
+    PanelOnPinnedChanged();
+    TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
+}
+
+void ActionSetDeviceKind(const char *device_id, octans_device_kind_t kind) {
+    if (!device_id || !device_id[0]) return;
+
+    int found = -1;
+    for (size_t i = 0; i < g_state.kind_override_count && i < MAX_DEVICES; ++i) {
+        if (strcmp(g_state.kind_overrides[i].id, device_id) == 0) {
+            found = static_cast<int>(i);
+            break;
+        }
+    }
+
+    if (kind == OCTANS_DEV_UNKNOWN) {
+        if (found >= 0) {
+            for (size_t j = static_cast<size_t>(found); j + 1 < g_state.kind_override_count; ++j) {
+                g_state.kind_overrides[j] = g_state.kind_overrides[j + 1];
+            }
+            g_state.kind_override_count--;
+            g_state.kind_overrides[g_state.kind_override_count].id[0] = '\0';
+            g_state.kind_overrides[g_state.kind_override_count].kind = OCTANS_DEV_UNKNOWN;
+        }
+    } else {
+        if (found >= 0) {
+            g_state.kind_overrides[found].kind = kind;
+        } else {
+            size_t slot = (g_state.kind_override_count < MAX_DEVICES) ? g_state.kind_override_count++ : 0;
+            strncpy(g_state.kind_overrides[slot].id, device_id, 63);
+            g_state.kind_overrides[slot].id[63] = '\0';
+            g_state.kind_overrides[slot].kind = kind;
+        }
+    }
+
+    if (g_state.demo_hooks.on_action == nullptr) {
+        wchar_t dir[MAX_PATH] = {};
+        wchar_t ini[MAX_PATH] = {};
+        GetUiIniPath(dir, ini);
+        if (dir[0]) CreateDirectoryW(dir, nullptr);
+        wchar_t wid[64] = {};
+        MultiByteToWideChar(CP_UTF8, 0, device_id, -1, wid, 64);
+        if (wid[0]) {
+            if (kind == OCTANS_DEV_UNKNOWN) {
+                WritePrivateProfileStringW(L"DeviceIcons", wid, nullptr, ini);
+            } else {
+                wchar_t vbuf[16] = {};
+                _snwprintf(vbuf, 15, L"%d", static_cast<int>(kind));
+                WritePrivateProfileStringW(L"DeviceIcons", wid, vbuf, ini);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < g_state.device_count && i < MAX_DEVICES; ++i) {
+        if (strcmp(g_state.devices[i].id, device_id) == 0) {
+            g_state.devices[i].kind = (kind == OCTANS_DEV_UNKNOWN) ? g_state.raw_kinds[i] : kind;
+            break;
+        }
+    }
+
     PanelOnDevicesChanged(g_state.devices, g_state.device_count);
     PanelOnPinnedChanged();
     TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
@@ -594,9 +708,12 @@ void ActionSetDemoHooks(const DemoMenuHooks *hooks) {
         g_state.has_custom_panel_pos = false;
         g_state.pinned_count = 0;
         g_state.hidden_count = 0;
+        g_state.kind_override_count = 0;
         for (size_t i = 0; i < MAX_DEVICES; ++i) {
             g_state.pinned_ids[i][0] = '\0';
             g_state.hidden_ids[i][0] = '\0';
+            g_state.kind_overrides[i].id[0] = '\0';
+            g_state.kind_overrides[i].kind = OCTANS_DEV_UNKNOWN;
         }
         TraySyncAll(g_state.devices, g_state.device_count, g_state.pinned_ids, g_state.pinned_count, g_state.tray_style, g_state.tray_scale);
     } else {

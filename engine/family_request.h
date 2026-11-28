@@ -38,7 +38,12 @@ int octans_proto_parse_atk_52840(const uint8_t *buf, size_t len, octans_proto_re
 int octans_proto_parse_atk_mouseinfo(const uint8_t *buf, size_t len, octans_proto_reading_t *out);
 
 void octans_proto_build_rog_1207(uint8_t report_id, uint8_t out_buf[65], size_t *out_len);
+void octans_proto_build_rog_kb(uint8_t report_id, uint8_t *out_buf, size_t len);
 int octans_proto_parse_rog(const uint8_t *buf, size_t len, octans_proto_variant_t var, octans_proto_reading_t *out);
+int octans_proto_parse_rog_kb(const uint8_t *buf, size_t len, uint16_t pid, octans_proto_reading_t *out);
+octans_device_kind_t octans_infer_kind_from_group(const octans_hid_info_t *info,
+                                                  const octans_hid_info_t *all,
+                                                  size_t count);
 
 void octans_proto_build_corsair_bragi(uint8_t target, uint8_t prop, uint8_t out64[64]);
 int octans_proto_parse_corsair_bragi(const uint8_t *buf, size_t len, uint16_t *out_raw);

@@ -73,18 +73,11 @@ static octans_device_kind_t infer_kind(const octans_hid_info_t *info,
         var == VAR_KB_LOFREE_HYZEN || var == VAR_KB_MCHOSE_BY ||
         var == VAR_KB_MCHOSE_QHW || var == VAR_KB_MCHOSE_GLW ||
         var == VAR_KB_LEOBOG_20B || var == VAR_KB_LEOBOG_BYTECH ||
-        var == VAR_INDEP_AULA_KBD_AA) {
+        var == VAR_INDEP_AULA_KBD_AA || var == VAR_ROG_KB_1201) {
         return OCTANS_DEV_KEYBOARD;
     }
-    for (size_t i = 0; i < count; ++i) {
-        if (strcmp(all[i].group_key, info->group_key) != 0) continue;
-        if (all[i].usage_page == 0x0001u) {
-            if (all[i].usage == 0x0002u) return OCTANS_DEV_MOUSE;
-            if (all[i].usage == 0x0006u) return OCTANS_DEV_KEYBOARD;
-            if (all[i].usage == 0x0005u) return OCTANS_DEV_GAMEPAD;
-        }
-    }
-    return OCTANS_DEV_MOUSE;
+    octans_device_kind_t guessed = octans_infer_kind_from_group(info, all, count);
+    return (guessed != OCTANS_DEV_UNKNOWN) ? guessed : OCTANS_DEV_MOUSE;
 }
 
 void octans_broad_format_rule_ini(const octans_hid_info_t *info,

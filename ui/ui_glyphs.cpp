@@ -485,6 +485,24 @@ static bool BuildSolidSilhouette48(
             out_geo->AddRef();
             return true;
         }
+        case OCTANS_DEV_STYLUS: {
+            /* Sleek diagonal stylus silhouette in 48x48 space */
+            ComPtr<ID2D1PathGeometry> pen;
+            if (FAILED(factory->CreatePathGeometry(pen.Put()))) return false;
+            ComPtr<ID2D1GeometrySink> sink;
+            if (FAILED(pen->Open(sink.Put()))) return false;
+            auto p = [&](float x, float y) { return MakePt(ox + x * u, oy + y * u); };
+            sink->BeginFigure(p(33.5f, 7.5f), D2D1_FIGURE_BEGIN_FILLED);
+            sink->AddLine(p(40.5f, 14.5f));
+            sink->AddLine(p(19.0f, 36.0f));
+            sink->AddLine(p(8.5f, 39.5f));
+            sink->AddLine(p(12.0f, 29.0f));
+            sink->EndFigure(D2D1_FIGURE_END_CLOSED);
+            sink->Close();
+            out_geo.Reset(pen.Get());
+            out_geo->AddRef();
+            return true;
+        }
         default: {
             /* Generic vertical battery capsule */
             ComPtr<ID2D1RoundedRectangleGeometry> body, cap;

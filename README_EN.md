@@ -17,15 +17,15 @@
   ·
   <b>English</b>
   ·
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe"><b>Download (v1.2.3)</b></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe"><b>Download (v1.2.4)</b></a>
   ·
-  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe">CN Mirror</a>
+  <a href="https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe">CN Mirror</a>
   ·
   <a href="#supported-brands--devices">Supported Devices</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe"><img alt="Download v1.2.3" src="https://img.shields.io/badge/download-v1.2.3-E05D44"></a>
+  <a href="https://github.com/s0ng1v/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe"><img alt="Download v1.2.4" src="https://img.shields.io/badge/download-v1.2.4-E05D44"></a>
   <a href="LICENSE"><img alt="License GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-007EC6"></a>
   <img alt="Platform Windows 10/11" src="https://img.shields.io/badge/platform-Windows%2010%2F11-007EC6">
   <img alt="Idle CPU 0%" src="https://img.shields.io/badge/CPU-0%25-44CC11">
@@ -52,16 +52,17 @@
 
 ## Download & Install
 
-Download the installer **`Octans-Setup-v1.2.3.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
+Download the installer **`Octans-Setup-v1.2.4.exe`** and double-click to install (supports silent startup at login and standard Windows uninstallation):
 
 | Channel | Description | Link |
 |---|---|---|
-| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.3.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
-| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.3.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.3/Octans-Setup-v1.2.3.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
+| **GitHub Releases (Recommended)** | Official global releases & version archive | [Download Octans-Setup-v1.2.4.exe](https://github.com/s0ng1v/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe) · [Releases Page](https://github.com/s0ng1v/Octans/releases/latest) |
+| **CN Mirror (AtomGit)** | High-speed direct download in Mainland China without login | [Download Octans-Setup-v1.2.4.exe](https://atomgit.com/gcw_dkdsv0bD/Octans/releases/download/v1.2.4/Octans-Setup-v1.2.4.exe) · [All Releases](https://atomgit.com/gcw_dkdsv0bD/Octans/releases) |
 
 > **Tips**:
 > 1. If Windows hides the newly installed tray icon inside the `^` overflow menu, drag it out to the taskbar once to keep it permanently visible.
-> 2. When a new version is available, a subtle **"↑ 新版"** badge appears in the top-right corner of the panel, or open **"About Octans → Check for Updates"** anytime from the right-click menu to automatically download, verify SHA-256, and upgrade silently (auto-check can be toggled off in the context menu).
+> 2. Right-click any device card in the panel to pin it to the taskbar, rename it, or switch its **device icon** (Mouse / Keyboard / Headset / Earbuds / Gamepad / Stylus / Speaker, with one-click reset to auto).
+> 3. When a new version is available, a subtle **"↑ 新版"** badge appears in the top-right corner of the panel, or open **"About Octans → Check for Updates"** anytime from the right-click menu to automatically download, verify SHA-256, and upgrade silently (auto-check can be toggled off in the context menu).
 
 ---
 
@@ -74,7 +75,7 @@ Supports wireless mice, keyboards, headsets, and gamepads from **30+ mainstream 
 | **Logitech** | G PRO / GPW series, G502 / G903 / G304, MX series mice; G915 / MX Keys keyboards; G435 / G533 / G535 / G733 / G935 / PRO X, Astro A50 wireless headsets |
 | **Razer** | DeathAdder V3/V4 Pro, Viper V2/V3/V4 Pro, Basilisk wireless mice; BlackWidow / DeathStalker wireless keyboards; BlackShark V2 Pro / V3 and Barracuda headsets |
 | **Corsair / SteelSeries / HyperX / Sony / Lenovo / EPOS / FIFINE** | Corsair wireless mice, keyboards & headsets; SteelSeries Aerox mice and Arctis 1 / Nova / GameBuds headsets; HyperX Cloud II / III / Alpha / Flight & Pulsefire mice; Sony INZONE Buds / PULSE 3D; Lenovo wireless headsets; EPOS H3PRO; FIFINE HT6 |
-| **ASUS ROG / DURGOD / IQUNIX / Keychron / Lofree** | ASUS ROG Harpe / Keris / Gladius wireless peripherals; DURGOD wireless keyboards; IQUNIX keyboards & mice; Keychron & Lofree tri-mode mechanical keyboards |
+| **ASUS ROG / DURGOD / IQUNIX / Keychron / Lofree** | ASUS ROG Harpe / Keris / Gladius mice, Strix Scope RX TKL / Scope II 96 / Azoth / Claymore II / Falchion & OMNI wireless keyboards; DURGOD wireless keyboards; IQUNIX keyboards & mice; Keychron & Lofree tri-mode mechanical keyboards |
 | **Rapoo** | VT0 / VT0 MAX / VT0 Air MAX, VT1 / VT3 / VT7 / VT9 Gen-2 & VT-series wireless mice, V700DIY keyboards, and wireless receivers |
 | **EDIFIER / HECATE** | HECATE G5 MAX / G5 MAX V2 / G5 MAX Dock / G4 MAX / G3 MAX / G3 / G2 MAX / V5 MAX / V3 MAX wireless headsets, GX03 ULTRA / GX05 Master TWS earbuds, G5M PRO / G5M ULTRA / G3M PRO / G3M ULTRA / G2M PRO mice; EDIFIER Halo Space / Evo Space headphones & TempoHub peripherals (plus direct Bluetooth headphone battery readout) |
 | **ATK / VXE / VGN / LAMZU / Ninjutso / Pulsar / WLmouse** | ATK / VXE Dragonfly R1, F1, A9 / A9 Pro Max, X1 / X1 Ultimate, V3 Nearlink mice & A87 / A98 keyboards; LAMZU Maya X / Inca / Atlantis; Ninjutso Sora V2; Pulsar X2 / Xlite; WLmouse Beast X; Zaopin Z1 Pro / Z2 |
@@ -98,7 +99,7 @@ See [docs/当前已支持外设清单.md](docs/当前已支持外设清单.md) f
 ### Architecture & Lightweight Design
 
 - **Pure Native Zero-Dependency Stack**: C11 backend protocol engine with Win32 + Direct2D / DirectWrite lightweight software rendering (avoiding persistent D3D11/GPU module loading and unbinding IME from non-input windows); zero Electron / Chromium / WebView2 / .NET / `libstdc++` runtime dependencies.
-- **Tiny Footprint**: `Octans.exe` is only ~**389 KB**, and the standalone CLI `octans-cli.exe` is ~**187 KB**.
+- **Tiny Footprint**: `Octans.exe` is only ~**399 KB**, and the standalone CLI `octans-cli.exe` is ~**194 KB**.
 - **On-Demand Cleanup & Zero Static Network Imports**: Releases off-screen panel surfaces and trims working set when collapsed; zero static network DLL imports in PE tables (`winhttp.dll` and `bcrypt.dll` are dynamically loaded only during update checks/downloads and immediately unloaded afterward).
 
 ### Repository Layout
@@ -112,7 +113,7 @@ cli/        Standalone headless CLI tool (list --json, test-rule, probe --dump)
 include/    Stable C ABI headers and version definitions
 assets/     Octans brand visual assets and multi-DPI icons
 installer/  Inno Setup script and one-click packaging script
-tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (770 assertions)
+tests/      Unit tests covering protocol parsing, table lookup, deduplication & ABI (807 assertions)
 ```
 
 ### Build from Source
@@ -120,10 +121,10 @@ tests/      Unit tests covering protocol parsing, table lookup, deduplication & 
 Requires Windows 10/11 and the LLVM-MinGW (UCRT) toolchain (plus Inno Setup 6 for packaging):
 
 ```powershell
-# Build CLI, run all 770 unit tests, and build build\Octans.exe
+# Build CLI, run all 807 unit tests, and build build\Octans.exe
 powershell -ExecutionPolicy Bypass -File .\build.ps1
 
-# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.3.exe)
+# Build and package the Windows installer (outputs dist\Octans-Setup-v1.2.4.exe)
 powershell -ExecutionPolicy Bypass -File .\installer\package.ps1
 
 # Build and launch the hardware-free UI preview demo
